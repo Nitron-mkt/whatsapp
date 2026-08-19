@@ -1,0 +1,187 @@
+# Revisão do catálogo de campanhas — Máquina de Vendas Nitron
+
+Projeto Supabase `integracao-crm-sankhya` (`bwbeieumxcuomtrvlqxs`).
+Data da apuração: 19/08/2026. Base: 38 campanhas, 388 disparos, 241 registros de fila.
+
+---
+
+## Resumo
+
+O catálogo tem 38 campanhas em 11 pipes, 12 marcadas como ativas. Na prática **apenas 2
+campanhas chegaram a enviar mensagem** (`voucher_empurrar` e `clube_saldo`), num único dia
+(18/08). As outras 10 ativas ou geram rascunho que nunca sai, ou não geram nada.
+
+O problema principal não é a configuração das campanhas individuais — é que a camada de
+identificação do destinatário está vazia. Enquanto isso não for resolvido, **ativar mais
+campanhas multiplica envios não rastreáveis e não filtrados**, não resultado.
+
+---
+
+## 1. Defeitos estruturais
+
+Afetam todas as campanhas, independentemente da configuração de cada uma.
+
+### 1.1 `contact_id` nulo em 100% dos registros
+
+388 disparos e 241 itens de fila: nenhum tem `contact_id`. O envio funciona porque
+`fila_envio` carrega `fone`/`email` direto, driblando a identificação.
+
+Consequências:
+
+- **Sem deduplicação.** Nada impede o mesmo contato receber 3 campanhas no mesmo dia.
+- **Sem atribuição.** Não há como medir conversão de campanha — o `status` de `disparos`
+  nunca sai de `rascunho` porque não existe chave para reconciliar a resposta.
+- **Sem opt-out.** Não há como honrar um pedido de descadastro.
+
+### 1.2 `codparc` nulo em 377 de 388 disparos (97%)
+
+`clube_saldo` e `rep_sem_comprar`: 100% nulo. `voucher_empurrar`: 125 de 126.
+
+Sem `codparc` não há cruzamento com o Sankhya. O filtro `excluir_inadimplente: true`,
+presente em **34 das 38 campanhas**, não tem como ser aplicado. Existem 448 registros em
+`inadimplente` que hoje não são consultáveis a partir de um disparo — risco de ofertar ou
+cobrar indevidamente.
+
+### 1.3 Sete campanhas ativas geram zero disparo
+
+| Campanha | Cadência | Disparos |
+|---|---|---|
+| `saldo_liberar` | seg–sex | 0 |
+| `saldo_confirmar` | seg–sex | 0 |
+| `prep_retorno` | seg/qua/sex | 0 |
+| `reativacao_180d` | qua | 0 |
+| `cobranca_juridico` | seg | 0 |
+| `promocao_redes` | *(vazia)* | 0 |
+| `templates_whatsapp` | *(vazia)* | 0 |
+
+`saldo_liberar` e `saldo_confirmar` estão programadas 5 dias por semana e nunca produziram
+uma linha. Ambas dependem da tela de Gestão de Saldos; `saldo_pedido` tem 528 registros,
+então os dados de origem existem.
+
+### 1.4 Rascunhos órfãos: 190 disparos que nunca entram na fila
+
+`recompra_giro_vencido` (81), `rep_sem_comprar` (69) e `recompra_giro_a_vencer` (40) geram
+disparo mas nunca aparecem em `fila_envio`. Só `voucher_empurrar` e `clube_saldo` fazem a
+travessia. Há uma ponte faltando entre gerar e enfileirar.
+
+### 1.5 Os 9 erros de fila não têm mensagem de erro
+
+Todos os 9 registros com `status='erro'` têm `erro = NULL`. O status é gravado sem o
+motivo, o que torna o diagnóstico impossível. Corrigir isso é pré-requisito para depurar
+qualquer coisa no envio.
+
+---
+
+## 2. Problemas de catálogo
+
+### 2.1 Duas linhas não são campanhas
+
+- **`templates_whatsapp`** (pipe `aquisicao`, `ativa=true`) — é o repositório de modelos
+  Meta aprovados, não uma campanha. Cadência vazia.
+- **`ia_propoe`** (pipe `inteligencia`) — é o motor que *cria* campanhas.
+
+Ambas inflam a contagem do catálogo e podem ser varridas pelo agendador. O lugar delas é
+fora de `campanhas` (a primeira já tem `wa_template`).
+
+### 2.2 `template_ref` é NULL em todas as 38 campanhas
+
+Existem 3 registros em `wa_template` e uma campanha dedicada a templates, mas nenhuma
+campanha referencia um template. Como o WhatsApp exige template aprovado pela Meta para
+primeiro contato, **toda campanha de 1º toque frio está tecnicamente inviável hoje** —
+incluindo `prospeccao_aquisicao` e as três de `reativacao`.
+
+### 2.3 `canais` fora de padrão em `prospeccao_aquisicao`
+
+Usa `{WHATSAPP, DM_INSTAGRAM, EMAIL}` em maiúsculas, contra `whatsapp`/`email` minúsculos
+nas outras 37. Qualquer comparação de canal por igualdade falha. É também a única com
+`DM_INSTAGRAM`, canal que não aparece em `fila_envio` — ou seja, sem caminho de entrega.
+
+### 2.4 Encoding corrompido em campanha gerada por IA
+
+`ia_devolu_o_coordenada_antes_do_despacho` tem nome e objetivo com mojibake
+(`Devolu��o`, `cr�dito`, `log�stica`). O próprio `codigo` foi derivado do texto corrompido
+— daí o `devolu_o`. É um bug de encoding em `campanhas-ia-propoe`, não um erro de
+digitação. A outra proposta da mesma data (`ia_saldo_lista_desconto_validada`) saiu limpa,
+então a corrupção depende do conteúdo de origem.
+
+### 2.5 Cadência vazia em duas campanhas ativas
+
+`promocao_redes` e `templates_whatsapp` têm `cadencia = {}`. Estando ativas, nunca serão
+agendadas — ficam num limbo em que aparecem como ligadas e não rodam.
+
+---
+
+## 3. Os dois pipes mortos
+
+### `inteligencia` — 0 de 3 ativas
+
+`ia_propoe` é meta-campanha (item 2.1). As outras duas são propostas que a IA inseriu em
+14/08, ambas ainda com `status_dados='proposta'` e nunca revisadas — uma delas com o
+encoding quebrado. O gargalo aqui não é técnico: **o funil de propostas da IA não tem
+ninguém aprovando**. A IA escreve, e para.
+
+As duas propostas vieram de evidência real de conversas do CRM (NF 83869/83875 cancelada
+após despacho; caso Multi Atacado com 69 SKUs). São pautas legítimas.
+
+### `key_accounts` — 0 de 3 ativas
+
+As três são email-only para `publico=['rep']`, todas sem cadência.
+
+- `ka_revisao_trimestral` — a observação diz "ligar quando o diretor quiser". É **decisão
+  de negócio pendente, não defeito**.
+- `ka_cross_sell` — precisa mix por conta. `abc_linha` (433) e `ka_grupo` (122) já existem;
+  vale checar se o dado necessário já está lá.
+- `ka_ruptura_rede` — `status_dados='precisa_dado'`, depende de estoque/saldo.
+
+---
+
+## 4. Veredicto por campanha
+
+### Não ativar nada antes de resolver 1.1 e 1.2
+
+Esta é a recomendação central. Ativar campanha nova hoje só aumenta o volume de envio sem
+rastreio e sem filtro de inadimplência.
+
+### Tirar do catálogo (2)
+
+`templates_whatsapp`, `ia_propoe` — não são campanhas.
+
+### Diagnosticar (7 ativas silenciosas)
+
+As da tabela em 1.3. Prioridade para `saldo_liberar` e `saldo_confirmar`: são diárias, têm
+dado de origem e produzem zero.
+
+### Destravar (3 com rascunho órfão)
+
+`recompra_giro_vencido`, `recompra_giro_a_vencer`, `rep_sem_comprar` — 190 rascunhos
+prontos esperando a ponte para a fila. É o ganho mais rápido do catálogo: o conteúdo já
+está gerado.
+
+### Bloqueadas por dado faltante (6)
+
+`cobranca_notificacao`, `ka_ruptura_rede`, `reativacao_win_back`, `saldo_envelhece`,
+`saldo_avisa_cliente`, `saldo_aviso_pre_entrega` — todas com `status_dados='precisa_dado'`.
+Não são candidatas a ativação até a fonte existir.
+
+### Candidatas reais a ativação, depois dos consertos (14)
+
+Com `status_dados='pronto'` e sem bloqueio conhecido: `saldo_parcial`,
+`saldo_pequeno_consolidar`, `saldo_agendar`, `saldo_sem_estoque`, `prep_liberar`,
+`prep_agendar`, `clube_a_vencer`, `cobranca_aviso_rep`, `cobranca_duplicata_cliente`,
+`reativacao_faixas`, `recompra_cross_sell`, `recompra_novo_produto`,
+`rep_roteiro_visitas`, `rep_sugestao_produto`.
+
+Ressalva: as de canal WhatsApp para cliente frio dependem de `template_ref` (item 2.2), e
+`recompra_cross_sell`/`recompra_novo_produto`/`rep_sugestao_produto` dependem de curva ABC
+por conta.
+
+---
+
+## 5. Ordem sugerida
+
+1. Passar a gravar `erro` na fila (1.5) — sem isso não se depura nada.
+2. Popular `contact_id` e `codparc` nos disparos (1.1, 1.2).
+3. Ligar os 190 rascunhos órfãos à fila (1.4).
+4. Descobrir por que `saldo_liberar`/`saldo_confirmar` não geram (1.3).
+5. Limpar o catálogo: tirar as 2 não-campanhas, corrigir `canais` e o mojibake (2.1–2.5).
+6. Ativar em lotes pequenos, medindo, a partir das 14 candidatas.

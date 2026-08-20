@@ -206,6 +206,8 @@
   var OPERAVEIS={clube_saldo:1,voucher_empurrar:1,recompra_giro_a_vencer:1,recompra_giro_vencido:1,rep_sem_comprar:1,recompra_cross_sell:1,rep_sugestao_produto:1,recompra_novo_produto:1};
   var MOTORC={recompra_cross_sell:1,rep_sugestao_produto:1,recompra_novo_produto:1};
   var ROT={rep_roteiro_visitas:1};
+  /* nao envia para cliente do Clube Nitron — regra aplicada na view voucher_cli */
+  var SEM_CLUBE={voucher_empurrar:1};
   var SAL={saldo_liberar:1,saldo_parcial:1,saldo_sem_estoque:1,saldo_pequeno_consolidar:1,prep_liberar:1}, SALMSG={}, SALMODO="liberar";
   function saldoEP(rep){var base=(CUR==="prep_liberar")?"campanhas-prep":("campanhas-saldo?modo="+SALMODO);return SUPA+"/functions/v1/"+base+(rep!=null?((base.indexOf("?")>=0?"&":"?")+"rep="+rep):"");}
   var COB={cobranca_duplicata_cliente:1,cobranca_aviso_rep:1,cobranca_juridico:1}, COBMSG={};
@@ -268,7 +270,7 @@
     getJSON(SUPA+"/functions/v1/campanhas-preview?codigo="+cod,function(d){if(d.erro){$("reps").innerHTML='<div style="padding:16px;color:#c0392b">'+d.erro+'</div>';return;}
       SOMA=(d.somaSaldo!==false);var uni=(cod==="clube_saldo")?"grupos":"clientes";
       var vlbl=(cod==="clube_saldo")?"disponível":"faturamento 12m";
-      $("op-nome").textContent=d.campanha||cod;$("op-meta").textContent="Sankhya · dados do snapshot · inadimplentes excluídos";
+      $("op-nome").textContent=d.campanha||cod;$("op-meta").textContent="Sankhya · dados do snapshot · inadimplentes excluídos"+(SEM_CLUBE[cod]?" · clientes do Clube Nitron excluídos":"");
       var k='<div class="kpi"><div class="n">'+d.totais.clientes+'</div><div class="l">'+uni+'</div></div><div class="kpi"><div class="n">'+d.totais.representantes+'</div><div class="l">representantes</div></div>';
       if(SOMA)k+='<div class="kpi s"><div class="n">'+brl(d.totais.saldo)+'</div><div class="l">'+vlbl+'</div></div>';
       $("op-kpis").innerHTML=k;

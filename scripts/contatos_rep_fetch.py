@@ -19,6 +19,7 @@ dados = {
  "ghl_cliente": get("ghl_cliente","codparc,razao"),
  "snap_contato": get("snap_contato","codparc,funcao,nome,email,fone"),
  "rep_contato_extra": get("rep_contato_extra","codvend,tipo,valor,rotulo,ativo"),
+ "ghl_sync_state": get("ghl_sync_state","id,done,scanned,atualizado"),
 }
 for k,v in dados.items(): print(f"{k:14} {len(v)}")
 json.dump(dados, io.open("dados.json","w",encoding="utf-8"))

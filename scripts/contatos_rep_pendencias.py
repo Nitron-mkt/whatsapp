@@ -82,16 +82,31 @@ for g in D["ghl_contato"]:
         corrigir = ("Confirme se é do escritório de " + reps[rep_cp] + ". Se for cliente, mova o contato "
                     "para a empresa do cliente no GHL: separar as empresas tira a marcação sozinho.")
     elif tem_cp and b["codparc"] == rep_cp:
-        cat, pri = "Marcação que a regra atual não criaria", 1
-        porque = ("A marcação diz que este contato é de " + reps[rep_cp] + " por ter casado o " +
-                  (campo or "e-mail/telefone") + (" (" + val + ")" if val else "") + ". Só que o espelho "
-                  "mostra o mesmo contato com AD_CODPARC=" + str(rep_cp) + " preenchido, e a regra atual do "
-                  "sync não marca contato que já tem AD_CODPARC. Ou seja: esta linha é anterior à correção "
-                  "do sync, ou o campo foi reposto depois dela. Marcada em " + quando + ".")
-        corrigir = ("Abra o contato: se o AD_CODPARC=" + str(rep_cp) + " estiver lá, a marcação é lixo antigo "
-                    "e a linha precisa ser apagada de ghl_contato (ghl_id " + gid + "). Se o campo estiver "
-                    "vazio, reponha AD_CODPARC=" + str(rep_cp) + " — com ele preenchido o sync passa a "
-                    "identificar o contato direto, sem depender de casar e-mail.")
+        base_em = str(b.get("atualizado",""))[:16].replace("T"," ")
+        # A marcacao ser MAIS NOVA que a linha base e a prova: nessa varredura o sync viu o
+        # contato e nao gravou a linha base (que so existe quando ha AD_CODPARC), mas gravou a
+        # marcacao (que so existe quando NAO ha). Ou seja: o campo esta vazio no CRM agora, e a
+        # linha base e apenas uma copia velha.
+        if str(g.get("atualizado","")) > str(b.get("atualizado","")):
+            cat, pri = "AD_CODPARC apagado no CRM", 1
+            porque = ("Casou o " + (campo or "e-mail/telefone") + " de " + reps[rep_cp] +
+                      (" (" + val + ")" if val else "") + ". Esta marcação é de " + quando + ", mais recente "
+                      "que a cópia direta do mesmo contato, que está congelada em " + base_em + " com "
+                      "AD_CODPARC=" + str(rep_cp) + ". Como a regra do sync só marca contato SEM AD_CODPARC, "
+                      "e a varredura mais recente marcou este, o campo está vazio no CRM agora — a cópia de " +
+                      base_em + " é só o registro de quando ele ainda existia.")
+            corrigir = ("Reponha AD_CODPARC=" + str(rep_cp) + " neste contato no CRM. É a causa: sem o campo, "
+                        "o contato só é reconhecido por casar e-mail, e volta a ser marcado em toda varredura. "
+                        "Depois de repor, a linha antiga (ghl_id " + gid + ") ainda precisa ser apagada de "
+                        "ghl_contato, porque o sync não apaga marcação.")
+        else:
+            cat, pri = "Marcação anterior à correção do sync", 1
+            porque = ("Casou o " + (campo or "e-mail/telefone") + " de " + reps[rep_cp] +
+                      (" (" + val + ")" if val else "") + ", mas o contato tem AD_CODPARC=" + str(rep_cp) +
+                      " (visto em " + base_em + ") e a regra atual do sync não marca quem já tem o campo. "
+                      "Esta marcação é de " + quando + " — anterior à correção da regra.")
+            corrigir = ("Nada a fazer no CRM: o contato já está certo. A linha precisa ser apagada de "
+                        "ghl_contato (ghl_id " + gid + ").")
     elif tem_cp and b["codparc"] != rep_cp:
         dono = reps.get(b["codparc"]) or razao.get(b["codparc"]) or ("cód. " + str(b["codparc"]))
         cat, pri = "Contato de outro cadastro marcado para o rep", 1
@@ -180,10 +195,14 @@ L=[("Pendências de contato de representante no CRM",""),
     "próprio? Quando a regra de hoje não criaria aquela marcação, ela está apontada como velha."),
    ("Total", f"{len(itens)} contatos marcados como sendo de representante."),
    ("",""),
-   ("Mudou desde a última lista", "Caiu de 195 para " + str(len(itens)) + " contatos marcados. Duas coisas "
-    "aconteceram: alguém limpou as marcações antigas da tabela espelho, e o ghl-contatos-sync foi corrigido "
-    "(v12) para não anexar ao representante um contato que já tem AD_CODPARC próprio. Isso eliminou de uma vez "
-    "a maior categoria da lista anterior, que era contato de cliente na ficha do rep."),
+   ("Mudou desde a última lista", str(len(itens)) + " contatos marcados, contra 55 na apuração das 16:17. "
+    "Nenhuma das 55 anteriores saiu da lista e entraram 7 novas. Isso não significa que ninguém corrigiu nada: "
+    "significa que corrigir no CRM não retira a marcação, porque o sync nunca apaga marcação #r — só cria. "
+    "Enquanto a linha não for apagada no banco, ela continua na lista mesmo com o CRM certo."),
+   ("A causa do crescimento", "A maior parte das marcações novas é de contato de representante que está SEM "
+    "o campo AD_CODPARC no CRM. Sem esse campo o contato só é reconhecido por casar e-mail com o cadastro do "
+    "rep, e é remarcado em toda varredura. A varredura das 18:17 gravou 6.149 contatos com o campo "
+    "preenchido, então o problema não é geral — é desses contatos específicos."),
    ("",""),
    ("Como ler as colunas",""),
    ("  Marca", "#r = casou pelo e-mail ou telefone do representante.  #biz = veio da mesma empresa do "

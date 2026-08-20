@@ -310,7 +310,7 @@
   function toggleCli(cod){var box=$("cli-"+cod),ex=$("ex-"+cod);if(box.classList.contains("show")){box.classList.remove("show");ex.textContent="▶";return;}box.classList.add("show");ex.textContent="▼";if(box.getAttribute("data-loaded"))return;
     box.innerHTML='<div id="repct-'+cod+'">'+repContatosHTML(cod)+'</div><div id="cliinner-'+cod+'"><div style="padding:6px 0;color:#6a7f78">carregando clientes e contatos…</div></div>';
     getJSON(SUPA+"/functions/v1/campanhas-preview?codigo="+CUR+"&rep="+cod,function(d){var inner=$("cliinner-"+cod);if(d.erro||!d.clientes){inner.innerHTML='<div style="color:#c0392b">erro</div>';return;}CLIENTES[cod]=d.clientes;ASSIST[cod]=d.assistente||null;var h="";
-      d.clientes.forEach(function(c,ci){var cval=(c.saldo!=null)?brl(c.saldo):((c.pct!=null?c.pct+"% ":"")+(c.validade?("até "+c.validade):""));h+='<div class="clrow"><div class="clhead" onclick="toggleCt('+cod+','+ci+')"><span id="cx-'+cod+'-'+ci+'" style="color:#6a7f78;width:12px">▶</span><b>'+esc(c.nome)+'</b><span style="color:#6a7f78;font-size:11px">'+(c.contatos.length)+' contato(s)</span><span class="cv">'+cval+'</span></div><div class="cts" id="ct-'+cod+'-'+ci+'">';
+      d.clientes.forEach(function(c,ci){var cval=(c.ticket!=null&&c.dias!=null)?("ticket médio "+brl(c.ticket)+" · "+c.dias+"d"):((c.saldo!=null)?brl(c.saldo):((c.pct!=null?c.pct+"% ":"")+(c.validade?("até "+c.validade):"")));h+='<div class="clrow"><div class="clhead" onclick="toggleCt('+cod+','+ci+')"><span id="cx-'+cod+'-'+ci+'" style="color:#6a7f78;width:12px">▶</span><b>'+esc(c.nome)+'</b><span style="color:#6a7f78;font-size:11px">'+(c.contatos.length)+' contato(s)</span><span class="cv">'+cval+'</span></div><div class="cts" id="ct-'+cod+'-'+ci+'">';
         c.contatos.forEach(function(ct,ti){var canal=ct.email?('✉ '+esc(ct.email)):(ct.fone?('📞 '+esc(ct.fone)):'');
           h+='<label class="ctrow"><input type="checkbox" class="ctchk" data-cod="'+cod+'" data-ci="'+ci+'" data-ti="'+ti+'"><span class="cf">'+esc(ct.funcao)+'</span><span>'+esc(ct.nome||"")+'</span><span class="cd">'+canal+'</span></label>';});
         h+='</div></div>';});
@@ -359,7 +359,7 @@
   function loadCliFlat(){var box=$("cliFlatList");if(box)box.innerHTML='<div class="note" style="padding:12px">carregando clientes…</div>';
     getJSON(SUPA+"/functions/v1/campanhas-preview?codigo="+CUR+"&flat=1",function(d){if(d.erro||!d.clientes){if(box)box.innerHTML='<div class="note" style="padding:12px;color:#c0392b">erro ao carregar</div>';return;}
       CLIFLAT=d.clientes;CLIFLAT_LOADED=true;CLISEL={};CLICT={};CLIFLAT.forEach(function(c){CLICT[c.codparc]=defaultSel(c);});previewModelo();renderCliFlat();});}
-  function cliVal(c){if(c.valtxt)return c.valtxt;return (c.saldo!=null)?brl(c.saldo):((c.pct!=null?c.pct+"%":"")+(c.validade?(" até "+c.validade):"")+(c.dias!=null?(c.dias+"d sem comprar"):""));}
+  function cliVal(c){if(c.valtxt)return c.valtxt;if(c.ticket!=null&&c.dias!=null)return "ticket médio "+brl(c.ticket)+" · "+c.dias+"d sem comprar";return (c.saldo!=null)?brl(c.saldo):((c.pct!=null?c.pct+"%":"")+(c.validade?(" até "+c.validade):"")+(c.dias!=null?(c.dias+"d sem comprar"):""));}
   function canaisResumo(c){var sel=CLICT[c.codparc]||{},ks=Object.keys(sel);if(!ks.length)return channelOpts(c).length?'<span class="nc">nenhum canal</span>':'<span class="nc">sem contato</span>';var w=0,e=0;ks.forEach(function(k){if(sel[k].canal==="whatsapp")w++;else e++;});var p=[];if(w)p.push("📞"+w);if(e)p.push("✉"+e);return '<span style="color:#12514c;font-weight:600">'+p.join(" · ")+'</span>';}
   function renderCliFlat(){var box=$("cliFlatList");if(!box)return;var q=($("cliBusca")?$("cliBusca").value:"").toLowerCase().trim();
     var vis=CLIFLAT.filter(function(c){if(!q)return true;return (String(c.nome||"")+" "+String(c.rep||"")).toLowerCase().indexOf(q)>=0;});
@@ -447,54 +447,14 @@
     $("roteiroFlow").innerHTML='<div class="note" style="padding:16px">carregando representantes…</div>';
     getJSON(SUPA+"/functions/v1/campanhas-roteiro",function(d){if(d.erro||!d.reps){$("roteiroFlow").innerHTML='<div class="note" style="padding:16px;color:#c0392b">erro ao carregar</div>';return;}
       $("op-kpis").innerHTML='<div class="kpi"><div class="n">'+d.reps.length+'</div><div class="l">representantes</div></div>';
-      ROTREPS=d.reps;ROTSEL={};var h='<div class="hint">🗺️ Marque os representantes e clique <b>Enfileirar selecionados</b> — ou clique no nome pra ver o roteiro: <b>âncoras</b> (maior faturamento com gatilho de giro/Clube) e a <b>rota dos vizinhos por CEP</b>, 4–6 visitas/dia.</div>'+rotBulkBar()+'<div class="list">';
-      d.reps.forEach(function(r){h+='<div class="rmain" style="cursor:pointer;padding:9px 12px" onclick="verRoteiro('+r.codvend+',this)"><input type="checkbox" class="rotchk" data-id="'+r.codvend+'" onclick="event.stopPropagation()" onchange="rotSel('+r.codvend+',this.checked)"><b>'+esc(r.rep||("Rep "+r.codvend))+'</b><span class="note" style="margin-left:8px">'+r.clientes+' pontos · '+r.prioritarios+' prioritários</span><span class="rv" style="margin-left:auto">'+brl(r.fat)+'</span></div><div class="rotbox" id="rot-'+r.codvend+'"></div>';});h+='</div>';$("roteiroFlow").innerHTML=h;rotSelCount();});}
+      var h='<div class="hint">🗺️ Clique no representante pra ver o roteiro: <b>âncoras</b> (maior faturamento com gatilho de giro/Clube) e a <b>rota dos vizinhos por CEP</b>, 4–6 visitas/dia.</div><div class="list">';
+      d.reps.forEach(function(r){h+='<div class="rmain" style="cursor:pointer;padding:9px 12px" onclick="verRoteiro('+r.codvend+',this)"><b>'+esc(r.rep||("Rep "+r.codvend))+'</b><span class="note" style="margin-left:8px">'+r.clientes+' pontos · '+r.prioritarios+' prioritários</span><span class="rv" style="margin-left:auto">'+brl(r.fat)+'</span></div><div class="rotbox" id="rot-'+r.codvend+'"></div>';});h+='</div>';$("roteiroFlow").innerHTML=h;});}
   function verRoteiro(cod,el){var box=$("rot-"+cod);if(!box)return;if(box.getAttribute("data-open")){box.innerHTML="";box.removeAttribute("data-open");return;}box.setAttribute("data-open","1");box.innerHTML='<div class="note" style="padding:8px 0 8px 14px">montando roteiro…</div>';getJSON(SUPA+"/functions/v1/campanhas-roteiro?rep="+cod,function(d){if(d.erro){box.innerHTML='<div class="note" style="color:#c0392b;padding-left:14px">erro</div>';return;}var h='<div class="note" style="padding:2px 0 8px 14px"><b>'+d.total+'</b> pontos de visita (redes agrupadas na sede) · roteiro dos <b>'+d.cobertos+'</b> prioritários em <b>'+d.dias.length+'</b> dias</div>';d.dias.forEach(function(dia){h+='<div class="kaCard" style="margin:6px 0 6px 14px"><div class="kaHead"><b>Dia '+dia.dia+'</b><span class="kaTag">base '+esc(dia.cidade_base||"")+'</span><span class="note">'+dia.clientes.length+' visitas</span></div>';h+='<div style="background:#f4f0fb;border-left:3px solid #5b3fa0;border-radius:0 6px 6px 0;padding:7px 10px;margin:4px 0 7px"><b style="color:#5b3fa0">🎯 Âncora da região: '+esc(dia.ancora_nome||"")+'</b><div class="note" style="margin-top:2px">puxa a visita porque: '+esc(dia.ancora_porque||"")+'</div></div>';dia.clientes.forEach(function(c){var isA=c.ancora;h+='<div class="ctopt" style="border-bottom:1px solid #eef2ef'+(isA?";background:#faf7ff":"")+'"><span class="cf" style="min-width:200px"><b>'+(c.ordem?c.ordem+") ":"")+'</b>'+(isA?"⭐ ":"")+esc(c.nome||"")+(c.lojas>1?' <span class="kaTag" style="background:#e7e0f5;color:#5b3fa0">rede '+c.lojas+' lojas</span>':"")+'</span><span class="note">'+esc(c.cidade||"")+' · CEP '+esc(c.cep||"")+(c.km!=null?' · ~'+c.km+'km':"")+' · '+esc(c.motivo)+'</span></div>';});h+='</div>';});ROTDATA[cod]={contatos:d.contatos||[],instancia:d.instancia||null,rep:d.rep||("Rep "+cod)};if((d.contatos||[]).length){h+='<div class="kaCard" style="margin:8px 14px 4px;background:#f7faf9"><div class="lab" style="padding:0 0 4px">✉️ Enviar o roteiro ao representante'+(d.instancia?(" · 📲 "+esc(d.instancia)):"")+'</div>';(d.contatos||[]).forEach(function(c,jj){h+='<label class="ctopt"><input type="checkbox" class="rotc-'+cod+'" data-j="'+jj+'" checked><span class="cf">'+(c.canal==="whatsapp"?"📱":"✉")+' '+esc(c.funcao||"Rep")+'</span><span>'+esc(c.valor)+'</span></label>';});h+='<textarea id="rotmsg-'+cod+'" rows="7" style="width:100%;margin-top:6px">'+esc(d.mensagem||"")+'</textarea><div class="dbtns" style="margin-top:6px"><button class="btn big ok" onclick="rotFila('+cod+')">📥 Colocar na fila</button><span class="note" id="rotfila-'+cod+'"></span></div></div>';}box.innerHTML=h;});}
   var ROTDATA={};
   function rotFila(cod){var m=ROTDATA[cod];if(!m)return;var st=$("rotfila-"+cod);st.textContent="enfileirando…";var texto=$("rotmsg-"+cod).value;var itens=[];
     document.querySelectorAll(".rotc-"+cod+":checked").forEach(function(cb){var c=m.contatos[+cb.getAttribute("data-j")];if(!c)return;if(c.canal==="email"){itens.push({campanha:"rep_roteiro_visitas",publico:"rep",canal:"email",email:c.valor,assunto:"Seu roteiro de visitas — Nitron",corpo:texto,nome:m.rep});}else{itens.push({campanha:"rep_roteiro_visitas",publico:"rep",canal:"whatsapp",fone:c.valor,instancia:m.instancia,corpo:texto,nome:m.rep});}});
     if(!itens.length){st.textContent="marque ao menos 1 contato";return;}
     postJSON(SUPA+"/functions/v1/fila-enfileirar",{itens:itens},function(r){st.innerHTML=r.ok?("<b style='color:#1a7f4b'>✓ "+r.enfileirados+" na fila</b>"):("✗ "+((r&&r.erro)||"falha"));});}
-  /* ===== ROTEIRO — selecao em massa dos representantes ===== */
-  var ROTSEL={}, ROTREPS=[];
-  function rotBulkBar(){var h='<div class="kaCard" style="background:#eef4f1;border:1px solid #d9e0dc;margin-bottom:10px">';
-    h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:13px">\u26a1 Envio em massa</b><button class="btn" onclick="rotSelAll(true)">Marcar todos</button><button class="btn" onclick="rotSelAll(false)">Limpar</button><span class="note" id="rotSelCount" style="margin-left:auto">0 selecionados</span></div>';
-    h+='<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:8px"><label class="ctopt" style="width:auto"><input type="checkbox" id="rotCanalW" checked> \ud83d\udcf1 WhatsApp</label><label class="ctopt" style="width:auto"><input type="checkbox" id="rotCanalE" checked> \u2709 E-mail</label><span class="note">cada rep recebe o roteiro dele, gerado na hora</span></div>';
-    h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn big ok" id="rotBulkBtn" onclick="rotBulkFila()">\ud83d\udce5 Enfileirar selecionados</button><span class="note" id="rotBulkSt"></span></div>';
-    h+='</div>';return h;}
-  function rotSel(id,on){ROTSEL[id]=on;rotSelCount();}
-  function rotSelAll(v){document.querySelectorAll(".rotchk").forEach(function(c){c.checked=v;ROTSEL[c.getAttribute("data-id")]=v;});rotSelCount();}
-  function rotSelCount(){var n=0;for(var k in ROTSEL)if(ROTSEL[k])n++;var e=$("rotSelCount");if(e)e.textContent=n+" selecionados";}
-  var ROT_LOTE=12;
-  function rotBulkFila(){var st=$("rotBulkSt"),btn=$("rotBulkBtn");var ids=[];for(var k in ROTSEL)if(ROTSEL[k])ids.push(k);
-    if(!ids.length){if(st)st.textContent="marque ao menos 1 representante";return;}
-    var wOn=$("rotCanalW")?$("rotCanalW").checked:true, eOn=$("rotCanalE")?$("rotCanalE").checked:true;
-    if(!wOn&&!eOn){if(st)st.textContent="escolha WhatsApp e/ou e-mail";return;}
-    if(btn){btn.disabled=true;btn.textContent="montando\u2026";}
-    var lotes=[];for(var i=0;i<ids.length;i+=ROT_LOTE)lotes.push(ids.slice(i,i+ROT_LOTE));
-    var itens=[],semct=0,feitos=0;
-    function fim(err){if(btn){btn.disabled=false;btn.textContent="\ud83d\udce5 Enfileirar selecionados";}
-      if(err){if(st)st.textContent="\u2717 "+err;return;}
-      if(!itens.length){if(st)st.textContent="selecionados sem contato cadastrado";return;}
-      if(st)st.textContent="enfileirando "+itens.length+"\u2026";
-      postJSON(SUPA+"/functions/v1/fila-enfileirar",{itens:itens},function(r){
-        if(st)st.innerHTML=r.ok?("<b style='color:#1a7f4b'>\u2713 "+r.enfileirados+" na fila</b> ("+feitos+" reps)"+(semct?(" \u00b7 "+semct+" sem contato"):"")):("\u2717 "+((r&&r.erro)||"falha"));});}
-    function proximo(){
-      if(!lotes.length)return fim(null);
-      var lote=lotes.shift();
-      if(st)st.textContent="montando roteiros\u2026 "+feitos+"/"+ids.length;
-      getJSON(SUPA+"/functions/v1/campanhas-roteiro?lote="+lote.join(","),function(d){
-        if(d.erro||!d.lote)return fim((d&&d.erro)||"falha ao montar roteiros");
-        d.lote.forEach(function(m){
-          var cts=m.contatos||[];
-          var w=wOn?cts.filter(function(c){return c.canal==="whatsapp"&&foneCel(c.valor)!==false;})[0]:null;
-          var e=eOn?cts.filter(function(c){return c.canal==="email";})[0]:null;
-          if(!w&&!e){semct++;return;}
-          feitos++;
-          if(w)itens.push({campanha:"rep_roteiro_visitas",publico:"rep",canal:"whatsapp",fone:w.valor,instancia:m.instancia,corpo:m.mensagem,nome:m.rep});
-          if(e)itens.push({campanha:"rep_roteiro_visitas",publico:"rep",canal:"email",email:e.valor,assunto:"Seu roteiro de visitas \u2014 Nitron",corpo:m.mensagem,nome:m.rep});});
-        proximo();});}
-    proximo();}
   /* ===== ENVIO EM MASSA (checkbox + template único editável) — reusável em cobrança/logística ===== */
   var ARTES=[];
   function bulkArteOpts(){var h='<option value="">Sem arte — usa o texto acima</option>';ARTES.forEach(function(a){h+='<option value="'+esc(a.id)+'">'+esc(a.nome)+'</option>';});return h;}

@@ -57,10 +57,18 @@ O Supabase não serve HTML, mas serve o **texto** do arquivo. Então quem hosped
 busca esse texto na hora de abrir, e publicar com `host-upload` já atualiza a página para
 todo mundo — sem redeploy, sem subir arquivo de novo.
 
-**Cloudflare Worker** (`deploy/worker/`) — é o que está no ar em
-`gestor-nitron.nicoletti-ricardo.workers.dev`. Busca o arquivo no Storage a cada request e
-devolve com `Content-Type: text/html`. O código deste repositório roteia por caminho:
-`/` e `/gestor` entregam o gestor, `/agenda` entrega a agenda.
+**Cloudflare Worker** (`deploy/worker/`) — é como o painel está no ar. Busca o arquivo no
+Storage a cada request e devolve com `Content-Type: text/html`.
+
+| Página | URL |
+| --- | --- |
+| Gestor de Campanhas | `https://gestordecampanhas.marketing-da5.workers.dev/` |
+| Agenda de Campanhas | `https://gestordecampanhas.marketing-da5.workers.dev/agenda` |
+
+Esse Worker está na conta Cloudflare da Nitron (`marketing@nitron.com.br`). Existe outro
+com o mesmo papel em `gestor-nitron.nicoletti-ricardo.workers.dev`, numa conta pessoal, que
+serve só o gestor — os dois leem o mesmo arquivo no Storage, então não há o que sincronizar
+entre eles.
 
 ```
 cd deploy/worker && wrangler deploy

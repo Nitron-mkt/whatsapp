@@ -11,19 +11,34 @@ Código do projeto Supabase `integracao-crm-sankhya` (`bwbeieumxcuomtrvlqxs`).
 - `supabase/functions/<slug>/index.ts` — Edge Functions.
 - `docs/` — documentação e revisões.
 
-As duas páginas ficam no Storage (bucket `app`) e são servidas pela Edge Function
-`gestor`, que existe só para devolver `Content-Type: text/html` — o Storage público
-serve tudo como `text/plain; nosniff`, o que faria o navegador mostrar o código.
+As duas páginas ficam no Storage (bucket `app`) e a Edge Function `gestor` escolhe o
+arquivo pelo caminho: `/gestor` entrega o `gestor.html`, `/gestor/agenda` entrega o
+`agenda.html`. Para acrescentar uma página nova, suba o HTML com `host-upload` e registre
+o arquivo no mapa `PAG` de `supabase/functions/gestor/index.ts`.
 
 ## Páginas
 
-| Página | URL |
+O Supabase **não serve HTML**. Está na documentação das Edge Functions:
+*"GET requests that return `text/html` will be rewritten to `text/plain`"* — o gateway
+troca o Content-Type e ainda manda `nosniff` + CSP `sandbox`, então o navegador mostra o
+código-fonte. Vale para o Storage também. Não há como hospedar a página dentro do
+`supabase.co`.
+
+Enquanto não houver um host estático, a função `gestor` entrega o arquivo para download:
+
+| Página | Baixar |
 | --- | --- |
 | Gestor de Campanhas | `https://bwbeieumxcuomtrvlqxs.supabase.co/functions/v1/gestor` |
 | Agenda de Campanhas | `https://bwbeieumxcuomtrvlqxs.supabase.co/functions/v1/gestor/agenda` |
 
-A função `gestor` roda com `verify_jwt=false`: as duas páginas já carregam a anon key
-no próprio HTML, então exigir header não protegia nada e impedia abrir no navegador.
+Baixe e abra com clique duplo: o painel funciona igual a partir de `file://`, porque o
+PostgREST reflete a origem no CORS (testado com `Origin: null`). Acrescentar `?inline=1`
+devolve `text/html` — serve para o dia em que as páginas estiverem atrás de um host
+próprio, hoje o gateway reescreve.
+
+Para ter URL de verdade, basta subir `app/gestor.html` e `app/agenda.html` em qualquer
+host estático (Cloudflare Pages, Netlify, ou a hospedagem do site da Nitron). As páginas
+são arquivo único, sem build, e falam com o Supabase por CORS.
 
 ## Publicar
 
@@ -35,6 +50,3 @@ for f in gestor agenda; do
     -H "Content-Type: text/html" --data-binary @app/$f.html
 done
 ```
-
-Para acrescentar uma página nova, suba o HTML com `host-upload` e registre o arquivo
-no mapa `PAG` de `supabase/functions/gestor/index.ts`.

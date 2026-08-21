@@ -1,11 +1,17 @@
-// gestor — serve as paginas do painel a partir do storage 'app' com Content-Type text/html
-// (o storage publico devolve tudo como text/plain + nosniff, por isso a pagina passa por aqui).
+// gestor — entrega as paginas do painel que estao no storage 'app'.
 //
-//   /functions/v1/gestor           -> gestor.html   (Gestor de Campanhas, intocado)
-//   /functions/v1/gestor/agenda    -> agenda.html   (Agenda de Campanhas, pagina nova)
+//   /functions/v1/gestor              -> gestor.html
+//   /functions/v1/gestor/agenda       -> agenda.html
+//   ...?dl=1                          -> baixa o arquivo (Content-Disposition: attachment)
 //
-// Publico de proposito: as duas paginas ja carregam a anon key no proprio HTML, entao exigir
-// header aqui nao protegia nada e impedia abrir o painel no navegador.
+// ATENCAO: o Supabase NAO serve HTML. Esta documentado:
+// "GET requests that return text/html will be rewritten to text/plain".
+// O gateway troca o Content-Type e ainda manda nosniff + CSP sandbox, entao o
+// navegador mostra o codigo-fonte em vez da pagina. Por isso o modo padrao aqui e
+// ?dl=1: baixa o arquivo, que abre normalmente com clique duplo (o painel fala com
+// o PostgREST por CORS, que aceita origem file://).
+// Para ter URL de verdade, as duas paginas precisam de um host estatico qualquer
+// fora do supabase.co — a pasta ja esta pronta pra isso, e so subir app/*.html.
 const BASE = (Deno.env.get("SUPABASE_URL") || "https://bwbeieumxcuomtrvlqxs.supabase.co") + "/storage/v1/object/public/app/";
 const PAG: Record<string, string> = { "": "gestor.html", "gestor": "gestor.html", "agenda": "agenda.html" };
 
@@ -13,7 +19,6 @@ Deno.serve(async (req) => {
   const txt = (s: string, st: number) => new Response(s, { status: st, headers: { "Content-Type": "text/plain; charset=utf-8" } });
   try {
     const u = new URL(req.url);
-    // o que vem depois do slug da funcao decide a pagina; ?p= serve de atalho
     const seg = u.pathname.split("/").filter(Boolean);
     const i = seg.lastIndexOf("gestor");
     const sub = (i >= 0 ? seg.slice(i + 1).join("/") : "") || u.searchParams.get("p") || "";
@@ -21,6 +26,12 @@ Deno.serve(async (req) => {
     if (!arq) return txt("pagina desconhecida: /" + sub + "\npaginas: /gestor · /gestor/agenda", 404);
     const r = await fetch(BASE + arq, { headers: { "cache-control": "no-cache" } });
     if (!r.ok) return txt("erro ao carregar " + arq + " (" + r.status + ")", 502);
-    return new Response(await r.text(), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" } });
+    const html = await r.text();
+    // inline=1 fica para o dia em que a pagina estiver atras de um host proprio
+    const inline = u.searchParams.get("inline") === "1";
+    const h: Record<string, string> = { "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" };
+    if (inline) h["Content-Type"] = "text/html; charset=utf-8";
+    else { h["Content-Type"] = "application/octet-stream"; h["Content-Disposition"] = 'attachment; filename="' + arq + '"'; }
+    return new Response(html, { headers: h });
   } catch (e) { return txt("erro: " + String(e), 500); }
 });

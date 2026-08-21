@@ -51,24 +51,33 @@ for f in gestor agenda; do
 done
 ```
 
-## Subir o painel num host estático (HostGator)
+## Subir o painel — as duas páginas se atualizam sozinhas
 
-`deploy/painel/` é a pasta pronta: as duas páginas, um `index.html` com o menu e um
-`.htaccess`. `deploy/painel-nitron.zip` é a mesma coisa empacotada para o gerenciador de
-arquivos do cPanel.
+O Supabase não serve HTML, mas serve o **texto** do arquivo. Então quem hospeda a página
+busca esse texto na hora de abrir, e publicar com `host-upload` já atualiza a página para
+todo mundo — sem redeploy, sem subir arquivo de novo.
 
-1. cPanel → Gerenciador de Arquivos → `public_html`
-2. Enviar `painel-nitron.zip` e usar **Extrair** — cria `public_html/painel/`
-3. Abrir `https://SEUDOMINIO/painel/`
-4. cPanel → **Privacidade de diretório**, marcar `painel` e criar usuário/senha
-
-O passo 4 não é opcional: as páginas carregam a anon key no próprio HTML e mostram
-carteira, faturamento e contato de cliente. Sem senha, quem souber o endereço vê tudo.
-O `.htaccess` já manda `noindex` e desliga cache do HTML, mas isso não é autenticação.
-
-Depois de mexer em `app/*.html`, copie para `deploy/painel/` e refaça o zip:
+**Cloudflare Worker** (`deploy/worker/`) — é o que está no ar em
+`gestor-nitron.nicoletti-ricardo.workers.dev`. Busca o arquivo no Storage a cada request e
+devolve com `Content-Type: text/html`. O código deste repositório roteia por caminho:
+`/` e `/gestor` entregam o gestor, `/agenda` entrega a agenda.
 
 ```
-cp app/gestor.html app/agenda.html deploy/painel/
-cd deploy && rm -f painel-nitron.zip && zip -qr painel-nitron.zip painel
+cd deploy/worker && wrangler deploy
 ```
+
+**HostGator** (`deploy/painel/`, empacotado em `deploy/painel-nitron.zip`) — `gestor.html`
+e `agenda.html` ali são carregadores de 40 linhas: buscam o arquivo no Storage com
+`?v=<agora>` e trocam o documento. Sobem uma vez e nunca mais.
+
+1. cPanel → Gerenciador de Arquivos → `public_html` → enviar o zip → **Extrair**
+2. Abrir `https://SEUDOMINIO/painel/`
+3. cPanel → **Privacidade de diretório**, marcar `painel`, criar usuário e senha
+
+O passo 3 não é opcional, e vale para qualquer host: as páginas carregam a anon key no
+próprio HTML e mostram carteira, faturamento e contato de cliente. Sem senha, quem souber
+o endereço vê tudo. `noindex` e cache desligado já vêm no `.htaccess`, mas isso não é
+autenticação — a URL do Worker, por exemplo, está aberta.
+
+Enquanto isso, `/functions/v1/gestor` e `/functions/v1/gestor/agenda` continuam entregando
+cada arquivo para download, para quem quiser abrir local.

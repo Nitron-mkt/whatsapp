@@ -62,8 +62,22 @@ Storage a cada request e devolve com `Content-Type: text/html`.
 
 | Página | URL |
 | --- | --- |
-| Gestor de Campanhas | `https://gestordecampanhas.marketing-da5.workers.dev/` |
-| Agenda de Campanhas | `https://gestordecampanhas.marketing-da5.workers.dev/agenda` |
+| Campanhas — Comercial | `https://gestordecampanhas.marketing-da5.workers.dev/` |
+| Campanhas — Logística | `https://gestordecampanhas.marketing-da5.workers.dev/logistica` |
+| Campanhas — Cobrança | `https://gestordecampanhas.marketing-da5.workers.dev/cobranca` |
+| Agenda da semana | `https://gestordecampanhas.marketing-da5.workers.dev/agenda` |
+
+As três áreas do gestor são **o mesmo `app/gestor.html`**: a página lê a área de
+`?area=` ou do caminho da URL e mostra só os pipes daquela área. Não há cópia do painel
+para manter em três lugares — mexer numa área é mexer no arquivo único.
+
+| Área | Pipes |
+| --- | --- |
+| Comercial | clube, recompra, reativacao, representantes, key_accounts, redes, aquisicao, inteligencia |
+| Logística | saldo, preparacao |
+| Cobrança | cobranca |
+
+Pipe novo que ninguém reivindicar cai em Comercial, para não desaparecer do painel.
 
 Esse Worker está na conta Cloudflare da Nitron (`marketing@nitron.com.br`). Existe outro
 com o mesmo papel em `gestor-nitron.nicoletti-ricardo.workers.dev`, numa conta pessoal, que

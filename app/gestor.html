@@ -94,6 +94,12 @@
   .mv .steps{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0 2px}
   .mv .steps span{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px 12px;color:var(--faint);font-size:11.5px;font-weight:600}
   .mv .steps b{color:var(--accent);margin-right:3px}
+  .mv .areas{display:flex;gap:6px;flex-wrap:wrap;margin:11px 0 0;align-items:center}
+  .mv .areas a{font-size:12.5px;font-weight:650;text-decoration:none;color:var(--soft);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 13px}
+  .mv .areas a:hover{border-color:var(--brand2);color:var(--brand2)}
+  .mv .areas a.on{background:var(--brand2);border-color:var(--brand2);color:#fff}
+  .mv .areas .qtd{opacity:.65;font-weight:500;margin-left:4px}
+  .mv .areas .gap{flex:1;min-width:8px}
   .mv .rmain:hover{background:#f6faf8}
   .mv .kpi .n{line-height:1.1}
   .mv .fila{margin:10px 0;padding:11px 13px;background:linear-gradient(100deg,#eef4f1,#e7f0ec);border:1px solid #cfe0d8;border-radius:11px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
@@ -103,10 +109,11 @@
 </head>
 <body>
 <div class="mv">
-  <div class="top"><div class="logo">N</div><div><h1>Gestor de Campanhas</h1><div class="sub" id="subEmpresa">Nitron · Máquina de Vendas</div></div>
+  <div class="top"><div class="logo">N</div><div><h1 id="tituloArea">Gestor de Campanhas</h1><div class="sub" id="subEmpresa">Nitron · Máquina de Vendas</div></div>
     <label class="note" style="margin-left:auto;margin-right:8px">Empresa:</label>
     <select id="empresa" onchange="trocarEmpresa()" style="margin-right:10px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;font-weight:600;background:#fff"></select>
     <span class="stat" id="stat">conectando…</span></div>
+  <div class="areas" id="areas"></div>
   <div class="steps"><span><b>1.</b> Escolha a campanha</span><span><b>2.</b> Marque reps e contatos</span><span><b>3.</b> Gere as mensagens</span><span><b>4.</b> Agende na fila (envia sozinho)</span></div>
   <div id="catalogo"></div>
   <div class="op" id="op">
@@ -201,8 +208,51 @@
   var $=function(id){return document.getElementById(id);};
   var esc=function(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");};
   var PIPES={clube:["💳","Clube"],saldo:["⚠️","Saldo / Ruptura"],recompra:["🔁","Recompra"],reativacao:["⏱️","Reativação"],representantes:["🤝","Representantes"],cobranca:["💰","Cobrança"],preparacao:["📦","Logística — Pedidos"],key_accounts:["👑","Key Accounts"],redes:["🏬","Promoção de Redes"],aquisicao:["🎯","Prospecção — novos"],inteligencia:["🧠","Inteligência"]};
+  /* ===== ÁREAS — este mesmo arquivo serve /gestor, /logistica e /cobranca.
+     A área sai do caminho da URL, então nao existe copia do painel pra manter. ===== */
+  var AREAS={
+    comercial:{nome:"Comercial",rota:"/gestor",
+      pipes:["clube","recompra","reativacao","representantes","key_accounts","redes","aquisicao","inteligencia"]},
+    logistica:{nome:"Logística",rota:"/logistica",
+      pipes:["saldo","preparacao"]},
+    cobranca:{nome:"Cobrança",rota:"/cobranca",
+      pipes:["cobranca"]}
+  };
+  function areaAtual(){
+    var q=(location.search.match(/[?&]area=([a-z]+)/)||[])[1];
+    if(q&&AREAS[q])return q;
+    var p=location.pathname.toLowerCase();
+    if(p.indexOf("cobranca")>=0)return "cobranca";
+    if(p.indexOf("logistica")>=0)return "logistica";
+    return "comercial";
+  }
+  var AREA=areaAtual();
+  function porArquivo(){return /\.html?$/i.test(location.pathname);}
+  /* Link de area sempre por ?area= sobre o caminho atual: vale no Worker (/gestor?area=x),
+     em arquivo solto (/painel/gestor.html?area=x) e tambem quando a pessoa chegou por
+     /logistica — ali a query manda. Os caminhos /logistica e /cobranca continuam valendo
+     para link direto e favorito; so nao dependemos deles pra navegar. */
+  function linkArea(a){return location.pathname+"?area="+a;}
+  function linkAgenda(){
+    if(porArquivo())return location.pathname.replace(/[^\/]*$/,"agenda.html");
+    return "/agenda";
+  }
+  /* uma campanha e clicavel se alguma tela sabe operar ela */
+  function clicavel(cod){return (OPERAVEIS[cod]||KA[cod]||ROT[cod]||SAL[cod]||COB[cod]||AGE[cod]||RET[cod]||IAP[cod]||PROS[cod]||TPL[cod]||REDES[cod])?1:0;}
+  function pintarAreas(cont){
+    var h="";
+    ["comercial","logistica","cobranca"].forEach(function(a){
+      var n=cont&&cont[a]!=null?' <span class="qtd">'+cont[a]+'</span>':"";
+      h+='<a href="'+linkArea(a)+'"'+(a===AREA?' class="on"':'')+'>'+AREAS[a].nome+n+'</a>';
+    });
+    h+='<span class="gap"></span><a href="'+linkAgenda()+'">📅 Agenda da semana</a>';
+    var e=$("areas"); if(e)e.innerHTML=h;
+    var t=$("tituloArea"); if(t)t.textContent="Campanhas — "+AREAS[AREA].nome;
+    document.title="Campanhas "+AREAS[AREA].nome+" — Nitron";
+  }
   var REDES={promocao_redes:1};
   var PROS={reativacao_180d:1,reativacao_faixas:1,prospeccao_aquisicao:1};
+  var PRIMEIRA="";
   var OPERAVEIS={clube_saldo:1,voucher_empurrar:1,recompra_giro_a_vencer:1,recompra_giro_vencido:1,rep_sem_comprar:1,recompra_cross_sell:1,rep_sugestao_produto:1,recompra_novo_produto:1};
   var MOTORC={recompra_cross_sell:1,rep_sugestao_produto:1,recompra_novo_produto:1};
   var ROT={rep_roteiro_visitas:1};
@@ -241,18 +291,26 @@
   function foneTag(v){var c=foneCel(v);return c===true?'<span style="font-size:10px;color:#1a7f4b">WhatsApp?</span>':(c===false?'<span style="font-size:10px;color:#b7791f">fixo</span>':'');}
   function rotFuzzy(r){return r==="CRM·empresa"||r==="CRM·casado";}
   function rotLabel(r){if(r==="CRM·empresa")return '<span class="cd" style="color:#b7791f">⚠ CRM·empresa — verificar</span>';if(r==="CRM·casado")return '<span class="cd" style="color:#b7791f">⚠ CRM·casado — verificar</span>';return r?'<span class="cd">'+esc(r)+'</span>':'';}
-  function init(){popEmpresas();getJSON(SUPA+"/functions/v1/campanhas-listar",function(d){if(d.erro){$("stat").textContent="erro";return;}$("stat").textContent="conectado ✓";$("stat").className="stat ok";renderCat(d.campanhas||[]);abrir("clube_saldo");});
+  function init(){popEmpresas();getJSON(SUPA+"/functions/v1/campanhas-listar",function(d){if(d.erro){$("stat").textContent="erro";return;}$("stat").textContent="conectado ✓";$("stat").className="stat ok";renderCat(d.campanhas||[]);abrir(PRIMEIRA||"clube_saldo");});
     getJSON(SUPA+"/functions/v1/campanhas-artes",function(d){ARTES=(d&&d.artes)||[];var s=$("arte");if(s){ARTES.forEach(function(a){var o=document.createElement("option");o.value=a.id;o.textContent=a.nome;o.setAttribute("data-preview",a.preview||"");s.appendChild(o);});}var an=$("arteNote");if(an){if(d&&d.motivo)an.innerHTML='<span style="color:#b7791f">⚠ '+esc(d.motivo)+' · as artes voltam quando a cota do GHL reabre (à noite)</span>';else if(!ARTES.length)an.textContent="nenhuma arte no GHL ainda — monte no construtor de e-mails do CRM";else an.textContent=ARTES.length+" arte(s) do CRM disponível(is)";}});}
   function verArte(){var s=$("arte");var opt=s&&s.selectedIndex>=0?s.options[s.selectedIndex]:null;var url=opt?opt.getAttribute("data-preview"):"";var prev=$("artePrev");if(!prev)return;
     if(!s.value||!url){prev.style.display="none";prev.innerHTML="";return;}
     prev.style.display="block";
     prev.innerHTML='<div style="border:1px solid #d9e0dc;border-radius:9px;overflow:hidden"><div style="background:#eef4f1;padding:6px 10px;font-size:11.5px;color:#41564f;display:flex;align-items:center"><b>👁 Prévia da arte:</b> <span style="margin-left:5px">'+esc(opt.textContent)+'</span><a href="'+esc(url)+'" target="_blank" style="margin-left:auto;color:#0b6f86;font-weight:600">abrir em nova aba ↗</a></div><iframe src="'+esc(url)+'" style="width:100%;height:440px;border:0;background:#fff"></iframe></div>';}
-  function renderCat(camps){var by={};camps.forEach(function(c){(by[c.pipe]=by[c.pipe]||[]).push(c);});var order=["clube","saldo","recompra","reativacao","representantes","cobranca","preparacao","key_accounts","redes","aquisicao","inteligencia"],html="";
+  function renderCat(camps){var by={};camps.forEach(function(c){(by[c.pipe]=by[c.pipe]||[]).push(c);});
+    /* conta por area pra barra de cima, e monta so os pipes desta area */
+    var reserv={};["logistica","cobranca"].forEach(function(a){AREAS[a].pipes.forEach(function(x){reserv[x]=a;});});
+    var cont={comercial:0,logistica:0,cobranca:0};
+    camps.forEach(function(c){cont[reserv[c.pipe]||"comercial"]++;});
+    pintarAreas(cont);
+    var order=AREAS[AREA].pipes.slice();
+    if(AREA==="comercial")Object.keys(by).forEach(function(pk){if(!reserv[pk]&&order.indexOf(pk)<0)order.push(pk);});
+    PRIMEIRA="";var html="";
     order.forEach(function(pk){if(!by[pk])return;var pi=PIPES[pk]||["•",pk];html+='<div class="pipe"><h2>'+pi[0]+' '+pi[1]+'</h2><div class="cards">';
-      by[pk].forEach(function(c){var op=OPERAVEIS[c.codigo]?1:0;var ka=KA[c.codigo]?1:0;var rot=ROT[c.codigo]?1:0;var sal=SAL[c.codigo]?1:0;var cob=COB[c.codigo]?1:0;var age=AGE[c.codigo]?1:0;var ret=RET[c.codigo]?1:0;var iap=IAP[c.codigo]?1:0;var pro=PROS[c.codigo]?1:0;var tpl=TPL[c.codigo]?1:0;var red=REDES[c.codigo]?1:0;var clr=(op||ka||rot||sal||cob||age||ret||iap||pro||tpl||red)?1:0;var bg=c.status_dados==="pronto"?'<span class="tg t-ok">'+(c.ativa?"ativa":"pronta")+'</span>':(c.status_dados==="proposta"?'<span class="tg t-need" style="background:#efe7fb;color:#5b3fa0">proposta IA</span>':'<span class="tg t-need">precisa dado</span>');
+      by[pk].forEach(function(c){var op=OPERAVEIS[c.codigo]?1:0;var ka=KA[c.codigo]?1:0;var rot=ROT[c.codigo]?1:0;var sal=SAL[c.codigo]?1:0;var cob=COB[c.codigo]?1:0;var age=AGE[c.codigo]?1:0;var ret=RET[c.codigo]?1:0;var iap=IAP[c.codigo]?1:0;var pro=PROS[c.codigo]?1:0;var tpl=TPL[c.codigo]?1:0;var red=REDES[c.codigo]?1:0;var clr=clicavel(c.codigo);if(clr&&!PRIMEIRA)PRIMEIRA=c.codigo;var bg=c.status_dados==="pronto"?'<span class="tg t-ok">'+(c.ativa?"ativa":"pronta")+'</span>':(c.status_dados==="proposta"?'<span class="tg t-need" style="background:#efe7fb;color:#5b3fa0">proposta IA</span>':'<span class="tg t-need">precisa dado</span>');
         html+='<div class="cc'+(clr?" on":"")+'" id="cc-'+c.codigo+'"'+(clr?' onclick="abrir(\''+c.codigo+'\')"':'')+'><div class="nm">'+esc(c.nome)+'</div><div class="ob">'+esc(c.objetivo||"")+'</div>'+bg+(op?' <span class="tg t-ok">operável</span>':'')+(ka?' <span class="tg t-ok">briefing</span>':'')+(rot?' <span class="tg t-ok">roteiro</span>':'')+(sal?' <span class="tg t-ok">logística</span>':'')+(cob?' <span class="tg t-ok">cobrança</span>':'')+(age?' <span class="tg t-ok">agendamento</span>':'')+(ret?' <span class="tg t-ok">logística</span>':'')+(iap?' <span class="tg t-ok">inteligência</span>':'')+(pro?' <span class="tg t-ok">contatos (Motor)</span>':'')+(tpl?' <span class="tg t-ok">templates</span>':'')+(red?' <span class="tg t-ok">store-check</span>':'')+'</div>';});
       html+='</div></div>';});$("catalogo").innerHTML=html;}
-  function abrir(cod){if(!OPERAVEIS[cod]&&!KA[cod]&&!ROT[cod]&&!SAL[cod]&&!COB[cod]&&!AGE[cod]&&!RET[cod]&&!IAP[cod]&&!PROS[cod]&&!TPL[cod]&&!REDES[cod])return;CUR=cod;document.querySelectorAll(".cc").forEach(function(e){e.classList.remove("sel");});var cc=$("cc-"+cod);if(cc)cc.classList.add("sel");
+  function abrir(cod){if(!clicavel(cod))return;CUR=cod;document.querySelectorAll(".cc").forEach(function(e){e.classList.remove("sel");});var cc=$("cc-"+cod);if(cc)cc.classList.add("sel");
     $("op").classList.add("show");
     if(REDES[cod]){$("opFlow").style.display="none";$("roteiroFlow").style.display="none";$("kaFlow").style.display="";return abrirRedes(cod);}
     if(TPL[cod]){$("opFlow").style.display="none";$("roteiroFlow").style.display="none";$("kaFlow").style.display="";return abrirTemplates(cod);}

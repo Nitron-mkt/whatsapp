@@ -17,6 +17,7 @@
   .top .dir{margin-left:auto;display:flex;gap:8px;align-items:center}
   .top a{color:#cfe6df;font-size:12px;text-decoration:none;border:1px solid rgba(255,255,255,.35);padding:5px 10px;border-radius:6px}
   .top a:hover{background:rgba(255,255,255,.12)}
+  .top a.on{background:rgba(255,255,255,.2);color:#fff;border-color:rgba(255,255,255,.55)}
   .abas{display:flex;gap:2px;padding:0 18px;background:var(--verde);}
   .aba{padding:8px 14px;font-size:13px;color:#cfe6df;cursor:pointer;border-radius:7px 7px 0 0}
   .aba.on{background:var(--fundo);color:var(--tinta);font-weight:bold}
@@ -125,7 +126,7 @@
     <h1>📅 Agenda de Campanhas</h1>
     <div class="sub">o que rodou, o que está planejado e o que faz sentido mandar depois</div>
   </div>
-  <div class="dir"><a href="gestor.html" id="lnkGestor">Gestor de Campanhas ↗</a></div>
+  <div class="dir" id="navAreas"></div>
 </div>
 <div class="abas">
   <div class="aba on" id="abaSem" onclick="verAba('semana')">Semana</div>
@@ -752,6 +753,22 @@ $("fCamp") && $("fCamp").addEventListener("change", function(){
 });
 $("modal").addEventListener("click", function(ev){ if (ev.target === this) fechar(); });
 document.addEventListener("keydown", function(ev){ if (ev.key === "Escape") fechar(); });
+
+// mesma navegacao do Gestor: por caminho (/logistica) quando servido pelo Worker,
+// por ?area= quando os arquivos estao soltos num host estatico
+(function(){
+  var porArquivo = /\.html?$/i.test(location.pathname);
+  var areas = [["comercial","Comercial","/gestor"],["logistica","Logística","/logistica"],["cobranca","Cobrança","/cobranca"]];
+  var h = "";
+  areas.forEach(function(a){
+    var href = (porArquivo
+      ? location.pathname.replace(/[^\/]*$/,"gestor.html")
+      : "/gestor") + "?area=" + a[0];
+    h += '<a href="' + href + '">' + a[1] + '</a>';
+  });
+  h += '<a class="on" href="' + location.pathname + '">📅 Agenda</a>';
+  var e = $("navAreas"); if (e) e.innerHTML = h;
+})();
 
 HOJE = hojeSP(); SEG = segDa(HOJE);
 carrega();

@@ -50,3 +50,25 @@ for f in gestor agenda; do
     -H "Content-Type: text/html" --data-binary @app/$f.html
 done
 ```
+
+## Subir o painel num host estático (HostGator)
+
+`deploy/painel/` é a pasta pronta: as duas páginas, um `index.html` com o menu e um
+`.htaccess`. `deploy/painel-nitron.zip` é a mesma coisa empacotada para o gerenciador de
+arquivos do cPanel.
+
+1. cPanel → Gerenciador de Arquivos → `public_html`
+2. Enviar `painel-nitron.zip` e usar **Extrair** — cria `public_html/painel/`
+3. Abrir `https://SEUDOMINIO/painel/`
+4. cPanel → **Privacidade de diretório**, marcar `painel` e criar usuário/senha
+
+O passo 4 não é opcional: as páginas carregam a anon key no próprio HTML e mostram
+carteira, faturamento e contato de cliente. Sem senha, quem souber o endereço vê tudo.
+O `.htaccess` já manda `noindex` e desliga cache do HTML, mas isso não é autenticação.
+
+Depois de mexer em `app/*.html`, copie para `deploy/painel/` e refaça o zip:
+
+```
+cp app/gestor.html app/agenda.html deploy/painel/
+cd deploy && rm -f painel-nitron.zip && zip -qr painel-nitron.zip painel
+```

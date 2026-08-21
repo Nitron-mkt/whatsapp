@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Máquina de Vendas — Nitron</title>
+<style>
+  :root{--verde:#12514C;--tinta:#16211e;--tinta2:#5c6b66;--linha:#dfe6e2;--fundo:#f4f6f5;--papel:#fff}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--fundo);color:var(--tinta);font:14px/1.45 Arial,Helvetica,sans-serif}
+  .top{background:var(--verde);color:#fff;padding:14px 18px}
+  .top h1{margin:0;font-size:17px;letter-spacing:.2px}
+  .top .sub{font-size:12px;opacity:.85;margin-top:2px}
+  .wrap{max-width:760px;margin:0 auto;padding:22px 18px 40px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+  a.card{display:block;background:var(--papel);border:1px solid var(--linha);border-left:4px solid var(--verde);
+         border-radius:10px;padding:15px 17px;text-decoration:none;color:inherit}
+  a.card:hover{background:#f8fbfa;border-left-color:#1a7f4b}
+  a.card b{display:block;font-size:16px;margin-bottom:4px}
+  a.card span{color:var(--tinta2);font-size:12.5px}
+  .nota{margin-top:18px;font-size:12px;color:var(--tinta2);border-top:1px solid var(--linha);padding-top:12px}
+</style>
+<div class="top">
+  <h1>Máquina de Vendas Nitron</h1>
+  <div class="sub">painéis de campanha</div>
+</div>
+<div class="wrap">
+  <div class="cards">
+    <a class="card" href="gestor.html">
+      <b>Gestor de Campanhas</b>
+      <span>Monta o público, revisa a mensagem e coloca na fila de disparo.</span>
+    </a>
+    <a class="card" href="agenda.html">
+      <b>Agenda de Campanhas</b>
+      <span>Calendário da semana: o que rodou, o que está planejado, o que faz sentido mandar
+      depois — e por que naquele dia.</span>
+    </a>
+  </div>
+  <div class="nota">
+    As duas páginas leem o Supabase direto do navegador. Se algum número não aparecer,
+    recarregue com Ctrl+F5 — não há cache do lado do servidor.
+  </div>
+</div>

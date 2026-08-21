@@ -1,0 +1,22 @@
+# Painel da Máquina de Vendas Nitron — pasta estática, sem PHP, sem banco.
+# Os arquivos são HTML de página única e falam com o Supabase pelo navegador.
+
+# Sem listagem de diretório
+Options -Indexes
+
+<IfModule mod_headers.c>
+  # As páginas leem dados ao vivo: não deixe o navegador nem o CDN guardarem o HTML,
+  # senão a equipe continua vendo a versão antiga depois de cada publicação.
+  <FilesMatch "\.html$">
+    Header set Cache-Control "no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    # Fora do índice do Google: a página carrega dados de cliente.
+    Header set X-Robots-Tag "noindex, nofollow, noarchive"
+  </FilesMatch>
+</IfModule>
+
+# PROTEÇÃO POR SENHA — recomendado.
+# Não escreva as linhas de AuthUserFile na mão: o caminho do .htpasswd muda por conta.
+# No cPanel do HostGator use "Privacidade de diretório" / "Directory Privacy",
+# selecione esta pasta, marque "proteger" e crie o usuário. O cPanel escreve
+# o bloco correto aqui embaixo sozinho.

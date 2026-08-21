@@ -1,4 +1,6 @@
-// campanhas-roteiro (v9) — DISTANCIA REAL (haversine via cep_geo) com teto MAX_KM/dia; fallback regiao de CEP p/ sem coord. Agrupa por matriz. Ordem NN. Msg detalhada+numerada+espacada (com km). Exclui inad+intra.
+// campanhas-roteiro (v12) — le de roteiro_cliente_apto: fora quem tem pendencia financeira
+// (inadimplente ou titulo vencido) e quem esta com giro em dia. Mensagem em tom de apoio.
+// (v9) — DISTANCIA REAL (haversine via cep_geo) com teto MAX_KM/dia; fallback regiao de CEP p/ sem coord. Agrupa por matriz. Ordem NN. Msg detalhada+numerada+espacada (com km). Exclui inad+intra.
 // v9: modo ?lote=<csv de codvend> monta o roteiro de vários reps numa chamada (geo/intra carregados uma vez), p/ o envio em massa do painel.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type, apikey", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
@@ -44,9 +46,9 @@ function montar(rep: number, rows: any[], sr: any, geo: Map<string, any>) {
   }
   const contatos: any[] = []; const seen: any = {};
   if (sr) { pushCanal(contatos, seen, "whatsapp", sr.celular, "Sankhya"); pushCanal(contatos, seen, "whatsapp", sr.fone_parc, "Sankhya"); pushCanal(contatos, seen, "email", sr.email, "Sankhya"); pushCanal(contatos, seen, "email", sr.email_crm, "CRM"); }
-  let msg = "Oi " + nome + "! Segue seu ROTEIRO DE VISITAS priorizado — " + visitados.size + " contas em " + dias.length + " dias, agrupadas por PROXIMIDADE (ate " + MAX_KM + "km/dia). Comece pela ANCORA de cada dia:\n";
-  dias.forEach((d: any) => { msg += "\n━━━ DIA " + d.dia + " · " + (d.cidade_base || "") + " e regiao (" + d.clientes.length + " visitas) ━━━\n🎯 Ancora: " + d.ancora_nome + " — " + d.ancora_porque + "\n\nSequencia de visita:\n"; d.clientes.forEach((c: any) => { msg += "\n" + c.ordem + ") " + (c.ancora ? "⭐ " : "") + c.nome + "\n   " + (c.cidade || "") + " · CEP " + c.cep + (c.km != null ? (" · ~" + c.km + "km da ancora") : "") + " · " + c.motivo + "\n"; }); });
-  msg += "\nFoco: fechar as ancoras (giro vencendo / conta relevante / Clube). Qualquer duvida, chama!";
+  let msg = "Oi " + nome + ", tudo bem?\n\nSeparamos alguns clientes que podem fazer sentido para voce incluir na sua rota, pensando na proximidade entre eles — " + visitados.size + " contas distribuidas em " + dias.length + " dias, ate " + MAX_KM + "km por dia. E uma sugestao para facilitar o caminho; sinta-se livre para ajustar do jeito que funciona melhor pra voce.\n";
+  dias.forEach((d: any) => { msg += "\n━━━ DIA " + d.dia + " · " + (d.cidade_base || "") + " e regiao (" + d.clientes.length + " visitas) ━━━\n📍 Referencia da regiao: " + d.ancora_nome + " — " + d.ancora_porque + "\n\nSugestao de sequencia:\n"; d.clientes.forEach((c: any) => { msg += "\n" + c.ordem + ") " + (c.ancora ? "⭐ " : "") + c.nome + "\n   " + (c.cidade || "") + " · CEP " + c.cep + (c.km != null ? (" · ~" + c.km + "km da referencia") : "") + " · " + c.motivo + "\n"; }); });
+  msg += "\nO que podemos fazer para te ajudar nessa rota? Se tiver algum cliente em que voce queira um apoio antes da visita, ou alguma informacao que a gente possa levantar (historico de compra, mix, condicao comercial), me fala que eu preparo.";
   return { rep: nome, codvend: rep, instancia: sr?.assistente || null, contatos, total: nodes.length, cobertos: visitados.size, dias, mensagem: msg };
 }
 
@@ -62,7 +64,7 @@ Deno.serve(async (req) => {
       const cvs = Array.from(new Set(loteParam.split(",").map((x) => parseInt(x)).filter((x) => !isNaN(x)))).slice(0, LOTE_MAX);
       if (!cvs.length) return j({ erro: "lote vazio" }, 400);
       const geo = await loadGeo(sb);
-      const cli: any[] = []; { let f = 0; while (true) { const { data } = await sb.from("roteiro_cliente").select("*").in("codvend", cvs).eq("inad", false).range(f, f + 999); (data || []).forEach((r: any) => cli.push(r)); if (!data || data.length < 1000) break; f += 1000; } }
+      const cli: any[] = []; { let f = 0; while (true) { const { data } = await sb.from("roteiro_cliente_apto").select("*").in("codvend", cvs).range(f, f + 999); (data || []).forEach((r: any) => cli.push(r)); if (!data || data.length < 1000) break; f += 1000; } }
       const { data: srs } = await sb.from("snap_rep").select("*").in("codvend", cvs);
       const srBy: Record<string, any> = {}; (srs || []).forEach((s: any) => srBy[String(s.codvend)] = s);
       const byRep: Record<string, any[]> = {};
@@ -73,14 +75,14 @@ Deno.serve(async (req) => {
 
     if (!repParam) {
       const byRep: Record<string, any[]> = {}; let from = 0;
-      while (true) { const { data } = await sb.from("roteiro_cliente").select("codparc,codparcmatriz,codvend,rep,fat12m,dias,clube_saldo").eq("inad", false).range(from, from + 999); (data || []).forEach((c: any) => { if (c.codvend == null || intra.has(Number(c.codparc))) return; (byRep[c.codvend] = byRep[c.codvend] || []).push(c); }); if (!data || data.length < 1000) break; from += 1000; }
+      while (true) { const { data } = await sb.from("roteiro_cliente_apto").select("codparc,codparcmatriz,codvend,rep,fat12m,dias,clube_saldo").range(from, from + 999); (data || []).forEach((c: any) => { if (c.codvend == null || intra.has(Number(c.codparc))) return; (byRep[c.codvend] = byRep[c.codvend] || []).push(c); }); if (!data || data.length < 1000) break; from += 1000; }
       const reps = Object.keys(byRep).map((cv) => { const nodes = agrupar(byRep[cv]); const rep = (byRep[cv][0] || {}).rep; return { codvend: Number(cv), rep, clientes: nodes.length, prioritarios: nodes.filter((n) => gatilho(n).any).length, fat: Math.round(nodes.reduce((a, b) => a + (Number(b.fat12m) || 0), 0)) }; }).sort((a, b) => b.prioritarios - a.prioritarios || b.fat - a.fat);
       return j({ reps });
     }
 
     const rep = parseInt(repParam);
     const geo = await loadGeo(sb);
-    const todas: any[] = []; { let f = 0; while (true) { const { data } = await sb.from("roteiro_cliente").select("*").eq("codvend", rep).eq("inad", false).range(f, f + 999); (data || []).forEach((r: any) => todas.push(r)); if (!data || data.length < 1000) break; f += 1000; } }
+    const todas: any[] = []; { let f = 0; while (true) { const { data } = await sb.from("roteiro_cliente_apto").select("*").eq("codvend", rep).range(f, f + 999); (data || []).forEach((r: any) => todas.push(r)); if (!data || data.length < 1000) break; f += 1000; } }
     const rows = todas.filter((c: any) => !intra.has(Number(c.codparc)));
     const { data: sr } = await sb.from("snap_rep").select("*").eq("codvend", rep).maybeSingle();
     return j(montar(rep, rows, sr, geo));

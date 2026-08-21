@@ -1,0 +1,748 @@
+<meta charset="utf-8">
+<title>Diagnóstico da Máquina de Vendas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;450;500;600&display=swap">
+
+<style>
+  :root{
+    --ground:#f2f5f3; --surface:#ffffff; --surface2:#e9efec; --sunk:#dde6e2;
+    --ink:#131c1a; --ink2:#54635e; --ink3:#7d8b86;
+    --line:#d7e1dc; --hair:#e6ecea;
+    --accent:#12514c; --accent2:#1a7f4b;
+    --crit:#a02b2b; --crit-bg:#f7e6e5;
+    --warn:#96631a; --warn-bg:#f8f0dd;
+    --ok:#17724a; --ok-bg:#e3f1e8;
+    --band:#0f4641; --band-ink:#eaf4f1; --band-ink2:#9fc6be;
+    --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
+    --cond:"IBM Plex Sans Condensed","IBM Plex Sans",Arial Narrow,Arial,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#0b1211; --surface:#121b19; --surface2:#18231f; --sunk:#0f1817;
+      --ink:#e5efeb; --ink2:#94a5a0; --ink3:#71827d;
+      --line:#25322e; --hair:#1d2926;
+      --accent:#5cb6a7; --accent2:#54c288;
+      --crit:#e79191; --crit-bg:#2a1817;
+      --warn:#d7ab63; --warn-bg:#271f12;
+      --ok:#74d3a0; --ok-bg:#12241a;
+      --band:#0d3b37; --band-ink:#e7f2ef; --band-ink2:#8fbab2;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#0b1211; --surface:#121b19; --surface2:#18231f; --sunk:#0f1817;
+    --ink:#e5efeb; --ink2:#94a5a0; --ink3:#71827d;
+    --line:#25322e; --hair:#1d2926;
+    --accent:#5cb6a7; --accent2:#54c288;
+    --crit:#e79191; --crit-bg:#2a1817;
+    --warn:#d7ab63; --warn-bg:#271f12;
+    --ok:#74d3a0; --ok-bg:#12241a;
+    --band:#0d3b37; --band-ink:#e7f2ef; --band-ink2:#8fbab2;
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:var(--sans); font-size:16px; line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px; margin:0 auto; padding:0 24px}
+
+  /* ---------- faixa de topo ---------- */
+  .band{background:var(--band); color:var(--band-ink); padding:34px 0 0}
+  .band .eyebrow{
+    font-family:var(--mono); font-size:11.5px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--band-ink2); margin:0 0 10px;
+  }
+  .band h1{
+    font-family:var(--cond); font-weight:700; font-size:clamp(32px,5.2vw,52px);
+    line-height:1.04; letter-spacing:-.01em; margin:0 0 12px; text-wrap:balance;
+  }
+  .band .lede{max-width:64ch; color:var(--band-ink); opacity:.9; margin:0 0 26px; font-size:17px}
+  .figs{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px; background:rgba(255,255,255,.14)}
+  .fig{background:var(--band); padding:16px 18px 20px}
+  .fig b{
+    display:block; font-family:var(--cond); font-weight:600; font-size:34px; line-height:1;
+    font-variant-numeric:tabular-nums; color:#fff;
+  }
+  .fig span{
+    display:block; margin-top:6px; font-family:var(--mono); font-size:11px;
+    letter-spacing:.08em; text-transform:uppercase; color:var(--band-ink2); line-height:1.4;
+  }
+  .fig.alarme b{color:#ffb3b3}
+
+  /* ---------- navegação ---------- */
+  nav{
+    position:sticky; top:0; z-index:10; background:var(--surface);
+    border-bottom:1px solid var(--line);
+  }
+  nav ul{
+    display:flex; gap:0; margin:0; padding:0; list-style:none; overflow-x:auto;
+    font-family:var(--mono); font-size:12px;
+  }
+  nav a{
+    display:block; padding:12px 15px; color:var(--ink2); text-decoration:none; white-space:nowrap;
+    border-bottom:2px solid transparent;
+  }
+  nav a:hover,nav a:focus-visible{color:var(--ink); border-bottom-color:var(--accent); background:var(--surface2)}
+
+  /* ---------- seções ---------- */
+  section{padding:46px 0 8px; border-bottom:1px solid var(--hair)}
+  section:last-of-type{border-bottom:0}
+  h2{
+    font-family:var(--cond); font-weight:700; font-size:29px; line-height:1.12;
+    margin:0 0 6px; letter-spacing:-.005em; text-wrap:balance;
+  }
+  h2 .num{
+    font-family:var(--mono); font-size:12px; font-weight:500; color:var(--accent);
+    letter-spacing:.1em; display:block; margin-bottom:9px;
+  }
+  h3{font-family:var(--cond); font-weight:600; font-size:19px; margin:30px 0 8px}
+  p{margin:0 0 14px; max-width:68ch}
+  .sub{color:var(--ink2); max-width:68ch; margin:0 0 22px}
+  ul.corpo{max-width:68ch; padding-left:20px; margin:0 0 16px}
+  ul.corpo li{margin-bottom:7px}
+  strong{font-weight:600}
+  code,.m{font-family:var(--mono); font-size:.88em; background:var(--surface2); padding:1px 5px; border-radius:2px}
+
+  /* ---------- tabelas ---------- */
+  .rolo{overflow-x:auto; margin:0 0 22px; border:1px solid var(--line); background:var(--surface)}
+  table{width:100%; border-collapse:collapse; font-size:14px; min-width:560px}
+  th{
+    text-align:left; font-family:var(--mono); font-weight:500; font-size:11px;
+    letter-spacing:.09em; text-transform:uppercase; color:var(--ink2);
+    padding:10px 14px; border-bottom:1px solid var(--line); background:var(--surface2);
+    white-space:nowrap;
+  }
+  td{padding:9px 14px; border-bottom:1px solid var(--hair); vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  td.n,th.n{text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; white-space:nowrap}
+  td.cod{font-family:var(--mono); font-size:12.5px; white-space:nowrap}
+  tbody tr:hover td{background:var(--surface2)}
+
+  /* ---------- selos ---------- */
+  .selo{
+    display:inline-block; font-family:var(--mono); font-size:10.5px; font-weight:500;
+    letter-spacing:.07em; text-transform:uppercase; padding:2px 7px; border:1px solid;
+  }
+  .s-crit{color:var(--crit); background:var(--crit-bg); border-color:var(--crit)}
+  .s-warn{color:var(--warn); background:var(--warn-bg); border-color:var(--warn)}
+  .s-ok{color:var(--ok); background:var(--ok-bg); border-color:var(--ok)}
+  .s-neutro{color:var(--ink2); background:var(--surface2); border-color:var(--line)}
+
+  /* ---------- achados ---------- */
+  .find{background:var(--surface); border:1px solid var(--line); padding:20px 22px; margin:0 0 14px}
+  .find.p0{border-color:var(--crit)}
+  .find-h{display:flex; align-items:baseline; gap:11px; flex-wrap:wrap; margin-bottom:10px}
+  .find-h h3{margin:0; font-size:21px; flex:1 1 260px; min-width:0}
+  .find .rot{
+    font-family:var(--mono); font-size:11px; letter-spacing:.09em; text-transform:uppercase;
+    color:var(--ink2); margin:16px 0 5px;
+  }
+  .find p{margin-bottom:10px}
+  .find ul.corpo{margin-bottom:10px}
+  .prova{
+    font-family:var(--mono); font-size:12.5px; line-height:1.65; background:var(--sunk);
+    border-left:2px solid var(--accent); padding:11px 14px; margin:0 0 12px; overflow-x:auto;
+    color:var(--ink);
+  }
+
+  /* ---------- diagrama ---------- */
+  figure{margin:0 0 26px}
+  figure svg{display:block; width:100%; max-width:100%; height:auto; color:var(--ink)}
+  /* o diagrama é estilizado por classe: var() em atributo de apresentação não é confiável */
+  .dg text{font-family:var(--mono); fill:var(--ink2)}
+  .dg .tt{font-family:var(--sans); font-weight:600; fill:var(--ink)}
+  .dg .lane{letter-spacing:1.3px}
+  .dg .box{fill:none; stroke:currentColor; stroke-width:1.2}
+  .dg .box-f{fill:var(--surface2); stroke:currentColor; stroke-width:1.2}
+  .dg .flow{stroke:currentColor; stroke-width:1.2; fill:none}
+  .dg .mk{fill:currentColor}
+  .dg .miss{stroke:var(--crit); stroke-width:1.4; fill:none; stroke-dasharray:7 5}
+  .dg .mk-crit{fill:var(--crit)}
+  .dg .crit-t{fill:var(--crit)}
+  .dg .gate{fill:var(--warn-bg); stroke:var(--warn); stroke-width:1.4}
+  .dg .gate-t{fill:var(--warn)}
+  .dg .mask{fill:var(--surface)}
+  figcaption{
+    font-size:13.5px; color:var(--ink2); margin-top:10px; max-width:70ch;
+    font-family:var(--sans);
+  }
+  .difig{background:var(--surface); border:1px solid var(--line); padding:22px 20px 16px}
+
+  /* ---------- plano ---------- */
+  .semana{border-top:2px solid var(--accent); padding:16px 0 6px; margin-bottom:6px}
+  .semana .quando{
+    font-family:var(--mono); font-size:11.5px; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--accent); margin-bottom:4px;
+  }
+  .semana h3{margin:0 0 10px}
+
+  footer{padding:34px 0 60px; color:var(--ink3); font-size:13px; font-family:var(--mono)}
+  a{color:var(--accent2)}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important; animation:none!important}}
+  @media (max-width:640px){
+    .band{padding-top:26px}
+    section{padding-top:34px}
+    .find{padding:16px}
+  }
+</style>
+
+<div class="band">
+  <div class="wrap">
+    <p class="eyebrow">Máquina de Vendas Nitron · 21 ago 2026</p>
+    <h1>Diagnóstico da Máquina de Vendas</h1>
+    <p class="lede">
+      Levantamento do que roda sozinho, o que sai do Sankhya, o que entra no CRM e onde o
+      dinheiro está parando. Tudo abaixo foi medido no banco e nas rotinas de produção, não
+      estimado.
+    </p>
+  </div>
+  <div class="wrap">
+    <div class="figs">
+      <div class="fig"><b>21.011</b><span>clientes na base enriquecida</span></div>
+      <div class="fig"><b>53</b><span>rotinas automáticas ativas</span></div>
+      <div class="fig"><b>449</b><span>mensagens enviadas até hoje</span></div>
+      <div class="fig alarme"><b>0</b><span>pedidos atribuídos a campanha</span></div>
+    </div>
+  </div>
+</div>
+
+<nav>
+  <div class="wrap">
+    <ul>
+      <li><a href="#retrato">O retrato</a></li>
+      <li><a href="#sankhya">Do Sankhya</a></li>
+      <li><a href="#crm">Dentro do CRM</a></li>
+      <li><a href="#automatico">O que roda sozinho</a></li>
+      <li><a href="#gargalo">O gargalo</a></li>
+      <li><a href="#achados">Achados</a></li>
+      <li><a href="#plano">O que eu faria</a></li>
+    </ul>
+  </div>
+</nav>
+
+<main class="wrap">
+
+<section id="retrato">
+  <h2><span class="num">01 — O retrato</span>Uma esteira de dados muito boa alimentando uma boca de saída muito estreita</h2>
+  <p class="sub">
+    A parte difícil está construída e funcionando: o Sankhya é lido todo dia, 21 mil clientes são
+    classificados, pontuados e espelhados no CRM com 17 campos calculados, e 53 rotinas mantêm
+    isso vivo sem ninguém encostar. O que não está construído é o outro lado: a campanha sai da
+    esteira como rascunho e para ali. Em nove dias de operação foram <strong>449 mensagens</strong>
+    e <strong>669 rascunhos nunca aprovados</strong>.
+  </p>
+
+  <figure class="difig">
+    <svg class="dg" viewBox="0 0 980 400" role="img" aria-label="O Sankhya alimenta o núcleo no Supabase, que escreve no CRM automaticamente e gera rascunhos de campanha; o envio só acontece depois de uma aprovação humana, e não existe caminho de volta medindo o pedido gerado.">
+      <defs>
+        <marker id="pta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path class="mk" d="M0,0 L10,5 L0,10 z"/>
+        </marker>
+        <marker id="ptv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path class="mk-crit" d="M0,0 L10,5 L0,10 z"/>
+        </marker>
+      </defs>
+
+      <!-- trilha 1: enriquecimento -->
+      <text class="lane" x="0" y="30" font-size="11">AUTOMÁTICO — TODO DIA, SEM NINGUÉM</text>
+      <rect class="box" x="0" y="44" width="170" height="66"/>
+      <text class="tt" x="14" y="70" font-size="13">Sankhya</text>
+      <text x="14" y="88" font-size="10.5">Oracle · TGFPAR</text>
+      <text x="14" y="101" font-size="10.5">TGFCAB · views AD_</text>
+
+      <line class="flow" x1="170" y1="77" x2="352" y2="77" marker-end="url(#pta)"/>
+      <text x="180" y="68" font-size="10.5">SQL direto · 03:10</text>
+
+      <rect class="box-f" x="360" y="44" width="222" height="66"/>
+      <text class="tt" x="374" y="70" font-size="13">Núcleo no Supabase</text>
+      <text x="374" y="88" font-size="10.5">21.011 clientes · situação,</text>
+      <text x="374" y="101" font-size="10.5">ABC, tier, saldo, Clube</text>
+
+      <line class="flow" x1="582" y1="77" x2="752" y2="77" marker-end="url(#pta)"/>
+      <text x="592" y="68" font-size="10.5">só o que mudou · 10 min</text>
+
+      <rect class="box" x="760" y="44" width="220" height="66"/>
+      <text class="tt" x="774" y="70" font-size="13">CRM (GoHighLevel)</text>
+      <text x="774" y="88" font-size="10.5">10.413 contatos ·</text>
+      <text x="774" y="101" font-size="10.5">17 campos + resumo IA</text>
+
+      <!-- descida para a trilha da campanha -->
+      <path class="flow" d="M380,110 L380,152 L180,152 L180,237 L207,237" marker-end="url(#pta)"/>
+      <text x="390" y="145" font-size="10.5">campanhas-cron · 08:00, dias úteis</text>
+
+      <!-- trilha 2: campanha -->
+      <text class="lane" x="215" y="182" font-size="11">CAMPANHA — AUTOMÁTICO ATÉ AQUI</text>
+      <rect class="box" x="215" y="204" width="170" height="66"/>
+      <text class="tt" x="229" y="230" font-size="13">Rascunho</text>
+      <text class="crit-t" x="229" y="248" font-size="10.5">669 parados</text>
+      <text x="229" y="261" font-size="10.5">desde 12 ago</text>
+
+      <line class="flow" x1="385" y1="237" x2="437" y2="237" marker-end="url(#pta)"/>
+      <circle class="gate" cx="472" cy="237" r="30"/>
+      <text class="gate-t" x="472" y="234" text-anchor="middle" font-size="10">VOCÊ</text>
+      <text class="gate-t" x="472" y="246" text-anchor="middle" font-size="10">APROVA</text>
+      <line class="flow" x1="502" y1="237" x2="554" y2="237" marker-end="url(#pta)"/>
+
+      <rect class="box" x="562" y="204" width="150" height="66"/>
+      <text class="tt" x="576" y="230" font-size="13">Fila de envio</text>
+      <text x="576" y="248" font-size="10.5">drena 1×/min</text>
+      <text x="576" y="261" font-size="10.5">1 zap / 2 min</text>
+
+      <line class="flow" x1="712" y1="237" x2="752" y2="237" marker-end="url(#pta)"/>
+
+      <rect class="box" x="760" y="204" width="220" height="66"/>
+      <text class="tt" x="774" y="230" font-size="13">WhatsApp e e-mail</text>
+      <text x="774" y="248" font-size="10.5">449 enviados · 14 erros</text>
+      <text x="774" y="261" font-size="10.5">via CRM</text>
+
+      <!-- a volta que não existe -->
+      <path class="miss" d="M870,270 L870,338 L100,338 L100,110" marker-end="url(#ptv)"/>
+      <rect class="mask" x="296" y="322" width="338" height="32"/>
+      <text class="crit-t" x="465" y="343" text-anchor="middle" font-size="11.5">pedido gerado pela campanha — não existe</text>
+    </svg>
+    <figcaption>
+      O caminho de ida está inteiro e é automático. A volta — ligar a mensagem enviada ao pedido
+      que ela gerou no Sankhya — não foi construída, então hoje nenhuma campanha tem resultado
+      medido, só contagem de envio.
+    </figcaption>
+  </figure>
+</section>
+
+<section id="sankhya">
+  <h2><span class="num">02 — Do Sankhya</span>O que sai do ERP, e com que frequência</h2>
+  <p class="sub">
+    Não há integração pronta no meio: as rotinas fazem login no Sankhya e rodam
+    <span class="m">SELECT</span> direto no Oracle, via <span class="m">DbExplorerSP.executeQuery</span>.
+    Só leitura — nada é escrito de volta no ERP.
+  </p>
+
+  <div class="rolo">
+    <table>
+      <thead>
+        <tr><th>Rotina</th><th>O que lê no Sankhya</th><th>Vira o quê</th><th>Quando</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="cod">master-refresh</td>
+          <td>TGFPAR (cadastro, CNPJ, giro, ramo, praça, matriz, situação na Receita), TGFCAB de 24 meses, VW_SALDO_PEDIDO, AD_VW_CLUBE_CABEC</td>
+          <td>O núcleo: 21.011 clientes com situação, dias sem compra, ticket, média mensal, classe ABC, tier de prioridade, saldo a entregar e saldo Clube</td>
+          <td class="cod">1×/dia · 03:10</td>
+        </tr>
+        <tr>
+          <td class="cod">carteira-refresh<br>rep-refresh</td>
+          <td>Carteira por representante, cadastro dos vendedores</td>
+          <td>9.596 vínculos rep↔cliente e a base dos 86 representantes</td>
+          <td class="cod">1×/dia · 02:50</td>
+        </tr>
+        <tr>
+          <td class="cod">saldo-refresh</td>
+          <td>VW_SALDO_PEDIDO — pedido faturado parcialmente</td>
+          <td>474 pedidos com saldo, separados em ≥90%, 50–90% e &lt;50% atendido</td>
+          <td class="cod">a cada 2h</td>
+        </tr>
+        <tr>
+          <td class="cod">clube-refresh</td>
+          <td>AD_VW_CLUBE_CABEC — contrato do Clube Nitron</td>
+          <td>137 contratos com saldo a pedir e vigência</td>
+          <td class="cod">4×/dia</td>
+        </tr>
+        <tr>
+          <td class="cod">cobranca-refresh</td>
+          <td>Títulos vencidos</td>
+          <td>451 inadimplentes e 496 grupos de cobrança — a lista que exclui gente de toda campanha</td>
+          <td class="cod">1×/dia · 02:40</td>
+        </tr>
+        <tr>
+          <td class="cod">entregas-refresh<br>prep-refresh</td>
+          <td>Notas e pedidos em preparação</td>
+          <td>2.125 notas em trânsito, 1.004 pedidos em preparação</td>
+          <td class="cod">a cada 3h</td>
+        </tr>
+        <tr>
+          <td class="cod">roteiro-refresh<br>parc-matriz-refresh</td>
+          <td>Endereço, CEP e matriz dos clientes prioritários</td>
+          <td>3.342 pontos de visita e 3.734 vínculos de rede/matriz</td>
+          <td class="cod">1×/dia · 02:00</td>
+        </tr>
+        <tr>
+          <td class="cod">sankhya-cross</td>
+          <td>Cruzamento de CNPJ entre prospect e base</td>
+          <td class="cod" style="color:var(--crit)">nada — parado, ver achado 02</td>
+          <td class="cod">a cada 3 min</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>O que o núcleo diz da carteira</h3>
+  <p>
+    Vale olhar esse número antes de qualquer discussão de campanha, porque ele muda a
+    conversa toda:
+  </p>
+  <div class="rolo">
+    <table>
+      <thead><tr><th>Situação do cliente</th><th class="n">Clientes</th><th class="n">% da base</th><th>Leitura</th></tr></thead>
+      <tbody>
+        <tr><td>Nunca comprou</td><td class="n">11.415</td><td class="n">54,3%</td><td>Cadastro sem uma única nota. Metade da base é lista, não carteira.</td></tr>
+        <tr><td>Reativação (mais de 180 dias)</td><td class="n">8.240</td><td class="n">39,2%</td><td>Comprou e sumiu. É aqui que está o volume.</td></tr>
+        <tr><td>Giro vencido</td><td class="n">702</td><td class="n">3,3%</td><td>Furou o ciclo. Recuperável agora.</td></tr>
+        <tr><td>Em dia</td><td class="n">562</td><td class="n">2,7%</td><td>—</td></tr>
+        <tr><td>Giro a vencer</td><td class="n">92</td><td class="n">0,4%</td><td>A janela mais barata de todas, e a menor.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    <strong>Só 6,4% da base está no ciclo de compra.</strong> As duas campanhas de recompra
+    ativas atacam os 794 clientes de giro a vencer e vencido — bem calibradas, mas mirando
+    numa fatia mínima. Os 8.240 de reativação têm uma campanha só, que nunca rodou.
+  </p>
+</section>
+
+<section id="crm">
+  <h2><span class="num">03 — Dentro do CRM</span>O sistema transforma o CRM num painel do ERP</h2>
+  <p class="sub">
+    Isso é a parte mais bem feita do projeto, e a menos visível. O CRM não é usado só como
+    lugar de mandar mensagem: ele recebe, a cada 10 minutos, o retrato do cliente calculado
+    a partir do Sankhya.
+  </p>
+  <ul class="corpo">
+    <li><strong>17 campos por contato</strong> — canal, ramo, situação, classe ABC, dias sem compra, ticket médio, média mensal, saldo a entregar, valor atendido, % atendido, pedidos em aberto, saldo do Clube, títulos vencidos, mix de linhas compradas, Instagram, WhatsApp e um resumo escrito por IA. 9.492 dos 10.413 clientes já têm o resumo.</li>
+    <li><strong>Cards nos pipes</strong> — nove esteiras alimentadas automaticamente: recompra (9.281 cards), entregas (1.960), preparação (848), cobrança (609), saldo (586), clube (140), key accounts (122), representantes (80).</li>
+    <li><strong>Só grava o que mudou</strong> — cada escrita guarda uma assinatura; se o dado é igual, o CRM nem é chamado. Existe até uma reserva de cota diária para não gastar a API do CRM e deixar o envio sem crédito. É um cuidado de engenharia que vale registrar.</li>
+    <li><strong>Vínculo de contato</strong> — 6.707 contatos casados com cliente do ERP, mais 4.460 vínculos por empresa. É o pedaço que vem dando trabalho, e é onde nasceram as listas de erro que a gente vem corrigindo.</li>
+  </ul>
+  <p>
+    O que <em>não</em> volta: nada é escrito no Sankhya. O CRM é destino, nunca fonte. Se um
+    representante corrige um telefone no CRM, o Sankhya não sabe — e o próximo
+    <span class="m">master-refresh</span> não desfaz, mas também não aproveita.
+  </p>
+</section>
+
+<section id="automatico">
+  <h2><span class="num">04 — O que roda sozinho</span>53 rotinas, quatro velocidades</h2>
+  <p class="sub">
+    Todas disparadas por agendador dentro do próprio banco. Em 24 horas foram
+    <strong>~11,8 mil chamadas</strong>. Nenhuma falha reportada pelo agendador — o que,
+    como se vê no achado 03, não quer dizer que funcionaram.
+  </p>
+  <div class="rolo">
+    <table>
+      <thead><tr><th>Velocidade</th><th class="n">Rotinas</th><th>Fazem o quê</th><th>A fonte muda quando?</th></tr></thead>
+      <tbody>
+        <tr><td class="cod">1×/min</td><td class="n">4</td><td>Drena a fila de envio; precificação de anúncio; busca de prospect</td><td>fila: sempre · resto: 1×/dia</td></tr>
+        <tr><td class="cod">2–3 min</td><td class="n">7</td><td>Motor de prospecção (buscar, classificar, dossiê, validar), resumo, discador de voz</td><td>conforme entra prospect</td></tr>
+        <tr><td class="cod">5–15 min</td><td class="n">10</td><td>Alimenta os pipes do CRM e escreve o enriquecimento nos contatos</td><td class="cod" style="color:var(--warn)">1×/dia</td></tr>
+        <tr><td class="cod">1–4 h</td><td class="n">11</td><td>Recarrega saldo, cobrança, entregas, preparação, retorno, key accounts</td><td>1 a 4×/dia</td></tr>
+        <tr><td class="cod">1×/dia</td><td class="n">21</td><td>O núcleo (master-refresh), carteira, roteiro, Clube, relatório do dia</td><td>1×/dia</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Repare na terceira linha: dez rotinas correndo de 5 a 15 minutos sobre um núcleo que só
+    muda de madrugada. O pipe do Clube já deu <strong>749 voltas completas</strong> em 137
+    registros; o de saldo, 436 voltas em 474. Não quebra nada — a trava de assinatura evita
+    chamar o CRM à toa — mas é quase toda a fatura de invocação do plano sendo paga para
+    reler o mesmo dado.
+  </p>
+  <h3>O único disparo realmente automático</h3>
+  <p>
+    Todo dia útil às 08:00 o agendador lê a cadência de cada campanha ativa e gera
+    <strong>rascunho</strong> das campanhas do dia. Rascunho não envia. Envio só sai depois
+    que alguém abre o painel, revisa e coloca na fila. Essa trava é uma boa decisão de
+    projeto — e é exatamente onde tudo está parando.
+  </p>
+</section>
+
+<section id="gargalo">
+  <h2><span class="num">05 — O gargalo</span>A máquina montou 669 rascunhos e enviou 449 mensagens</h2>
+  <div class="rolo">
+    <table>
+      <thead><tr><th>Dia</th><th class="n">Na fila</th><th class="n">Enviado</th><th class="n">Erro</th></tr></thead>
+      <tbody>
+        <tr><td class="cod">18 ago</td><td class="n">240</td><td class="n">231</td><td class="n">9</td></tr>
+        <tr><td class="cod">20 ago</td><td class="n">92</td><td class="n">89</td><td class="n">3</td></tr>
+        <tr><td class="cod">21 ago</td><td class="n">116</td><td class="n">114</td><td class="n">2</td></tr>
+        <tr><td class="cod">14 ago</td><td class="n">1</td><td class="n">1</td><td class="n">0</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Quatro dias de envio em nove de operação. O ritmo é limitado por desenho a
+    <strong>1 WhatsApp a cada 2 minutos por instância</strong> — 30 por hora, ~360 num dia
+    comercial. Não é o limite que está segurando: com 669 rascunhos parados, o freio é
+    humano, não técnico.
+  </p>
+  <p>
+    Dos 14 erros, <strong>11 são "e-mail do contato inválido"</strong> no CRM. É a mesma
+    doença das listas de contato que a gente vem limpando, aparecendo do outro lado.
+  </p>
+</section>
+
+<section id="achados">
+  <h2><span class="num">06 — Achados</span>Sete coisas para decidir, em ordem de urgência</h2>
+  <p class="sub">
+    Ordenei por dano, não por esforço. As duas primeiras eu trataria hoje; as três seguintes
+    nesta semana.
+  </p>
+
+  <article class="find p0">
+    <div class="find-h">
+      <span class="selo s-crit">Crítico 01</span>
+      <h3>Quem tem o link do painel pode fazer o WhatsApp da Nitron mandar mensagem</h3>
+    </div>
+    <p>
+      A chave <span class="m">anon</span> está escrita dentro do HTML do painel, que está numa
+      URL pública. Essa chave tem permissão de <strong>inserir, alterar e apagar</strong> nas
+      tabelas operacionais, e a maioria delas está sem proteção de linha. A fila de envio é uma
+      delas — e a rotina que drena a fila roda a cada minuto com poder total, mandando o texto
+      que estiver lá, sem checar quem escreveu.
+    </p>
+    <div class="rot">Evidência</div>
+    <div class="prova">
+fila_envio        RLS desligada · anon: ler ✓ inserir ✓ alterar ✓ apagar ✓<br>
+ghl_cliente       RLS desligada · anon: ler ✓ inserir ✓ alterar ✓ apagar ✓<br>
+contato_enriquecido, snap_parceiro, snap_contato, snap_rep,<br>
+inadimplente, cobranca_cliente, saldo_pedido, roteiro_cliente → idem<br>
+<br>
+fila-processar (1×/min, chave de serviço): lê fila_envio onde status<br>
+in ('pendente','agendado') e envia o campo `corpo` como está.
+    </div>
+    <div class="rot">O que eu faria</div>
+    <ul class="corpo">
+      <li>Revogar <span class="m">insert/update/delete</span> de <span class="m">anon</span> em tudo. O painel passa a escrever só por função, que já roda com chave de serviço.</li>
+      <li>Ligar proteção de linha nas tabelas com dado de cliente e liberar leitura só onde o painel realmente precisa.</li>
+      <li>Pôr login na frente do painel (Cloudflare Access, grátis para o time), liberando só os e-mails da Nitron.</li>
+    </ul>
+    <p>Meia manhã de trabalho. É o único item da lista em que o risco não é de eficiência.</p>
+  </article>
+
+  <article class="find p0">
+    <div class="find-h">
+      <span class="selo s-crit">Crítico 02</span>
+      <h3>Três rotinas rodam há dias sem fazer nada, e queimam 20% da cota</h3>
+    </div>
+    <p>
+      Duas rotinas de precificação e a de cruzamento de CNPJ do Sankhya chamam funções que
+      exigem autenticação, mas o agendador não manda o cabeçalho. Toda chamada volta
+      <span class="m">401</span>. São <strong>3.360 chamadas por dia</strong> — cerca de 100 mil
+      por mês, um quinto do limite do plano — e o trabalho que deveriam fazer simplesmente não
+      acontece.
+    </p>
+    <div class="rot">Evidência</div>
+    <div class="prova">
+ml-calc-batch    1.840 respostas 401 · 2 rotinas, a cada 1 min<br>
+sankhya-cross      309 respostas 401 · a cada 3 min<br>
+{"code":"UNAUTHORIZED_NO_AUTH_HEADER","message":"Missing authorization header"}<br>
+<br>
+E o agendador registra tudo como "succeeded", porque o POST saiu.
+    </div>
+    <div class="rot">O que eu faria</div>
+    <p>
+      Quinze minutos: as três já mandam um segredo na URL, então basta desligar a exigência de
+      token nessas funções, ou acrescentar o cabeçalho nas rotinas. Depois disso, checar o que
+      ficou para trás no cruzamento de CNPJ e na precificação.
+    </p>
+  </article>
+
+  <article class="find">
+    <div class="find-h">
+      <span class="selo s-warn">Alto 03</span>
+      <h3>Nada no sistema sabe dizer se uma rotina funcionou</h3>
+    </div>
+    <p>
+      O agendador só sabe se conseguiu disparar a chamada. O resultado — quantos registros
+      gravou, se deu erro, se voltou vazio — é devolvido pela função e descartado. Foi assim
+      que os dois achados acima ficaram invisíveis, e é assim que o pipe de cobrança está
+      <strong>parado desde 14 de agosto</strong> sem ninguém saber.
+    </p>
+    <div class="rot">Evidência</div>
+    <div class="prova">
+pipe_cursor · cobranca   posição 90 de 409 · volta 0 · atualizado 14 ago<br>
+(os outros nove cursores atualizaram hoje às 18h)
+    </div>
+    <div class="rot">O que eu faria</div>
+    <p>
+      Uma tabela de execução — rotina, início, fim, resultado, erro — gravada por quem chama, e
+      uma tela de saúde no painel com uma regra só: rotina que não avança há mais de X horas
+      acende. Meio dia de trabalho, e passa a ser o item que evita os próximos seis meses de
+      surpresa.
+    </p>
+  </article>
+
+  <article class="find">
+    <div class="find-h">
+      <span class="selo s-warn">Alto 04</span>
+      <h3>Sete das doze campanhas ativas não geram nada — e ninguém é avisado</h3>
+    </div>
+    <p>
+      Hoje é sexta. Cinco campanhas ativas têm sexta na cadência, e só duas produziram
+      rascunho. O motivo é que existem <strong>dois caminhos paralelos</strong> para a mesma
+      coisa: as campanhas de saldo, cobrança e retorno foram implementadas em telas próprias,
+      e o caminho genérico — o que o agendador usa, o que gera rascunho, o que a agenda mede —
+      não conhece o gatilho delas.
+    </p>
+    <div class="rot">Evidência</div>
+    <div class="prova">
+saldo_liberar       → {"aviso":"gatilho ainda nao mapeado"}<br>
+saldo_confirmar     → {"aviso":"gatilho ainda nao mapeado"}<br>
+prep_retorno        → {"aviso":"gatilho ainda nao mapeado"}<br>
+cobranca_juridico   → {"aviso":"gatilho ainda nao mapeado"}<br>
+reativacao_180d     → {"aviso":"gatilho ainda nao mapeado"}<br>
+templates_whatsapp  → ativa, cadência vazia · nunca é agendada<br>
+promocao_redes      → ativa, cadência vazia · nunca é agendada
+    </div>
+    <p>
+      Elas funcionam pelas telas dedicadas, então nada está "quebrado" para quem usa o painel.
+      Mas ficam fora do disparo diário, fora do rascunho e <strong>fora de qualquer
+      medição</strong> — inclusive da agenda que acabamos de montar, que vai mostrar essas
+      campanhas como "não rodou" para sempre.
+    </p>
+    <div class="rot">O que eu faria</div>
+    <p>
+      Unificar: cada campanha declara no cadastro de onde vem o público, e o caminho genérico
+      passa a ler dali. Some a duplicação, o agendador cobre as doze, e a agenda começa a
+      contar a verdade. É o trabalho de maior alavanca da lista.
+    </p>
+  </article>
+
+  <article class="find">
+    <div class="find-h">
+      <span class="selo s-warn">Alto 05</span>
+      <h3>669 rascunhos parados, e alguns são duplicados</h3>
+    </div>
+    <p>
+      Nenhum dos 669 rascunhos gerados desde 12 de agosto foi aprovado ou descartado — todos
+      seguem no estado inicial. Pior: hoje o mesmo par de campanhas gerou rascunho duas vezes,
+      às 11:01 e às 13:11, com o mesmo conteúdo. Não há nada impedindo que os dois sejam
+      aprovados e o cliente receba a mesma mensagem duas vezes.
+    </p>
+    <div class="rot">Evidência</div>
+    <div class="prova">
+669 rascunhos · 100% no estado "rascunho" · de 12 a 21 ago<br>
+21 ago 11:01 → rep_sem_comprar 69 · clube_saldo 16<br>
+21 ago 13:11 → rep_sem_comprar 69 · clube_saldo 16   ← mesma coisa
+    </div>
+    <div class="rot">O que eu faria</div>
+    <ul class="corpo">
+      <li>Chave única por campanha + cliente + dia, para o segundo rascunho do dia substituir o primeiro em vez de somar.</li>
+      <li>Rascunho não aprovado vence em 24h — dado de véspera não deve poder ser enviado hoje.</li>
+      <li>Contador de pendência no painel: "23 rascunhos esperando você". Hoje eles são invisíveis.</li>
+    </ul>
+  </article>
+
+  <article class="find">
+    <div class="find-h">
+      <span class="selo s-neutro">Médio 06</span>
+      <h3>O motor de prioridade é calculado todo dia e usado por nada</h3>
+    </div>
+    <p>
+      O <span class="m">master-refresh</span> pontua 5.122 clientes com uma conta boa — ritmo de
+      compra dos últimos 24 meses, penalizado pelo atraso no ciclo e pela queda de faturamento e
+      de ticket — e classifica em tier S, A, B e C. São 29 clientes tier S.
+    </p>
+    <p>
+      De todas as campanhas do catálogo, <strong>uma única</strong> menciona tier ou prioridade
+      no gatilho: o roteiro de visitas, que está inativa. As campanhas de recompra ordenam por
+      balde de giro, ignorando quem tem mais risco de ir embora. É um ativo pronto na prateleira.
+    </p>
+    <div class="rot">O que eu faria</div>
+    <p>
+      Trocar a ordenação das duas campanhas de recompra para prioridade decrescente e, no
+      painel, mostrar o tier ao lado do cliente. Nenhuma nova rotina, nenhum novo dado — só
+      passar a usar o que já é calculado.
+    </p>
+  </article>
+
+  <article class="find">
+    <div class="find-h">
+      <span class="selo s-neutro">Médio 07</span>
+      <h3>2.032 clientes com CNPJ irregular na Receita, e o sistema marca zero</h3>
+    </div>
+    <p>
+      Existe uma marca de cliente inapto no núcleo — situação "baixada" na Receita com cadastro
+      irregular. No Sankhya são 2.032 clientes ativos nessa condição. No núcleo, a marca está
+      apagada em todos os 21.011.
+    </p>
+    <div class="rot">Evidência</div>
+    <div class="prova">
+Sankhya · TGFPAR ativos, pessoa jurídica:<br>
+&nbsp;&nbsp;SITRECEITA='B' e SITCADRF=0 → 2.032 clientes<br>
+<br>
+Supabase · contato_enriquecido: inapto = verdadeiro → 0 clientes<br>
+Amostra (codparc 7, 13, 24, 52, 63): Sankhya diz B/0, núcleo diz falso.
+    </div>
+    <p>
+      A regra compara texto, e o valor vem do Sankhya com formatação numérica que não casa —
+      o código até tenta cobrir <span class="m">"0.0"</span>, o que sugere que já brigaram com
+      isso antes.
+    </p>
+    <div class="rot">O que eu faria</div>
+    <p>
+      Levar a regra para dentro da consulta SQL, que decide no Oracle e devolve sim ou não. Some
+      a comparação de texto e o problema não volta. Depois disso vale checar quantos desses
+      2.032 estão em campanha ativa.
+    </p>
+  </article>
+</section>
+
+<section id="plano">
+  <h2><span class="num">07 — O que eu faria</span>Duas semanas, na ordem que eu executaria</h2>
+  <p class="sub">
+    Deixei de fora tudo que é bonito e pode esperar. Isto é o que muda o resultado ou tira
+    risco da mesa.
+  </p>
+
+  <div class="semana">
+    <div class="quando">Esta semana · fechar as torneiras abertas</div>
+    <h3>Segurança e visibilidade</h3>
+    <ul class="corpo">
+      <li>Revogar escrita da chave pública, ligar proteção de linha, pôr login na frente do painel. <span class="selo s-crit">Crítico 01</span></li>
+      <li>Corrigir as três rotinas em 401 e conferir o que ficou para trás. <span class="selo s-crit">Crítico 02</span></li>
+      <li>Tabela de execução das rotinas + tela de saúde com alerta de rotina travada. <span class="selo s-warn">Alto 03</span></li>
+    </ul>
+  </div>
+
+  <div class="semana">
+    <div class="quando">Semana que vem · fazer a máquina disparar</div>
+    <h3>Unificar campanha e destravar o rascunho</h3>
+    <ul class="corpo">
+      <li>Trazer as sete campanhas órfãs para o caminho genérico, para o agendador e a agenda cobrirem as doze. <span class="selo s-warn">Alto 04</span></li>
+      <li>Chave única no rascunho, validade de 24h e contador de pendência no painel. <span class="selo s-warn">Alto 05</span></li>
+      <li>Ordenar recompra por prioridade e mostrar o tier no painel. <span class="selo s-neutro">Médio 06</span></li>
+      <li>Corrigir a marca de cliente inapto na consulta. <span class="selo s-neutro">Médio 07</span></li>
+    </ul>
+  </div>
+
+  <div class="semana">
+    <div class="quando">Depois · o que falta para o projeto ter sentido</div>
+    <h3>Fechar o laço: medir pedido, não envio</h3>
+    <p>
+      Este é o item que eu levaria para a diretoria. Hoje o sistema sabe dizer "mandei 449
+      mensagens" e não sabe dizer se alguma virou pedido. Todo o resto — 53 rotinas, 21 mil
+      clientes classificados, 17 campos no CRM — existe para influenciar uma venda que ninguém
+      está contando.
+    </p>
+    <p>
+      O dado necessário já está todo aqui: a mensagem tem cliente e data, e o Sankhya tem a nota
+      fiscal com cliente e data. Basta uma rotina que, para cada envio, procure pedido do mesmo
+      cliente numa janela depois da mensagem, e guarde. Com isso a agenda que montamos passa a
+      responder o que você pediu quando pensou nela: <em>o que essa campanha está fazendo</em>.
+    </p>
+    <p>
+      E aí vem a decisão de negócio que os números pedem: 54% da base nunca comprou e 39% está
+      em reativação. As campanhas ativas hoje miram os 6,4% que estão no ciclo. Com medição no
+      lugar, dá para testar reativação com método em vez de intuição — e é ali que está o
+      volume.
+    </p>
+  </div>
+</section>
+
+<footer>
+  Medido em 21 ago 2026 no projeto integracao-crm-sankhya. Números vindos do agendador,
+  do registro de respostas HTTP, dos cursores dos pipes e de consulta direta ao Sankhya.
+</footer>
+
+</main>

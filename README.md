@@ -4,17 +4,37 @@ Código do projeto Supabase `integracao-crm-sankhya` (`bwbeieumxcuomtrvlqxs`).
 
 ## Estrutura
 
-- `app/gestor.html` — painel do gestor (SPA de arquivo único). Servido do Storage
-  (bucket `app`) pela Edge Function `gestor`, e publicado com `host-upload`.
+- `app/gestor.html` — Gestor de Campanhas (SPA de arquivo único).
+- `app/agenda.html` — Agenda de Campanhas: calendário da semana com o que rodou,
+  o que está planejado e as sugestões. Fala direto com o PostgREST
+  (`agenda_catalogo`, `agenda_realizado`, `agenda_espera`, `agenda_campanha`).
 - `supabase/functions/<slug>/index.ts` — Edge Functions.
 - `docs/` — documentação e revisões.
 
-## Publicar o painel
+As duas páginas ficam no Storage (bucket `app`) e são servidas pela Edge Function
+`gestor`, que existe só para devolver `Content-Type: text/html` — o Storage público
+serve tudo como `text/plain; nosniff`, o que faria o navegador mostrar o código.
+
+## Páginas
+
+| Página | URL |
+| --- | --- |
+| Gestor de Campanhas | `https://bwbeieumxcuomtrvlqxs.supabase.co/functions/v1/gestor` |
+| Agenda de Campanhas | `https://bwbeieumxcuomtrvlqxs.supabase.co/functions/v1/gestor/agenda` |
+
+A função `gestor` roda com `verify_jwt=false`: as duas páginas já carregam a anon key
+no próprio HTML, então exigir header não protegia nada e impedia abrir no navegador.
+
+## Publicar
 
 ```
-curl -X POST "https://bwbeieumxcuomtrvlqxs.supabase.co/functions/v1/host-upload?path=gestor.html" \
-  -H "Authorization: Bearer $ANON_KEY" -H "apikey: $ANON_KEY" \
-  -H "Content-Type: text/html" --data-binary @app/gestor.html
+ANON=<anon key>
+for f in gestor agenda; do
+  curl -X POST "https://bwbeieumxcuomtrvlqxs.supabase.co/functions/v1/host-upload?path=$f.html" \
+    -H "Authorization: Bearer $ANON" -H "apikey: $ANON" \
+    -H "Content-Type: text/html" --data-binary @app/$f.html
+done
 ```
 
-O painel fica em `https://bwbeieumxcuomtrvlqxs.supabase.co/functions/v1/gestor`.
+Para acrescentar uma página nova, suba o HTML com `host-upload` e registre o arquivo
+no mapa `PAG` de `supabase/functions/gestor/index.ts`.

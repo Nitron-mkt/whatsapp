@@ -185,3 +185,46 @@ por conta.
 4. Descobrir por que `saldo_liberar`/`saldo_confirmar` não geram (1.3).
 5. Limpar o catálogo: tirar as 2 não-campanhas, corrigir `canais` e o mojibake (2.1–2.5).
 6. Ativar em lotes pequenos, medindo, a partir das 14 candidatas.
+
+---
+
+## 6. Por que algumas campanhas não abrem (24/08)
+
+O clique numa campanha passa por `clicavel(cod)` no `app/gestor.html`, que consulta onze mapas
+de códigos escritos à mão (`OPERAVEIS`, `KA`, `ROT`, `SAL`, `COB`, `AGE`, `RET`, `IAP`, `PROS`,
+`TPL`, `REDES`). Código que não está em nenhum deles fica no catálogo mas não abre — e sem
+mensagem nenhuma, porque `abrir()` simplesmente retorna.
+
+Cruzando o catálogo (38 campanhas) com esses mapas, nove não tinham tela:
+
+| campanha | pipe | dado | situação |
+|---|---|---|---|
+| `clube_a_vencer` — Clube a vencer / distrato | clube | **pronto** | **corrigida**: só a tela faltava |
+| `saldo_confirmar` — Confirmar saldo antes de faturar | saldo | **pronto** | falta modo no `campanhas-saldo` |
+| `cobranca_notificacao` | cobranca | precisa_dado | sem fonte |
+| `reativacao_win_back` | reativacao | precisa_dado | sem fonte |
+| `saldo_envelhece` | saldo | precisa_dado | sem fonte (o modo existe no `campanhas-bulk`) |
+| `saldo_avisa_cliente` | saldo | precisa_dado | sem fonte |
+| `saldo_aviso_pre_entrega` | saldo | precisa_dado | sem fonte |
+| `ia_devolu_o_coordenada_antes_do_despacho` | inteligencia | proposta | proposta da IA, não implementada |
+| `ia_saldo_lista_desconto_validada` | inteligencia | proposta | proposta da IA, não implementada |
+
+### `clube_a_vencer`: o back-end estava pronto o tempo todo
+
+`campanhas-preview` e `campanhas-disparar` **já** traziam `clube_a_vencer` nos seus mapas
+`MOTOR`, com filtro (`clube_vig_dias` não nulo), formatação de valor (`"Clube vence em Nd"`),
+bullet da lista e instrução de tom própria. Faltava a campanha estar em `OPERAVEIS`/`MOTORC` na
+tela. Corrigido; a chamada devolve 116 clientes em 23 representantes, R$ 2.095.538 de saldo de
+Clube, com as assistentes resolvidas.
+
+**Mas o alcance dela precisa de decisão.** O filtro é só "tem data de Clube", sem horizonte: hoje
+os 148 clientes com data vão de **39 a 362 dias** para vencer. Uma campanha chamada "a vencer /
+distrato" mandando "sua condição do Clube vence em 362 dias" não faz sentido. Falta combinar o
+corte (30/60/90 dias) — é mudança de público, não de código, então ficou como está.
+
+### Fragilidade que isso expõe
+
+Os mapas de códigos na tela são uma segunda fonte de verdade sobre quais campanhas existem, e
+ninguém avisa quando as duas divergem. Duas melhorias possíveis: o cartão da campanha sem tela
+poderia dizer *"sem tela ainda"* em vez de não responder ao clique; e o `campanhas-listar`
+poderia devolver, por campanha, qual fluxo a opera, tirando os mapas do HTML.

@@ -253,8 +253,8 @@
   var REDES={promocao_redes:1};
   var PROS={reativacao_180d:1,reativacao_faixas:1,prospeccao_aquisicao:1};
   var PRIMEIRA="";
-  var OPERAVEIS={clube_saldo:1,voucher_empurrar:1,recompra_giro_a_vencer:1,recompra_giro_vencido:1,rep_sem_comprar:1,recompra_cross_sell:1,rep_sugestao_produto:1,recompra_novo_produto:1};
-  var MOTORC={recompra_cross_sell:1,rep_sugestao_produto:1,recompra_novo_produto:1};
+  var OPERAVEIS={clube_saldo:1,voucher_empurrar:1,recompra_giro_a_vencer:1,recompra_giro_vencido:1,rep_sem_comprar:1,recompra_cross_sell:1,rep_sugestao_produto:1,recompra_novo_produto:1,clube_a_vencer:1};
+  var MOTORC={recompra_cross_sell:1,rep_sugestao_produto:1,recompra_novo_produto:1,clube_a_vencer:1};
   var ROT={rep_roteiro_visitas:1};
   /* nao envia para cliente do Clube Nitron — regra aplicada na view voucher_cli */
   var SEM_CLUBE={voucher_empurrar:1};
@@ -324,7 +324,7 @@
     if(SAL[cod]){$("opFlow").style.display="none";$("kaFlow").style.display="none";$("roteiroFlow").style.display="";return abrirSaldo(cod);}
     $("opFlow").style.display="";$("kaFlow").style.display="none";$("roteiroFlow").style.display="none";
     var eb=$("enriqBar");if(eb)eb.style.display=ENRIQF[cod]?"":"none";
-    $("drafts").innerHTML="";$("note").textContent="";DRAFTS=[];CLIENTES={};$("reps").innerHTML='<div style="padding:16px;color:#6a7f78">carregando…</div>';
+    $("drafts").innerHTML="";$("note").textContent="";DRAFTS=[];rotuloAgendar();CLIENTES={};$("reps").innerHTML='<div style="padding:16px;color:#6a7f78">carregando…</div>';
     getJSON(SUPA+"/functions/v1/campanhas-preview?codigo="+cod,function(d){if(d.erro){$("reps").innerHTML='<div style="padding:16px;color:#c0392b">'+d.erro+'</div>';return;}
       SOMA=(d.somaSaldo!==false);var uni=(cod==="clube_saldo")?"grupos":"clientes";
       var vlbl=(cod==="clube_saldo")?"disponível":"faturamento 12m";
@@ -394,21 +394,49 @@
     if(reps.length){pend++;postJSON(SUPA+"/functions/v1/campanhas-disparar",{codigo:CUR,modo:"rascunho",publico:"rep",reps:reps.map(function(r){return r.cod;})},function(d){if(d.ia_erro)iaErro=true;(d.itens||[]).forEach(function(it){var rp=null;reps.forEach(function(x){if(x.nome===it.rep)rp=x;});var inst=(rp&&REPDATA[rp.cod])?REPDATA[rp.cod].assistente:null;DRAFTS.push({tipo:"rep",codvend:rp?rp.cod:null,instancia:inst,saldo_txt:(SOMA?brl(it.saldo):""),titulo:it.rep+" · "+it.clientes+(SOMA?((CUR==="clube_saldo"?" grupos":" clientes")+" · "+brl(it.saldo)):" clientes"),nome:it.rep,wpp:it.whatsapp,assunto:it.email_assunto,corpo:it.email_corpo});});done();});}
     if(clientes.length){pend++;postJSON(SUPA+"/functions/v1/campanhas-disparar",{codigo:CUR,modo:"rascunho",publico:"cliente",clientes:clientes.map(function(c){return {codparc:c.codparc,nome:c.nome,saldo:c.saldo,pct:c.pct,validade:c.validade,dias:c.dias};})},function(d){if(d.ia_erro)iaErro=true;(d.itens||[]).forEach(function(it,idx){var c=clientes[idx]||{};var ct=SOMA?brl(c.saldo):((c.pct!=null?c.pct+"% ":"")+(c.validade?("até "+c.validade):""));DRAFTS.push({tipo:"cliente",instancia:c.instancia||null,saldo_txt:ct,validade:(c.validade||""),titulo:it.nome+" · "+ct,nome:it.nome,contatos:c.contatos||[],wpp:it.whatsapp,assunto:it.email_assunto,corpo:it.email_corpo});});done();});}
   }
+  /* ===== EDICAO DA MENSAGEM =====
+     A IA escreve primeiro; o que a pessoa digita por cima passa a valer. Guardamos o texto no
+     proprio objeto (DRAFTS/KAMSG/SALMSG/...) e marcamos editado=true, para que TODO caminho de
+     envio use o texto editado — inclusive os que remontam a mensagem (roteiro em lote) ou que
+     redesenham a tela depois. */
+  function edAlvo(kind,key){
+    if(kind==="draft")return DRAFTS[key];
+    if(kind==="ka")return KAMSG[key];
+    if(kind==="sal")return SALMSG[key];
+    if(kind==="cob")return COBMSG[key];
+    if(kind==="ret")return RETMSG[key];
+    if(kind==="age")return AGEMSG[key];
+    if(kind==="rot")return ROTDATA[key];
+    if(kind==="rede")return REDEDATA[key];
+    if(kind==="pros")return PROSDATA[key];
+    return null;}
+  function edGuardar(kind,key,campo,el){
+    var o=edAlvo(kind,key); if(!o)return;
+    o[campo]=el.value; o.editado=true;
+    var t=$("ed-"+kind+"-"+key);
+    if(t)t.innerHTML=' <span class="wtag" style="background:#e6f4ea;color:#1a7a44">\u270e editado por voc\u00ea \u2014 vai assim</span>';}
+  function edTag(kind,key){return '<span id="ed-'+kind+'-'+key+'"></span>';}
   function renderDrafts(iaErro){if(!DRAFTS.length){$("drafts").innerHTML='<div class="note" style="margin-top:8px">nada gerado</div>';return;}
     var h='<div style="margin-top:8px;font-weight:700;font-size:13px">'+DRAFTS.length+' rascunho(s)'+(iaErro?' · modelo padrão':' · escrito pela IA')+'</div>';
-    h+='<div class="fila"><button class="btn big ok" id="btnAgendar" onclick="agendarTodos()">📅 Agendar todos na fila</button><span class="note">WhatsApp: 1/instância a cada 2 min · e-mail em lote · roda sozinho</span><span class="fbig" id="filaStatus" style="margin-left:auto"></span></div>';
+    h+='<div class="fila"><button class="btn big ok" id="btnAgendarD" onclick="agendarTodos()">📅 Agendar todos na fila</button><span class="note">manda exatamente o texto que está nos campos abaixo · WhatsApp: 1/instância a cada 2 min · e-mail em lote · roda sozinho</span><span class="fbig" id="filaStatusD" style="margin-left:auto"></span></div>';
     DRAFTS.forEach(function(d,i){h+='<div class="draft'+(d.tipo==="cliente"?" cli":"")+'"><div class="dh">'+(d.tipo==="rep"?"👤 REP (WhatsApp) · ":"🏢 CLIENTE · ")+esc(d.titulo)+'</div>';
       var itg=d.instancia?' <span class="wtag" style="background:#e7e0f5;color:#5b3fa0">📲 WhatsApp via '+esc(d.instancia)+'</span>':' <span class="wtag" style="background:#f7ecd6;color:#b7791f">sem instância</span>';
       if(d.tipo==="cliente"){h+='<div class="dest">Vai para: '+(d.contatos||[]).map(function(c){return esc(c.funcao)+" ("+(c.email?esc(c.email):esc(c.fone||"?"))+")";}).join(" · ")+itg+'</div>';}
       if(d.tipo==="rep"){var rs=REPSEL[d.codvend]||{tel:[],email:[]};var dd=(rs.tel||[]).map(function(t){return "📞 "+esc(t);}).concat((rs.email||[]).map(function(e){return "✉ "+esc(e);}));h+='<div class="dest">Vai para: '+(dd.length?dd.join(" · "):'<span style="color:#c0392b">nenhum contato marcado — abra o rep (▶) e escolha</span>')+itg+'</div>';}
-      h+='<div class="lab">WhatsApp</div><textarea id="w-'+i+'" rows="5">'+esc(d.wpp)+'</textarea>';
-      if(d.tipo==="cliente"){h+='<div class="lab">Email — assunto</div><input class="ei" id="a-'+i+'" value="'+esc(d.assunto)+'"><div class="lab">Email — corpo</div><textarea id="c-'+i+'" rows="5">'+esc(d.corpo)+'</textarea>';}
-      else{h+='<div class="lab">Email — assunto</div><input class="ei" id="a-'+i+'" value="'+esc(d.assunto)+'"><div class="lab">Email — corpo</div><textarea id="c-'+i+'" rows="5">'+esc(d.corpo)+'</textarea>';}
+      h+='<div class="lab">WhatsApp'+edTag("draft",i)+'</div><textarea id="w-'+i+'" rows="5" oninput="edGuardar(\'draft\','+i+',\'wpp\',this)">'+esc(d.wpp)+'</textarea>';
+      h+='<div class="lab">Email — assunto</div><input class="ei" id="a-'+i+'" value="'+esc(d.assunto)+'" oninput="edGuardar(\'draft\','+i+',\'assunto\',this)"><div class="lab">Email — corpo</div><textarea id="c-'+i+'" rows="5" oninput="edGuardar(\'draft\','+i+',\'corpo\',this)">'+esc(d.corpo)+'</textarea>';
       h+='<div class="dbtns">';
       if(d.tipo==="rep"){h+='<button class="btn wpp" onclick="enviarRep('+i+')">Enviar WhatsApp ao rep</button>';}
       else{h+='<button class="btn ok" onclick="enviarCliente('+i+')">Enviar aos contatos marcados</button>';}
       h+='<button class="btn out" onclick="testar('+i+')">Testar no meu nº</button><span class="note" id="s-'+i+'"></span></div></div>';});
-    $("drafts").innerHTML=h;}
+    $("drafts").innerHTML=h;rotuloAgendar();}
+  /* Havia DOIS botoes "Agendar na fila" com o MESMO id: o do topo aplica os MODELOS aos
+     selecionados (o texto e refeito no servidor) e o dos rascunhos manda o que esta na tela.
+     Quem editava um rascunho e clicava no de cima via a edicao ser descartada em silencio — e o
+     getElementById ainda por cima devolvia o botao errado, entao o "agendando..." aparecia no
+     lugar errado. Agora, existindo rascunho, o de cima tambem manda os rascunhos, e diz isso. */
+  function rotuloAgendar(){var b=$("btnAgendar");if(!b)return;
+    b.textContent=DRAFTS.length?"\U0001f4c5 Agendar os rascunhos (o texto da tela)":"\U0001f4c5 Agendar na fila";}
   function setTab(t){TAB=t;var tr=$("tabRep"),tc=$("tabCli"),pr=$("paneRep"),pc=$("paneCli");if(!tr)return;
     if(t==="cli"){tr.classList.remove("active");tc.classList.add("active");pr.style.display="none";pc.style.display="";if(!CLIFLAT_LOADED)loadCliFlat();}
     else{tc.classList.remove("active");tr.classList.add("active");pc.style.display="none";pr.style.display="";}}
@@ -461,7 +489,10 @@
     else{var ks=Object.keys(CLIENTES);if(ks.length){var cod=ks[0];var rd=REPDATA[cod];if(rd&&rd.nome)repEx=rd.nome;var cs=CLIENTES[cod]||[];if(cs.length){listaEx=cs.slice(0,3).map(function(x){return "• "+x.nome+" — "+((x.saldo!=null)?brl(x.saldo):(x.pct!=null?x.pct+"%":""));}).join("\n");var d0=cs[0];cliEx=d0.nome;valEx=(d0.saldo!=null)?(brl(d0.saldo)+" de condição"):(d0.pct!=null?(d0.pct+"% de voucher"):(d0.dias?(d0.dias+" dias sem comprar"):"a condição"));}}}
     var pr=$("prev_rep");if(pr){pr.innerHTML='<b>Prévia (exemplo):</b><br>'+esc(fillMk($("mrep_wpp")?$("mrep_wpp").value:"",{REP:repEx,LISTA:listaEx})).replace(/\n/g,"<br>");}
     var pc=$("prev_cli");if(pc){pc.innerHTML='<b>Prévia (exemplo):</b><br>'+esc(fillMk($("mcli_wpp")?$("mcli_wpp").value:"",{CLIENTE:cliEx,VALOR:valEx})).replace(/\n/g,"<br>");}}
-  function agendarFila(){var btn=$("btnAgendar"),st=$("filaStatus");btn.disabled=true;btn.textContent="agendando…";st.textContent="preparando…";
+  function agendarFila(){
+    /* rascunho na tela manda: nunca regerar por cima do que a pessoa editou */
+    if(DRAFTS.length)return agendarTodos();
+    var btn=$("btnAgendar"),st=$("filaStatus");btn.disabled=true;btn.textContent="agendando…";st.textContent="preparando…";
     var reps=[];document.querySelectorAll(".repchk:checked").forEach(function(c){reps.push(parseInt(c.getAttribute("data-cod")));});
     var clientes=[];CLIFLAT.forEach(function(c){if(!CLISEL[c.codparc])return;var sel=CLICT[c.codparc]||defaultSel(c);var chans=Object.keys(sel).map(function(k){return sel[k];});if(!chans.length)return;var vi=valorInfo(c);clientes.push({codparc:c.codparc,nome:c.nome,saldo:c.saldo,pct:c.pct,validade:c.validade,dias:c.dias,crosssell:c.crosssell,novidades:c.novidades,valtxt:c.valtxt,situacao:c.situacao,instancia:c.assistente||null,chans:chans,merge:{cliente:c.nome,saldo:vi.saldo,valor:vi.valor,validade:vi.validade,dias:vi.dias}});});
     var cliSelN=0;CLIFLAT.forEach(function(c){if(CLISEL[c.codparc])cliSelN++;});
@@ -496,7 +527,7 @@
     h+='<div class="note" style="margin-bottom:5px"><b>Enviar ao '+lbl+'</b>'+(d.instancia&&cts.length?(' · 📲 '+esc(d.instancia)):'')+(cts.length?' · marque os contatos:':'')+'</div>';
     if(cts.length){h+='<div style="margin-bottom:7px">';cts.forEach(function(c,jj){h+='<label class="ctopt"><input type="checkbox" class="kamc-'+i+'" data-j="'+jj+'" checked><span class="cf">'+(c.canal==="whatsapp"?foneIco(c.valor):"✉")+' '+esc(c.funcao||"")+' <span style="font-size:10px;font-weight:600;color:'+(c.origem==="CRM"?"#5b3fa0":"#6a7f78")+'">'+esc(c.origem||"")+'</span></span><span>'+esc(c.valor)+'</span></label>';});h+='</div>';}
     else{h+='<div class="note" style="color:#b7791f;margin-bottom:6px">'+esc(d.aviso||"sem contato")+'. '+(publico==="gestor"?"Preencha o campo <b>Gestor</b> no GHL.":"Cadastre um contato no Sankhya/CRM.")+'</div>';}
-    h+='<textarea id="kamt-'+i+'" rows="6" style="width:100%">'+esc(d.mensagem||"")+'</textarea>';
+    h+='<textarea id="kamt-'+i+'" rows="6" style="width:100%" oninput="edGuardar(\'ka\','+i+',\'mensagem\',this)">'+esc(d.mensagem||"")+'</textarea>'+edTag("ka",i)+'';
     if(cts.length)h+='<div class="dbtns" style="margin-top:6px"><button class="btn big ok" onclick="kaAgendar('+i+')">📅 Agendar na fila</button><span class="note" id="kam-ag-'+i+'"></span></div>';
     h+='</div>';box.innerHTML=h;});}
   function kaAgendar(i){var m=KAMSG[i];if(!m)return;var ag=$("kam-ag-"+i);ag.textContent="agendando…";var texto=$("kamt-"+i).value;var itens=[];
@@ -509,8 +540,10 @@
       $("op-kpis").innerHTML='<div class="kpi"><div class="n">'+d.reps.length+'</div><div class="l">representantes</div></div>';
       ROTREPS=d.reps;ROTSEL={};var h='<div class="hint">🗺️ Marque os representantes e clique <b>Enfileirar selecionados</b> — ou clique no nome pra ver o roteiro: <b>âncoras</b> (maior faturamento com gatilho de giro/Clube) e a <b>rota dos vizinhos por CEP</b>, 4–6 visitas/dia.</div>'+rotBulkBar()+'<div class="list">';
       d.reps.forEach(function(r){h+='<div class="rmain" style="cursor:pointer;padding:9px 12px" onclick="verRoteiro('+r.codvend+',this)"><input type="checkbox" class="rotchk" data-id="'+r.codvend+'" onclick="event.stopPropagation()" onchange="rotSel('+r.codvend+',this.checked)"><b>'+esc(r.rep||("Rep "+r.codvend))+'</b><span class="note" style="margin-left:8px">'+r.clientes+' pontos · '+r.prioritarios+' prioritários</span><span class="rv" style="margin-left:auto">'+brl(r.fat)+'</span></div><div class="rotbox" id="rot-'+r.codvend+'"></div>';});h+='</div>';$("roteiroFlow").innerHTML=h;rotSelCount();});}
-  function verRoteiro(cod,el){var box=$("rot-"+cod);if(!box)return;if(box.getAttribute("data-open")){box.innerHTML="";box.removeAttribute("data-open");return;}box.setAttribute("data-open","1");box.innerHTML='<div class="note" style="padding:8px 0 8px 14px">montando roteiro…</div>';getJSON(SUPA+"/functions/v1/campanhas-roteiro?rep="+cod,function(d){if(d.erro){box.innerHTML='<div class="note" style="color:#c0392b;padding-left:14px">erro</div>';return;}var h='<div class="note" style="padding:2px 0 8px 14px"><b>'+d.total+'</b> pontos de visita (redes agrupadas na sede) · roteiro dos <b>'+d.cobertos+'</b> prioritários em <b>'+d.dias.length+'</b> dias</div>';d.dias.forEach(function(dia){h+='<div class="kaCard" style="margin:6px 0 6px 14px"><div class="kaHead"><b>Dia '+dia.dia+'</b><span class="kaTag">base '+esc(dia.cidade_base||"")+'</span><span class="note">'+dia.clientes.length+' visitas</span></div>';h+='<div style="background:#f4f0fb;border-left:3px solid #5b3fa0;border-radius:0 6px 6px 0;padding:7px 10px;margin:4px 0 7px"><b style="color:#5b3fa0">🎯 Âncora da região: '+esc(dia.ancora_nome||"")+'</b><div class="note" style="margin-top:2px">puxa a visita porque: '+esc(dia.ancora_porque||"")+'</div></div>';dia.clientes.forEach(function(c){var isA=c.ancora;h+='<div class="ctopt" style="border-bottom:1px solid #eef2ef'+(isA?";background:#faf7ff":"")+'"><span class="cf" style="min-width:200px"><b>'+(c.ordem?c.ordem+") ":"")+'</b>'+(isA?"⭐ ":"")+esc(c.nome||"")+(c.lojas>1?' <span class="kaTag" style="background:#e7e0f5;color:#5b3fa0">rede '+c.lojas+' lojas</span>':"")+'</span><span class="note">'+esc(c.cidade||"")+' · CEP '+esc(c.cep||"")+(c.km!=null?' · ~'+c.km+'km':"")+' · '+esc(c.motivo)+'</span></div>';});h+='</div>';});ROTDATA[cod]={contatos:d.contatos||[],instancia:d.instancia||null,rep:d.rep||("Rep "+cod)};if((d.contatos||[]).length){h+='<div class="kaCard" style="margin:8px 14px 4px;background:#f7faf9"><div class="lab" style="padding:0 0 4px">✉️ Enviar o roteiro ao representante'+(d.instancia?(" · 📲 "+esc(d.instancia)):"")+'</div>';(d.contatos||[]).forEach(function(c,jj){h+='<label class="ctopt"><input type="checkbox" class="rotc-'+cod+'" data-j="'+jj+'" checked><span class="cf">'+(c.canal==="whatsapp"?"📱":"✉")+' '+esc(c.funcao||"Rep")+'</span><span>'+esc(c.valor)+'</span></label>';});h+='<textarea id="rotmsg-'+cod+'" rows="7" style="width:100%;margin-top:6px">'+esc(d.mensagem||"")+'</textarea><div class="dbtns" style="margin-top:6px"><button class="btn big ok" onclick="rotFila('+cod+')">📥 Colocar na fila</button><span class="note" id="rotfila-'+cod+'"></span></div></div>';}box.innerHTML=h;});}
+  function verRoteiro(cod,el){var box=$("rot-"+cod);if(!box)return;if(box.getAttribute("data-open")){box.innerHTML="";box.removeAttribute("data-open");return;}box.setAttribute("data-open","1");box.innerHTML='<div class="note" style="padding:8px 0 8px 14px">montando roteiro…</div>';getJSON(SUPA+"/functions/v1/campanhas-roteiro?rep="+cod,function(d){if(d.erro){box.innerHTML='<div class="note" style="color:#c0392b;padding-left:14px">erro</div>';return;}var h='<div class="note" style="padding:2px 0 8px 14px"><b>'+d.total+'</b> pontos de visita (redes agrupadas na sede) · roteiro dos <b>'+d.cobertos+'</b> prioritários em <b>'+d.dias.length+'</b> dias</div>';d.dias.forEach(function(dia){h+='<div class="kaCard" style="margin:6px 0 6px 14px"><div class="kaHead"><b>Dia '+dia.dia+'</b><span class="kaTag">base '+esc(dia.cidade_base||"")+'</span><span class="note">'+dia.clientes.length+' visitas</span></div>';h+='<div style="background:#f4f0fb;border-left:3px solid #5b3fa0;border-radius:0 6px 6px 0;padding:7px 10px;margin:4px 0 7px"><b style="color:#5b3fa0">🎯 Âncora da região: '+esc(dia.ancora_nome||"")+'</b><div class="note" style="margin-top:2px">puxa a visita porque: '+esc(dia.ancora_porque||"")+'</div></div>';dia.clientes.forEach(function(c){var isA=c.ancora;h+='<div class="ctopt" style="border-bottom:1px solid #eef2ef'+(isA?";background:#faf7ff":"")+'"><span class="cf" style="min-width:200px"><b>'+(c.ordem?c.ordem+") ":"")+'</b>'+(isA?"⭐ ":"")+esc(c.nome||"")+(c.lojas>1?' <span class="kaTag" style="background:#e7e0f5;color:#5b3fa0">rede '+c.lojas+' lojas</span>':"")+'</span><span class="note">'+esc(c.cidade||"")+' · CEP '+esc(c.cep||"")+(c.km!=null?' · ~'+c.km+'km':"")+' · '+esc(c.motivo)+'</span></div>';});h+='</div>';});ROTDATA[cod]={contatos:d.contatos||[],instancia:d.instancia||null,rep:d.rep||("Rep "+cod)};if((d.contatos||[]).length){h+='<div class="kaCard" style="margin:8px 14px 4px;background:#f7faf9"><div class="lab" style="padding:0 0 4px">✉️ Enviar o roteiro ao representante'+(d.instancia?(" · 📲 "+esc(d.instancia)):"")+'</div>';(d.contatos||[]).forEach(function(c,jj){h+='<label class="ctopt"><input type="checkbox" class="rotc-'+cod+'" data-j="'+jj+'" checked><span class="cf">'+(c.canal==="whatsapp"?"📱":"✉")+' '+esc(c.funcao||"Rep")+'</span><span>'+esc(c.valor)+'</span></label>';});h+='<textarea id="rotmsg-'+cod+'" rows="7" style="width:100%;margin-top:6px" oninput="edGuardar(\'rot\','+cod+',\'mensagem\',this)">'+esc(d.mensagem||"")+'</textarea>'+edTag("rot",cod)+'<div class="dbtns" style="margin-top:6px"><button class="btn big ok" onclick="rotFila('+cod+')">📥 Colocar na fila</button><span class="note" id="rotfila-'+cod+'"></span></div></div>';}box.innerHTML=h;});}
   var ROTDATA={};
+  /* o lote remonta a mensagem no servidor; se a pessoa abriu o rep e editou, vale o texto dela */
+  function rotTexto(m){var d=ROTDATA[m.codvend];return (d&&d.editado&&d.mensagem)?d.mensagem:m.mensagem;}
   function rotFila(cod){var m=ROTDATA[cod];if(!m)return;var st=$("rotfila-"+cod);st.textContent="enfileirando…";var texto=$("rotmsg-"+cod).value;var itens=[];
     document.querySelectorAll(".rotc-"+cod+":checked").forEach(function(cb){var c=m.contatos[+cb.getAttribute("data-j")];if(!c)return;if(c.canal==="email"){itens.push({campanha:"rep_roteiro_visitas",publico:"rep",canal:"email",email:c.valor,assunto:"Seu roteiro de visitas — Nitron",corpo:texto,nome:m.rep});}else{itens.push({campanha:"rep_roteiro_visitas",publico:"rep",canal:"whatsapp",fone:c.valor,instancia:m.instancia,corpo:texto,nome:m.rep});}});
     if(!itens.length){st.textContent="marque ao menos 1 contato";return;}
@@ -551,8 +584,9 @@
           var e=eOn?cts.filter(function(c){return c.canal==="email";})[0]:null;
           if(!w&&!e){semct++;return;}
           feitos++;
-          if(w)itens.push({campanha:"rep_roteiro_visitas",publico:"rep",canal:"whatsapp",fone:w.valor,instancia:m.instancia,corpo:m.mensagem,nome:m.rep});
-          if(e)itens.push({campanha:"rep_roteiro_visitas",publico:"rep",canal:"email",email:e.valor,assunto:"Seu roteiro de visitas \u2014 Nitron",corpo:m.mensagem,nome:m.rep});});
+          var tx=rotTexto(m);
+          if(w)itens.push({campanha:"rep_roteiro_visitas",publico:"rep",canal:"whatsapp",fone:w.valor,instancia:m.instancia,corpo:tx,nome:m.rep});
+          if(e)itens.push({campanha:"rep_roteiro_visitas",publico:"rep",canal:"email",email:e.valor,assunto:"Seu roteiro de visitas \u2014 Nitron",corpo:tx,nome:m.rep});});
         proximo();});}
     proximo();}
   /* ===== ENVIO EM MASSA (checkbox + template único editável) — reusável em cobrança/logística ===== */
@@ -614,7 +648,7 @@
       var h='<div class="kaCard" style="margin:6px 0 6px 14px">';
       h+='<div class="note" style="margin-bottom:5px"><b>Enviar ao rep '+esc(d.rep)+'</b>'+(d.instancia?(' · 📲 '+esc(d.instancia)):'')+' · '+(d.saldos||[]).length+' saldos · marque os contatos:</div>';
       (d.contatos||[]).forEach(function(c,jj){h+='<label class="ctopt"><input type="checkbox" class="salc-'+cod+'" data-j="'+jj+'" checked><span class="cf">'+(c.canal==="whatsapp"?foneIco(c.valor):"✉")+' '+esc(c.funcao||"Rep")+'</span><span>'+esc(c.valor)+'</span></label>';});
-      h+='<div class="lab">Mensagem ao rep (editável)</div><textarea id="salt-'+cod+'" rows="8" style="width:100%">'+esc(d.mensagem||"")+'</textarea>';
+      h+='<div class="lab">Mensagem ao rep (editável)</div><textarea id="salt-'+cod+'" rows="8" style="width:100%" oninput="edGuardar(\'sal\','+cod+',\'mensagem\',this)">'+esc(d.mensagem||"")+'</textarea>'+edTag("sal",cod)+'';
       h+='<div class="dbtns" style="margin-top:6px"><button class="btn big ok" onclick="agendarSaldo('+cod+')">📅 Agendar na fila</button><span class="note" id="sal-ag-'+cod+'"></span></div>';
       h+='</div>';box.innerHTML=h;});}
   function agendarSaldo(cod){var m=SALMSG[cod];if(!m)return;var ag=$("sal-ag-"+cod);ag.textContent="agendando…";var texto=$("salt-"+cod).value;var itens=[];
@@ -645,7 +679,7 @@
     h+='<div class="note" style="margin-bottom:5px"><b>Enviar ao '+lbl+'</b>'+(d.instancia&&cts.length?(' · 📲 '+esc(d.instancia)):'')+(cts.length?' · marque os contatos:':'')+'</div>';
     if(cts.length){cts.forEach(function(c,jj){h+='<label class="ctopt"><input type="checkbox" class="cobc-'+i+'" data-j="'+jj+'" checked><span class="cf">'+(c.canal==="whatsapp"?foneIco(c.valor):"✉")+' '+esc(c.funcao||"")+'</span><span>'+esc(c.valor)+'</span></label>';});}
     else h+='<div class="note" style="color:#b7791f">'+esc(d.aviso||"sem contato")+'. Cadastre um contato.</div>';
-    h+='<textarea id="cobt-'+i+'" rows="7" style="width:100%">'+esc(d.mensagem||"")+'</textarea>';
+    h+='<textarea id="cobt-'+i+'" rows="7" style="width:100%" oninput="edGuardar(\'cob\','+i+',\'mensagem\',this)">'+esc(d.mensagem||"")+'</textarea>'+edTag("cob",i)+'';
     if(cts.length)h+='<div class="dbtns" style="margin-top:6px"><button class="btn big ok" onclick="cobAgendar('+i+')">📅 Agendar na fila</button><span class="note" id="cob-ag-'+i+'"></span></div>';
     h+='</div>';box.innerHTML=h;});}
   function cobAgendar(i){var m=COBMSG[i];if(!m)return;var ag=$("cob-ag-"+i);ag.textContent="agendando…";var texto=$("cobt-"+i).value;var itens=[];var camp=m.publico==="cliente"?"cobranca_duplicata_cliente":"cobranca_aviso_rep";
@@ -670,7 +704,7 @@
     h+='<div class="note" style="margin-bottom:5px"><b>Enviar ao '+lbl+'</b>'+(d.instancia&&cts.length?(' · 📲 '+esc(d.instancia)):'')+(cts.length?' · marque os contatos:':'')+'</div>';
     if(cts.length){cts.forEach(function(c,jj){h+='<label class="ctopt"><input type="checkbox" class="retc-'+i+'" data-j="'+jj+'" checked><span class="cf">'+(c.canal==="whatsapp"?foneIco(c.valor):"✉")+' '+esc(c.funcao||"")+'</span><span>'+esc(c.valor)+'</span></label>';});}
     else h+='<div class="note" style="color:#b7791f">'+esc(d.aviso||"sem contato")+'. Cadastre um contato.</div>';
-    h+='<textarea id="rett-'+i+'" rows="7" style="width:100%">'+esc(d.mensagem||"")+'</textarea>';
+    h+='<textarea id="rett-'+i+'" rows="7" style="width:100%" oninput="edGuardar(\'ret\','+i+',\'mensagem\',this)">'+esc(d.mensagem||"")+'</textarea>'+edTag("ret",i)+'';
     if(cts.length)h+='<div class="dbtns" style="margin-top:6px"><button class="btn big ok" onclick="retAgendar('+i+')">📅 Agendar na fila</button><span class="note" id="ret-ag-'+i+'"></span></div>';
     h+='</div>';box.innerHTML=h;});}
   function retAgendar(i){var m=RETMSG[i];if(!m)return;var ag=$("ret-ag-"+i);ag.textContent="agendando…";var texto=$("rett-"+i).value;var itens=[];
@@ -749,7 +783,7 @@
     h+='<div style="margin:6px 0">';cts.forEach(function(c,idx){var jj=it.contatos.indexOf(c);var val=(PROSCANAL==="email")?esc(c.valor):esc(foneBonito(c.valor));var ic=(PROSCANAL==="email")?"✉":"📱";var tag=(PROSCANAL==="email")?("e-mail"+(c.validado?" ✓":"")):("WhatsApp"+(c.whatsapp_conf?" ✓":""));var ck=(idx===0)?"checked":"";h+='<label class="ctopt"><input type="checkbox" class="prc prc-'+i+'" data-i="'+i+'" data-j="'+jj+'" data-canal="'+PROSCANAL+'" '+ck+' onchange="prosCount()"><span class="cf">'+ic+' '+esc(c.papel||"contato")+' <span style="font-size:10px;color:#6a7f78">'+tag+'</span></span><span>'+val+'</span></label>';});h+='</div>';
     var socs=[];if(it.social){var sv={};it.social.forEach(function(s){var k=(String(s.plataforma||"").toLowerCase())+"|"+String(s.url||s.id||"").toLowerCase();if(k!=="|"&&!sv[k]){sv[k]=1;socs.push(s);}});}
     if(socs.length)h+='<div class="note" style="padding:2px 0 5px 2px"><span style="color:#6a7f78">📲 Redes:</span> '+socs.map(function(s){var pl=String(s.plataforma||"").toLowerCase();var u=s.url||(/face/.test(pl)?"https://facebook.com/":/linked/.test(pl)?"https://linkedin.com/":"https://instagram.com/")+String(s.id||"").replace(/^@/,"");var ic=/face/.test(pl)?"📘":/linked/.test(pl)?"💼":"📷";return '<a href="'+esc(u)+'" target="_blank" style="color:#5b3fa0;font-weight:600;margin:0 10px 0 4px">'+ic+' '+esc(s.plataforma||"social")+(s.id?(" "+esc(s.id)):"")+' ↗</a>';}).join("")+'</div>';
-    h+='<div class="lab" style="margin-top:4px">1ª mensagem (editável)</div><textarea id="prt-'+i+'" rows="3" style="width:100%">'+esc(it.mensagem||"")+'</textarea>';
+    h+='<div class="lab" style="margin-top:4px">1ª mensagem (editável)</div><textarea id="prt-'+i+'" rows="3" style="width:100%" oninput="edGuardar(\'pros\','+i+',\'mensagem\',this)">'+esc(it.mensagem||"")+'</textarea>'+edTag("pros",i)+'';
     return h+'</div>';}
   function prosMarcar(modo){document.querySelectorAll("#pros-lista input.prc").forEach(function(cb){if(cb.disabled)return;var canal=cb.getAttribute("data-canal"),isw=cb.getAttribute("data-w")==="1";if(modo==="todos")cb.checked=true;else if(modo==="nenhum")cb.checked=false;else if(modo==="whatsapp")cb.checked=isw;else if(modo==="email")cb.checked=(canal==="email");else if(modo==="tel")cb.checked=(canal==="whatsapp"&&!isw);});prosCount();}
   function prosCount(){var n=document.querySelectorAll("#pros-lista input.prc:checked").length;var e=$("pros-nsel");if(e)e.textContent=n;}
@@ -769,7 +803,7 @@
       REDEDATA[gk]={contatos:d.contatos||[],instancia:d.instancia||null,rep:d.rep||"",nome:d.nome||""};
       var h='<div class="note" style="padding:2px 0 8px 14px"><b>'+d.total_lojas+'</b> lojas · '+brl(d.fat)+'/ano · roteiro em <b>'+d.dias.length+'</b> dias · rep '+esc(d.rep||"")+(d.instancia?(" · 📲 "+esc(d.instancia)):"")+'</div>';
       d.dias.forEach(function(dia){h+='<div class="kaCard" style="margin:6px 0 6px 14px"><div class="kaHead"><b>Dia '+dia.dia+'</b><span class="kaTag">base '+esc(dia.cidade_base||"")+'</span><span class="note">'+dia.lojas.length+' lojas</span></div>';dia.lojas.forEach(function(l){h+='<div class="ctopt" style="border-bottom:1px solid #eef2ef"><span class="cf" style="min-width:210px"><b>'+(l.ordem?l.ordem+") ":"")+'</b>'+(l.prioritaria?"⭐ ":"")+esc(l.nome||"")+'</span><span class="note">'+esc(l.cidade||"")+' · CEP '+esc(l.cep||"")+(l.km!=null?' · ~'+l.km+'km':"")+' · '+esc(l.motivo)+'</span></div>';});h+='</div>';});
-      if((d.contatos||[]).length){h+='<div class="kaCard" style="margin:8px 14px 4px;background:#f7faf9"><div class="lab" style="padding:0 0 4px">✉️ Enviar o roteiro da rede'+(d.instancia?(" · 📲 "+esc(d.instancia)):"")+'</div>';(d.contatos||[]).forEach(function(c,jj){h+='<label class="ctopt"><input type="checkbox" class="redc-'+gk+'" data-j="'+jj+'" '+(jj===0?"checked":"")+'><span class="cf">'+(c.canal==="whatsapp"?"📱":"✉")+' '+esc(c.funcao||"")+'</span><span>'+esc(c.valor)+'</span></label>';});h+='<textarea id="redemsg-'+gk+'" rows="7" style="width:100%;margin-top:6px">'+esc(d.mensagem||"")+'</textarea><div class="dbtns" style="margin-top:6px"><button class="btn big ok" onclick="redeFila('+gk+')">📥 Colocar na fila</button><span class="note" id="redefila-'+gk+'"></span></div></div>';}
+      if((d.contatos||[]).length){h+='<div class="kaCard" style="margin:8px 14px 4px;background:#f7faf9"><div class="lab" style="padding:0 0 4px">✉️ Enviar o roteiro da rede'+(d.instancia?(" · 📲 "+esc(d.instancia)):"")+'</div>';(d.contatos||[]).forEach(function(c,jj){h+='<label class="ctopt"><input type="checkbox" class="redc-'+gk+'" data-j="'+jj+'" '+(jj===0?"checked":"")+'><span class="cf">'+(c.canal==="whatsapp"?"📱":"✉")+' '+esc(c.funcao||"")+'</span><span>'+esc(c.valor)+'</span></label>';});h+='<textarea id="redemsg-'+gk+'" rows="7" style="width:100%;margin-top:6px" oninput="edGuardar(\'rede\',\''+gk+'\',\'mensagem\',this)">'+esc(d.mensagem||"")+'</textarea>'+edTag("rede",gk)+'<div class="dbtns" style="margin-top:6px"><button class="btn big ok" onclick="redeFila('+gk+')">📥 Colocar na fila</button><span class="note" id="redefila-'+gk+'"></span></div></div>';}
       box.innerHTML=h;});}
   function redeFila(gk){var m=REDEDATA[gk];if(!m)return;var st=$("redefila-"+gk);st.textContent="enfileirando…";var texto=$("redemsg-"+gk).value;var itens=[];
     document.querySelectorAll(".redc-"+gk+":checked").forEach(function(cb){var c=m.contatos[+cb.getAttribute("data-j")];if(!c)return;if(c.canal==="email"){itens.push({campanha:"promocao_redes",publico:"rep",canal:"email",email:c.valor,assunto:"Roteiro da rede — Nitron",corpo:texto,nome:m.rep||m.nome});}else{itens.push({campanha:"promocao_redes",publico:"rep",canal:"whatsapp",fone:c.valor,instancia:m.instancia,corpo:texto,nome:m.rep||m.nome});}});
@@ -807,7 +841,7 @@
     h+='<div class="note" style="margin-bottom:5px"><b>Enviar ao '+lbl+'</b>'+(d.instancia&&cts.length?(' · 📲 '+esc(d.instancia)):'')+(cts.length?' · marque os contatos:':'')+'</div>';
     if(cts.length){cts.forEach(function(c,jj){h+='<label class="ctopt"><input type="checkbox" class="agec-'+i+'" data-j="'+jj+'" checked><span class="cf">'+(c.canal==="whatsapp"?foneIco(c.valor):"✉")+' '+esc(c.funcao||"")+'</span><span>'+esc(c.valor)+'</span></label>';});}
     else h+='<div class="note" style="color:#b7791f">'+esc(d.aviso||"sem contato")+'. Cadastre um contato.</div>';
-    h+='<textarea id="aget-'+i+'" rows="6" style="width:100%">'+esc(d.mensagem||"")+'</textarea>';
+    h+='<textarea id="aget-'+i+'" rows="6" style="width:100%" oninput="edGuardar(\'age\','+i+',\'mensagem\',this)">'+esc(d.mensagem||"")+'</textarea>'+edTag("age",i)+'';
     if(cts.length)h+='<div class="dbtns" style="margin-top:6px"><button class="btn big ok" onclick="ageAgendar('+i+')">📅 Agendar na fila</button><span class="note" id="age-ag-'+i+'"></span></div>';
     h+='</div>';box.innerHTML=h;});}
   function ageAgendar(i){var m=AGEMSG[i];if(!m)return;var ag=$("age-ag-"+i);ag.textContent="agendando…";var texto=$("aget-"+i).value;var itens=[];
@@ -821,6 +855,7 @@
   function mergeDe(d){return {cliente:(d.tipo==="cliente"?d.nome:"")||"",rep:(d.tipo==="rep"?d.nome:"")||"",saldo:d.saldo_txt||"",validade:d.validade||"",instancia:d.instancia||""};}
   var FILATIMER=null;
   function agendarTodos(){var itens=[],tid=arteSel();
+    var stEl=$("filaStatusD")||$("filaStatus"),btnEl=$("btnAgendarD")||$("btnAgendar");
     DRAFTS.forEach(function(d,i){var wpp=$("w-"+i)?$("w-"+i).value:d.wpp;var assunto=$("a-"+i)?$("a-"+i).value:d.assunto;var corpoE=$("c-"+i)?$("c-"+i).value:d.corpo;
       var mg=mergeDe(d);
       if(d.tipo==="rep"){var rs=REPSEL[d.codvend]||{tel:[],email:[]};
@@ -829,10 +864,10 @@
       }else{(d.contatos||[]).forEach(function(c){
         if(c.email){itens.push({campanha:CUR,publico:"cliente",canal:"email",email:c.email,assunto:assunto,corpo:corpoE,template_id:tid||null,nome:c.nome||d.nome,merge:mg});}
         else if(c.fone){itens.push({campanha:CUR,publico:"cliente",canal:"whatsapp",fone:c.fone,instancia:d.instancia,corpo:wpp,nome:c.nome||d.nome});}});}});
-    if(!itens.length){$("filaStatus").textContent="nada para agendar (marque contatos)";return;}
-    var btn=$("btnAgendar");if(btn){btn.disabled=true;btn.textContent="agendando…";}
+    if(!itens.length){if(stEl)stEl.textContent="nada para agendar (marque contatos)";return;}
+    var btn=btnEl;if(btn){btn.disabled=true;btn.textContent="agendando…";}
     postJSON(SUPA+"/functions/v1/fila-enfileirar",{itens:itens},function(r){if(btn){btn.disabled=false;btn.textContent="📅 Agendar todos na fila";}
-      if(r.ok){$("filaStatus").innerHTML='<b>✓ '+r.enfileirados+' na fila</b>';if(FILATIMER)clearInterval(FILATIMER);statusFila();FILATIMER=setInterval(statusFila,15000);}else{$("filaStatus").textContent="✗ "+(r.erro||"falha");}});}
+      if(r.ok){if(stEl)stEl.innerHTML='<b>✓ '+r.enfileirados+' na fila</b>';if(FILATIMER)clearInterval(FILATIMER);statusFila();FILATIMER=setInterval(statusFila,15000);}else{if(stEl)stEl.textContent="✗ "+(r.erro||"falha");}});}
   function statusFila(){getJSON(SUPA+"/functions/v1/fila-enfileirar?campanha="+CUR,function(c){if(c.pendente===undefined&&c.enviado===undefined)return;
     var res=$("filaResumo");if(res)res.innerHTML='<b>'+(c.pendente||0)+'</b> pendente ('+(c.whatsapp_pendente||0)+' wpp · '+(c.email_pendente||0)+' email) · <b style="color:#1a7f4b">'+(c.enviado||0)+'</b> enviados'+((c.erro||0)?(' · <b style="color:#c0392b">'+c.erro+'</b> erro'):'');
     var lista=$("filaLista");if(lista){var its=c.itens||[];if(!its.length){lista.innerHTML='<div class="note" style="padding:14px">Fila vazia. Marque destinatários (reps e/ou clientes) e clique <b>Agendar na fila</b>.</div>';}

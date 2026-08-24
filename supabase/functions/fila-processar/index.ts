@@ -1,4 +1,4 @@
-// fila-processar (v15) — cron (1/min). Le fila_config: email em lote (email_lote) se email_ativo; WhatsApp 1 por instancia a cada wpp_intervalo_seg se wpp_ativo. Chama campanhas-enviar (passa merge).
+// fila-processar (v16) — cron (1/min). Le fila_config: email em lote (email_lote) se email_ativo; WhatsApp 1 por instancia a cada wpp_intervalo_seg se wpp_ativo. Chama campanhas-enviar (passa merge).
 // BILINGUE: drena tanto as linhas do GESTOR (status='pendente', texto em `corpo`, com assunto)
 // quanto as do MOTOR (status='agendado', texto em `mensagem`, sem assunto). texto = corpo||mensagem.
 // v13: chave de servico via srvKey(). Desde 23/08 a plataforma injeta em
@@ -7,6 +7,10 @@
 // v15: confere a instancia contra o cadastro instancia_ghl antes de enviar. Antes bloqueava so
 // instancia NULA — token invalido (ex.: "<sem", "Monica" sem acento) passava e o #contact_instance
 // nao amarrava nada, entao a mensagem saia pela instancia errada e o cliente recebia algo desconexo.
+// v16: as instancias passam a ser drenadas EM PARALELO. O campanhas-enviar v23 agora espera o app
+// confirmar a troca de instancia antes de soltar o texto (~25s no pior caso), e em serie 7 instancias
+// estourariam o tempo da funcao — o cron abortaria no meio e a fila ficaria parada sem aviso.
+// Cada linha e de uma instancia e de um contato diferente, entao nao ha ordem a preservar entre elas.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type, apikey", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
 const j = (o: unknown, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
@@ -52,22 +56,26 @@ Deno.serve(async (req) => {
       if (error) throw error;
       for (const m of (eRows || [])) { await enviar(m); emails++; }
     }
-    let whatsapp = 0;
+    let whatsapp = 0; let bloqueados = 0;
     if (WPP_ATIVO) {
       const { data: wRows, error } = await sb.from("fila_envio").select("*").in("status", PEND).eq("canal", "whatsapp").order("id");
       if (error) throw error;
       const firstByInst: Record<string, any> = {};
       for (const m of (wRows || [])) { const k = m.instancia || ""; if (!firstByInst[k]) firstByInst[k] = m; }
+      const tarefas: Promise<void>[] = [];
       for (const inst of Object.keys(firstByInst)) {
         const m = firstByInst[inst];
-        if (!inst) { await sb.from("fila_envio").update({ status: "erro", resultado: "sem instancia (WhatsApp nao roteavel)" }).eq("id", m.id); continue; }
-        if (!INST_OK.has(inst)) { await sb.from("fila_envio").update({ status: "erro", resultado: "instancia '" + inst + "' fora do cadastro instancia_ghl" }).eq("id", m.id); continue; }
-        const { data: last } = await sb.from("fila_envio").select("enviado_em").eq("canal", "whatsapp").eq("instancia", inst).eq("status", "enviado").order("enviado_em", { ascending: false }).limit(1).maybeSingle();
-        const lastMs = last?.enviado_em ? new Date(last.enviado_em).getTime() : 0;
-        if (now - lastMs >= WPP_INTERVALO_MS) { await enviar(m); whatsapp++; }
+        if (!inst) { await sb.from("fila_envio").update({ status: "erro", resultado: "sem instancia (WhatsApp nao roteavel)" }).eq("id", m.id); bloqueados++; continue; }
+        if (!INST_OK.has(inst)) { await sb.from("fila_envio").update({ status: "erro", resultado: "instancia '" + inst + "' fora do cadastro instancia_ghl" }).eq("id", m.id); bloqueados++; continue; }
+        tarefas.push((async () => {
+          const { data: last } = await sb.from("fila_envio").select("enviado_em").eq("canal", "whatsapp").eq("instancia", inst).eq("status", "enviado").order("enviado_em", { ascending: false }).limit(1).maybeSingle();
+          const lastMs = last?.enviado_em ? new Date(last.enviado_em).getTime() : 0;
+          if (now - lastMs >= WPP_INTERVALO_MS) { await enviar(m); whatsapp++; }
+        })());
       }
+      await Promise.all(tarefas);   // uma instancia lenta nao segura as outras
     }
-    return j({ ok: true, emails, whatsapp, cfg: { wpp_seg: WPP_INTERVALO_MS / 1000, email_lote: EMAIL_LOTE, wpp_ativo: WPP_ATIVO, email_ativo: EMAIL_ATIVO } });
+    return j({ ok: true, emails, whatsapp, bloqueados_por_instancia: bloqueados, instancias_ativas: INST_OK.size, cfg: { wpp_seg: WPP_INTERVALO_MS / 1000, email_lote: EMAIL_LOTE, wpp_ativo: WPP_ATIVO, email_ativo: EMAIL_ATIVO } });
   } catch (e: any) {
     const msg = [e?.message, e?.details, e?.hint, e?.code].filter(Boolean).join(" · ") || String(e);
     console.error("fila-processar falhou:", msg);

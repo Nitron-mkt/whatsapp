@@ -1,4 +1,6 @@
-// campanhas-roteiro (v12) — le de roteiro_cliente_apto: fora quem tem pendencia financeira
+// campanhas-roteiro (v13) — chave de servico via srvKey() (SRV_JWT, JWT legado) por causa
+// da chave sb_secret_ que o Data API recusa desde 23/08.
+// (v12) — le de roteiro_cliente_apto: fora quem tem pendencia financeira
 // (inadimplente ou titulo vencido) e quem esta com giro em dia. Mensagem em tom de apoio.
 // (v9) — DISTANCIA REAL (haversine via cep_geo) com teto MAX_KM/dia; fallback regiao de CEP p/ sem coord. Agrupa por matriz. Ordem NN. Msg detalhada+numerada+espacada (com km). Exclui inad+intra.
 // v9: modo ?lote=<csv de codvend> monta o roteiro de vários reps numa chamada (geo/intra carregados uma vez), p/ o envio em massa do painel.
@@ -28,6 +30,7 @@ function agrupar(rows: any[]) {
 function pushCanal(out: any[], seen: any, canal: string, valor: any, origem: string) { const v = String(valor || "").trim(); if (!v) return; const k = canal + "|" + (canal === "email" ? v.toLowerCase() : digits(v).replace(/^0+/, "").replace(/^55/, "")); if (seen[k]) return; seen[k] = 1; out.push({ canal, valor: v, funcao: "Rep", origem }); }
 // ordena um grupo por vizinho-mais-proximo (NN) a partir do 1o
 function rota(grupo: any[]) { if (grupo.length <= 2) return grupo; const out = [grupo[0]]; const rest = grupo.slice(1); while (rest.length) { const last = out[out.length - 1]; let bi = 0, bd = Infinity; rest.forEach((n: any, i: number) => { const d = dist(last, n); if (d < bd) { bd = d; bi = i; } }); out.push(rest.splice(bi, 1)[0]); } return out; }
+const srvKey = () => Deno.env.get("SRV_JWT") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const VIS_DIA = 6; const MAX_DIAS = 22; const CEP3_JANELA = 20; const MAX_KM = 150; const LOTE_MAX = 15;
 
 // monta o roteiro de 1 rep. Sem I/O: geo e snap_rep vem de fora, pro modo lote carregar uma vez so.
@@ -55,7 +58,7 @@ function montar(rep: number, rows: any[], sr: any, geo: Map<string, any>) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
-    const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const sb = createClient(Deno.env.get("SUPABASE_URL")!, srvKey());
     const p = new URL(req.url).searchParams; const repParam = p.get("rep"); const loteParam = p.get("lote");
     const intra = await intraSet(sb);
 

@@ -1,4 +1,7 @@
-// campanhas-disparar (v46) — trava umaListaSo(): se a IA escrever [LISTA] duas vezes, a lista
+// campanhas-disparar (v47) — chave de servico via srvKey(). Desde 23/08 a plataforma injeta
+// em SUPABASE_SERVICE_ROLE_KEY uma chave sb_secret_ que o Data API recusa (PGRST303
+// "JWT issued at future"); SRV_JWT guarda o JWT legado, que segue valido.
+// (v46) — trava umaListaSo(): se a IA escrever [LISTA] duas vezes, a lista
 // inteira saia repetida para o rep. Agora vale a ultima ocorrencia.
 // (v45) — TOM_REP: toda mensagem ao representante cumprimenta, apresenta a
 // lista como apoio (nao tarefa) e termina oferecendo ajuda com pergunta aberta. Proibido cobrar,
@@ -10,6 +13,8 @@ const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers
 const j = (o: unknown, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
 const brl = (v: number) => "R$ " + Math.round(v).toLocaleString("pt-BR");
 const MODELO = "claude-haiku-4-5-20251001";
+// chave de servico: SRV_JWT (JWT legado) e, se nao existir, a injetada pela plataforma
+const srvKey = () => Deno.env.get("SRV_JWT") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const fmtDate = (s: any) => { const m = String(s || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}` : (s ? String(s) : ""); };
 const lj = (n: any) => (Number(n) > 1 ? ` (${n} lojas)` : "");
 const GIRO: Record<string, string[]> = { recompra_giro_a_vencer: ["A_VENCER"], recompra_giro_vencido: ["VENCIDO"], rep_sem_comprar: ["VENCIDO", "REATIVACAO"] };
@@ -112,7 +117,7 @@ Deno.serve(async (req) => {
     const codigo = body.codigo || "clube_saldo"; const modo = body.modo || "rascunho"; const publico = body.publico || "rep";
     const reps: number[] = Array.isArray(body.reps) ? body.reps.map((x: any) => Number(x)) : [];
     const clientesSel: any[] = Array.isArray(body.clientes) ? body.clientes : [];
-    const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const sb = createClient(Deno.env.get("SUPABASE_URL")!, srvKey());
     const { data: camp } = await sb.from("campanhas").select("*").eq("codigo", codigo).maybeSingle();
     if (!camp) return j({ erro: `campanha '${codigo}' nao encontrada` }, 404);
     const isClube = codigo === "clube_saldo"; const isVoucher = codigo === "voucher_empurrar"; const isGiro = !!GIRO[codigo]; const isMotor = !!MOTOR[codigo];

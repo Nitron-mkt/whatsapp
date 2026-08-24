@@ -87,3 +87,47 @@ campanhas-artes, fila-enfileirar e fila-processar.
 `campanhas-listar` fazia `String(e)` no erro, que num erro do PostgREST vira
 `[object Object]`. Era por isso que o painel dizia só "erro". Agora devolve
 `"JWT issued at future · PGRST303"`, e é assim que este diagnóstico saiu.
+
+
+## Contorno aplicado em 24/08
+
+O JWT legado de `service_role` foi guardado num secret chamado `SRV_JWT` (não pode
+começar com `SUPABASE_`, que é prefixo reservado), e as funções passaram a resolver a
+chave assim:
+
+```ts
+const srvKey = () => Deno.env.get("SRV_JWT") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+```
+
+O fallback é de propósito: no dia em que a plataforma voltar a injetar uma chave aceita,
+basta apagar o secret e nada precisa ser redeployado.
+
+### Já no ar com o contorno
+
+| função | verificado |
+| --- | --- |
+| `campanhas-listar` | 38 campanhas, 12 ativas |
+| `campanhas-preview` | Clube 77 clientes · voucher 526 · giro a vencer 119 · giro vencido 169 · sem comprar 677 |
+| `campanhas-disparar` | gera modelo e público |
+| `campanhas-roteiro` | 83 reps, 1.844 pontos |
+| `fila-enfileirar` | lê a fila (195 enviados, 5 erro) e grava |
+| `fila-processar` | lê `fila_config` de novo (antes vinha `null`) |
+| `campanhas-enviar` | não usa o banco — só o CRM. Não precisou de ajuste |
+
+### Ainda parado
+
+Tudo o que não está na lista acima continua com a chave recusada. O que mais pesa:
+
+- `campanhas-cron` — o rascunho diário das 08:00 não é gerado
+- `master-refresh` — o núcleo não atualiza de madrugada
+- `contato-escrever` e os `pipe-*` — o CRM não recebe enriquecimento
+- os `*-refresh` — os snapshots do Sankhya congelam no retrato de 23/08
+- `campanhas-saldo`, `campanhas-cobranca`, `campanhas-retorno` — as telas de
+  Logística e Cobrança do painel continuam zeradas
+- `ghl-contatos-sync`, `motor-*`, `campanhas-artes`, `fila-config`
+
+### Vale testar antes de mexer em todas
+
+Se a Supabase aceitar criar um secret com o nome `SUPABASE_SERVICE_ROLE_KEY` (o prefixo é
+reservado, mas vale a tentativa), o valor do secret sobrepõe o injetado e as ~90 funções
+restantes voltam sem nenhuma alteração de código.

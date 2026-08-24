@@ -1,9 +1,16 @@
-// campanhas-listar (v13) — devolve o catalogo de campanhas (para a tela montar tudo).
+// campanhas-listar (v14) — devolve o catalogo de campanhas (para a tela montar tudo).
+// v14: a chave de servico vem de srvKey(). Desde 23/08 a plataforma injeta em
+// SUPABASE_SERVICE_ROLE_KEY uma chave sb_secret_ que o Data API recusa (PGRST303
+// "JWT issued at future"). SRV_JWT guarda o JWT legado de service_role, que segue
+// valido. Com o fallback, no dia em que a plataforma consertar nada quebra de novo.
 // v13: erro legivel. Antes fazia String(e), que num erro do PostgREST vira "[object Object]"
 // e o painel mostrava so "erro", sem dizer o que aconteceu. Foi assim que a queda do dia
 // 23/08 (chave de servico rejeitada, PGRST303) ficou muda por um dia.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type, apikey", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
+
+// chave de servico: SRV_JWT (JWT legado) e, se nao existir, a injetada pela plataforma
+const srvKey = () => Deno.env.get("SRV_JWT") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
 function detalhar(e: any) {
   if (!e) return "erro desconhecido";
@@ -16,7 +23,7 @@ function detalhar(e: any) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
-    const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const sb = createClient(Deno.env.get("SUPABASE_URL")!, srvKey());
     const { data, error } = await sb.from("campanhas")
       .select("codigo,nome,pipe,objetivo,publico,canais,cadencia,status_dados,ativa,prioridade")
       .order("prioridade", { ascending: true });

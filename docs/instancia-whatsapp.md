@@ -98,66 +98,77 @@ gerente no Sankhya é `<SEM VENDEDOR>` ou a própria conta:
 | 217 | PRG VENDEDOR | `PRG GERENTE` | 0 |
 | 214 | MARCELO CARVALH | `MARCELO CARVALH` | 0 |
 
-## A corrida da troca de instância (24/08)
+## A instância de saída segue o usuário, não o contato (24/08)
 
-O bind ser aceito **não** significa que a instância já trocou. No primeiro teste
-real do mecanismo a sequência foi esta, e ainda assim o cliente recebeu pelo
-número antigo:
+**Esta é a causa raiz.** O `#contact_instance:<token>` é processado pelo
+ZaptosWPP (ele confirma sempre, veja abaixo) e governa a atribuição do que
+**entra** — é o que produz o `Instance Source:` na resposta do cliente. Mas ele
+**não** decide por qual número a mensagem **sai**. A saída segue o **usuário GHL
+remetente**, e numa mensagem de API o remetente é o `assignedTo` do contato.
 
-| hora (UTC) | evento | status |
+A prova está no `userId` das mensagens da mesma conversa, no mesmo dia:
+
+| hora (UTC) | origem | `userId` | quem é | chegou por |
+|---|---|---|---|---|
+| 16:37 | API (nossa função) | `SajXOmyjd7MdoMLmbQ8D` | Juliete Silva | **Juliete** |
+| 16:38 | tela do CRM | `Yoq6cL8mRr3ICN4EK3st` | Leonardo Lucas | **Isadora** |
+| 16:56 | API, esperando 22,6s | `SajXOmyjd7MdoMLmbQ8D` | Juliete Silva | **Juliete** |
+| 17:0x | tela, sem mandar código | `Yoq6cL8mRr3ICN4EK3st` | Leonardo Lucas | **Isadora** |
+| 17:16 | API, `assignedTo` → Isadora | `WlHZT90d36qnnXFbKzbl` | Isadora Shizuka | (confirmar) |
+
+O contato de teste tinha `assignedTo = SajXOmyjd7MdoMLmbQ8D` — Juliete. Trocando
+para o usuário da Isadora, o `userId` da mensagem de API passou a ser dela sem
+mais nenhuma mudança. É essa a alavanca.
+
+Duas coisas que enganaram no caminho:
+
+- **Dois aplicativos distintos deram o mesmo `userId`.** O nosso token
+  (`appId 6a6c7ab7…`) e o MCP da Anthropic (`appId 6a3e39da…`) saíram os dois como
+  Juliete. Isso parecia dizer "o token é da Juliete", e não é: os dois herdaram o
+  `assignedTo` do contato.
+- **A tela do CRM funcionava sem mandar código nenhum.** Não é que a troca tenha
+  "pegado depois"; é que na tela o remetente é o usuário logado.
+
+A API **não** permite escolher o remetente: em `POST /conversations/messages` o
+campo `userId` só vale para `type: InternalComment`. Existe `fromNumber`
+("sender number for outbound messages"), que seria a alternativa sem tocar no
+CRM, mas exigiria os números de WhatsApp de cada instância — que não estão no GHL
+(não há custom value nem custom field com esse mapa; conferidos os dois).
+
+Por isso `instancia_ghl` ganhou a coluna `usuario_ghl_id`:
+
+| instância | usuário GHL | id |
 |---|---|---|
-| 16:37:33.594 | `#contact_instance:Isadora` | `sent` |
-| 16:37:35.804 | `[System]: Contact Instance Updated!` | — |
-| 16:37:37.546 | texto real | `delivered` — **saiu pela instância anterior** |
+| Beatriz | Beatriz Farias | `qZXd7wbATAFdznMpRPze` |
+| Isadora | Isadora Shizuka | `WlHZT90d36qnnXFbKzbl` |
+| Mônica | Mônica C Gomes | `tIpN9i0amyRc6TKnnwRS` |
+| Camyla | Camyla Castro | `CPmJ2iQ1eFHwS15bIxNJ` |
+| Valeria | Valeria Oliveira | `ld8s0Lx1egaZb6itl5xO` |
+| Estevany | Estevany Caroline | `HQiOwWgtXPZFrOymkYpt` |
+| Juliete | Juliete Silva | `SajXOmyjd7MdoMLmbQ8D` |
 
-O `sleep(1500)` que existia entre o bind e o texto era um chute, e perdia a
-corrida. Duas coisas explicam por que isso passou tanto tempo sem aparecer:
+### Caminho descartado: esperar mais tempo
 
-1. **A instância não é campo do contato no GHL.** Foram conferidos os 100 custom
-   fields da location: nenhum guarda a instância. O ZaptosWPP guarda no banco
-   dele, e a tela do CRM mostra cache — foi por isso que a instância "continuou
-   Juliete" na tela e só apareceu certa depois de recarregar a página. Não existe
-   onde ler a instância atual pela API.
-2. **O único sinal observável é a confirmação na conversa.** O app grava
-   `[System]: Contact Instance Updated!` (type 2, `source: app`,
-   `appName: ZaptosWPP - WhatsAPP like SMS`) quando processa o comando.
+A primeira hipótese foi corrida de tempo, e estava **errada** — fica registrada
+para ninguém tentar de novo. O `sleep(1500)` entre o bind e o texto era chute, o
+`campanhas-enviar` v23/v24 passou a esperar a confirmação do app e mais 20s de
+margem, e a mensagem **continuou saindo pela instância antiga**. O que se
+aprendeu de útil no caminho:
 
-### Como ficou
+- A instância não é campo do contato no GHL (conferidos os 100 custom fields da
+  location). O ZaptosWPP guarda no banco dele e a tela mostra cache — foi por isso
+  que a instância "continuou a antiga" na tela até recarregar a página.
+- O app grava `[System]: Contact Instance Updated!` na conversa 2,2–2,3s depois do
+  comando, com constância (4 amostras), e **incondicionalmente**: uma sonda com o
+  contato já na instância pedida também recebeu confirmação. Isso serve como sinal
+  de que o comando foi processado — só não é sinal de roteamento de saída.
+- A espera de 25s + margem de 20s do v24 é, portanto, custo sem benefício para a
+  saída. Com o roteamento por `assignedTo` no lugar, a margem deve voltar para
+  algo pequeno (o bind continua útil para o `Instance Source:` do retorno).
 
-`campanhas-enviar` v24 faz, para todo WhatsApp:
-
-1. manda `#contact_instance:<instancia>`;
-2. lê a conversa (o retorno do bind traz o `conversationId`) a cada 1,5s, por até
-   25s, procurando a confirmação com `dateAdded` **posterior ao do próprio bind**
-   — os dois horários vêm do GHL, então não há desencontro de relógio;
-3. **sem confirmação, o texto não sai** (`bind_nao_confirmado: true`);
-4. com confirmação, espera ainda 20s de acomodação e só então manda o texto.
-
-Medições de 24/08 que sustentam esses números:
-
-| amostra | confirmação após o bind | texto após a confirmação | resultado |
-|---|---|---|---|
-| 16:37 (v22) | 2,21s | 1,7s | instância **errada** |
-| 16:48 (troca manual na tela) | — | 3,7s | certa |
-| 16:56 (v23) | 2,25s | 22,6s | certa |
-| 16:57 (sonda, sem texto) | 2,30s | — | — |
-
-A sonda das 16:57 mandou o comando com o contato **já** na instância pedida e o
-app confirmou de novo: a confirmação é **incondicional**. Ou seja, ausência de
-confirmação significa de verdade que o comando não foi processado — recusar o
-envio nesse caso é seguro, não gera recusa falsa na segunda mensagem para o
-mesmo contato.
-
-Sobra e sobrará a dúvida do valor exato: 1,7s falha e 22,6s funciona; o meio não
-foi medido. Os 20s são o lado seguro da dúvida, e não custam vazão porque a fila
-manda 1 mensagem por instância a cada 120s. Os três tempos são ajustáveis por
-secret (`BIND_ESPERA_MS`, `BIND_POLL_MS`, `BIND_MARGEM_MS`) e por chamada
-(`espera_ms`, `margem_ms`, `exigir_confirmacao`), sem redeploy.
-
-`fila-processar` v16 passou a drenar as instâncias **em paralelo**: em série, 7
-instâncias × ~35s no pior caso estouravam o tempo da função e o cron abortaria no
-meio, deixando a fila parada sem aviso. Cada linha é de uma instância e de um
-contato diferentes, então não há ordem a preservar entre elas.
+`fila-processar` v16 drena as instâncias **em paralelo**, o que segue valendo:
+em série, 7 instâncias × ~35s estouravam o tempo da função e o cron abortaria no
+meio, deixando a fila parada sem aviso.
 
 ## Pendente
 
@@ -174,6 +185,9 @@ contato diferentes, então não há ordem a preservar entre elas.
 - [ ] `usuario_ghl` está cadastrado e ainda não é usado. Serve se um dia quisermos
       também **atribuir** o contato/oportunidade à assistente no GHL
       (`assignedTo`), não só mandar por ela.
-- [ ] Medir o mínimo real da margem de acomodação (hoje 20s por precaução). Dá
-      para fazer com envios controlados a um número interno, baixando
-      `margem_ms` até falhar.
+- [ ] **Decidir como rotear.** A alavanca validada é escrever `assignedTo` no
+      contato antes de enviar — o que reescreve o responsável no CRM e pode
+      disparar automações de "responsável alterado". Alternativa sem tocar no
+      CRM: testar `fromNumber`, que precisa dos 7 números do painel do ZaptosWPP.
+- [ ] Depois de decidir, baixar `BIND_MARGEM_MS` de 20s (a espera não influi na
+      saída; ficou de um diagnóstico errado).

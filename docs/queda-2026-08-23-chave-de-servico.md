@@ -131,3 +131,100 @@ Tudo o que não está na lista acima continua com a chave recusada. O que mais p
 Se a Supabase aceitar criar um secret com o nome `SUPABASE_SERVICE_ROLE_KEY` (o prefixo é
 reservado, mas vale a tentativa), o valor do secret sobrepõe o injetado e as ~90 funções
 restantes voltam sem nenhuma alteração de código.
+
+## 24/08 — restauração (continuação)
+
+O `SRV_JWT` criado pelo usuário resolveu o acesso. Cada função precisa ser
+reimplantada lendo essa chave, porque o `SUPABASE_SERVICE_ROLE_KEY` injetado
+pela plataforma passou a vir com um valor `sb_secret_` que o PostgREST recusa
+(`PGRST303 "JWT issued at future"`). Padrão aplicado:
+
+```ts
+const srvKey = () => Deno.env.get("SRV_JWT") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+```
+
+### Já restaurado e testado em produção
+
+| Função | Versão | Verificação |
+|---|---|---|
+| campanhas-listar | 15 | 38 campanhas |
+| campanhas-preview | 40 | Clube 77 / voucher 526 / giro 119+169 / sem comprar 677 |
+| campanhas-disparar | 48 | rascunhos gerados |
+| campanhas-roteiro | 14 | 83 reps, 1.844 pontos |
+| campanhas-enviar | 25 | não usa Supabase — sem mudança |
+| fila-enfileirar | 14 | 195 enviados |
+| fila-processar | 14 | lê `fila_config` de novo |
+| campanhas-cobranca | 7 | 200 a cobrar / 201 jurídico / R$ 2,98 mi |
+| campanhas-saldo | 7 | 42 saldos no maior rep |
+| campanhas-retorno | 5 | 11 grupos → 6 após refresh |
+| campanhas-prep | 6 | lista de reps + mensagem com dados reais |
+| campanhas-agendar | 6 | 71 grupos / 134 pedidos |
+| campanhas-keyaccounts | 10 | — |
+| campanhas-cron | 14 | agora devolve 500 quando alguma campanha falha |
+| master-refresh | 8 | 21.015 contatos gravados |
+| roteiro-refresh | 10 | 3.340 clientes / 447 inadimplentes |
+| retorno-refresh | 5 | 6 retornos |
+| saldo-refresh | 7 | 463 saldos |
+| cobranca-refresh | 7 | 774 CNPJs → 518 grupos |
+| prep-refresh | 5 | 329 pedidos |
+| prep-pipe-refresh | 4 | 989 pedidos |
+| agendar-refresh | 5 | 134 pedidos |
+| clube-refresh | 4 | 136 contratos |
+| rep-refresh | 4 | 99 reps |
+| ka-refresh | 4 | — |
+| entregas-refresh | 4 | 2.068 notas |
+| parc-matriz-refresh | 4 | 3.735 filiais |
+| carteira-refresh | 6 | 9.596 clientes |
+| cache-refresh | 12 | 1.050 parceiros / 2.655 contatos / 78 reps / 1.218 giro |
+| resumo-refresh | 5 | 120 resumos por lote |
+| digital-refresh | 5 | 200 por lote |
+| nitron-flag | 6 | 10.413 contatos no CRM |
+| pipe-recompra | 11 | 20 cards atualizados |
+| pipe-saldo | 6 | 463 no snapshot |
+| pipe-clube | 6 | 15 cards atualizados |
+| pipe-cobranca | 11 | 518 grupos |
+| pipe-preparacao | 6 | 994 no snapshot |
+| pipe-entregas | 6 | 2.068 notas |
+| pipe-representantes | 5 | — |
+| pipe-keyaccounts | 5 | 123 grupos |
+| pipe-novos | 6 | 2.413 cards |
+| pipe-inativos | 4 | 1.065 inativos / 61 já arquivados |
+| contato-escrever | 8 | — |
+
+### O que a queda expôs além da chave
+
+Três defeitos que existiam antes e que fizeram 24h de parada passar sem alarme:
+
+1. **`query()` do Sankhya não conferia o status.** Um erro do ERP virava lista
+   vazia; o atualizador então apagava o snapshot inteiro e gravava zero linhas.
+   Corrigido nos atualizadores: erro do Sankhya agora estoura.
+2. **`delete`/`insert`/`update` sem checagem de erro.** Falha de escrita não
+   aparecia em lugar nenhum. Agora estoura.
+3. **Nenhuma guarda antes do `delete`.** Cada atualizador agora aborta *antes*
+   de apagar quando o Sankhya não devolve nada.
+
+### Correções de conteúdo achadas no caminho
+
+- `campanhas-retorno` e `campanhas-agendar`: o contexto mandado para a IA tinha
+  um template quebrado (`Detalhe:\n" + bd.join("\n")}` dentro de template
+  literal), então a IA **nunca via a lista de NFs/pedidos**. Corrigido.
+- `campanhas-prep`: sem os marcadores `[REP]`/`[LISTA]` explícitos no prompt, a
+  IA inventava nome de pessoa e pedidos falsos. Marcadores de volta + trava
+  `temMarcadores()` que descarta o texto e usa o modelo fixo se faltar algum.
+- Tom de parceria com o representante aplicado em `campanhas-retorno`,
+  `campanhas-prep`, `campanhas-agendar` e `campanhas-keyaccounts` (além de
+  `campanhas-disparar`, `campanhas-saldo` e `campanhas-cobranca` na semana).
+
+### Ainda pendente
+
+- Funções ainda com a chave antiga: família `motor-*`, `ghl-contatos-sync`,
+  `sankhya-cross`, `contatos-criar`, `rep-contato`, `rep-rastreio`,
+  `campanhas-bulk`, `campanhas-artes`, `campanhas-redes`, `campanhas-ia-propoe`,
+  `fila-config`, `cross-sell-abc`, `saldo-dedup`, `entregas-dedup`,
+  `recompra-demote`, `recompra-reap`, `cep-geocode`, `host-upload`.
+- Ticket para o suporte da Supabase: o secret reservado
+  `SUPABASE_SERVICE_ROLE_KEY`, descrito como "Legacy service role key", está
+  sendo populado com um valor `sb_secret_`. `set role service_role` funciona e o
+  relógio do banco está correto — é defeito do lado da plataforma.
+- Quando a Supabase corrigir, o `SRV_JWT` pode sair: o `srvKey()` já dá
+  preferência a ele mas volta sozinho para o secret padrão se ele for removido.

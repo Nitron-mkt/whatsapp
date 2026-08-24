@@ -1,9 +1,12 @@
-// fila-processar (v13) — cron (1/min). Le fila_config: email em lote (email_lote) se email_ativo; WhatsApp 1 por instancia a cada wpp_intervalo_seg se wpp_ativo. Chama campanhas-enviar (passa merge).
+// fila-processar (v15) — cron (1/min). Le fila_config: email em lote (email_lote) se email_ativo; WhatsApp 1 por instancia a cada wpp_intervalo_seg se wpp_ativo. Chama campanhas-enviar (passa merge).
 // BILINGUE: drena tanto as linhas do GESTOR (status='pendente', texto em `corpo`, com assunto)
 // quanto as do MOTOR (status='agendado', texto em `mensagem`, sem assunto). texto = corpo||mensagem.
 // v13: chave de servico via srvKey(). Desde 23/08 a plataforma injeta em
 // SUPABASE_SERVICE_ROLE_KEY uma chave sb_secret_ que o Data API recusa (PGRST303), e a fila
 // parou de drenar em silencio — respondia {"emails":0,"whatsapp":0} sem conseguir ler nada.
+// v15: confere a instancia contra o cadastro instancia_ghl antes de enviar. Antes bloqueava so
+// instancia NULA — token invalido (ex.: "<sem", "Monica" sem acento) passava e o #contact_instance
+// nao amarrava nada, entao a mensagem saia pela instancia errada e o cliente recebia algo desconexo.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type, apikey", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
 const j = (o: unknown, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
@@ -22,6 +25,11 @@ Deno.serve(async (req) => {
     const EMAIL_LOTE = Math.max(1, Number(cfg?.email_lote ?? 25));
     const WPP_ATIVO = cfg?.wpp_ativo !== false;
     const EMAIL_ATIVO = cfg?.email_ativo !== false;
+    // cadastro de instancias validas (fonte de verdade da gestao, nao do organograma do Sankhya)
+    const { data: instRows, error: eInst } = await sb.from("instancia_ghl").select("instancia").eq("ativa", true);
+    if (eInst) throw eInst;
+    const INST_OK = new Set((instRows || []).map((x: any) => String(x.instancia)));
+    if (!INST_OK.size) throw new Error("instancia_ghl sem instancia ativa — abortado para nao mandar WhatsApp sem amarrar");
     async function enviar(m: any) {
       const texto = m.corpo || m.mensagem || "";
       if (!texto) { await sb.from("fila_envio").update({ status: "erro", resultado: "sem texto (corpo/mensagem vazios)" }).eq("id", m.id); return false; }
@@ -53,6 +61,7 @@ Deno.serve(async (req) => {
       for (const inst of Object.keys(firstByInst)) {
         const m = firstByInst[inst];
         if (!inst) { await sb.from("fila_envio").update({ status: "erro", resultado: "sem instancia (WhatsApp nao roteavel)" }).eq("id", m.id); continue; }
+        if (!INST_OK.has(inst)) { await sb.from("fila_envio").update({ status: "erro", resultado: "instancia '" + inst + "' fora do cadastro instancia_ghl" }).eq("id", m.id); continue; }
         const { data: last } = await sb.from("fila_envio").select("enviado_em").eq("canal", "whatsapp").eq("instancia", inst).eq("status", "enviado").order("enviado_em", { ascending: false }).limit(1).maybeSingle();
         const lastMs = last?.enviado_em ? new Date(last.enviado_em).getTime() : 0;
         if (now - lastMs >= WPP_INTERVALO_MS) { await enviar(m); whatsapp++; }

@@ -215,16 +215,74 @@ Três defeitos que existiam antes e que fizeram 24h de parada passar sem alarme:
   `campanhas-prep`, `campanhas-agendar` e `campanhas-keyaccounts` (além de
   `campanhas-disparar`, `campanhas-saldo` e `campanhas-cobranca` na semana).
 
+### Segunda leva (mesma correcao, resto do sistema)
+
+| Função | Versão | Verificação |
+|---|---|---|
+| campanhas-bulk | 5 | — |
+| campanhas-artes | 11 | 9 artes vindas do GHL ao vivo |
+| campanhas-redes | 8 | 91 redes; roteiro com tom de parceria |
+| campanhas-ia-propoe | 4 | — |
+| fila-config | 4 | cadência lida (120s / lote 25) |
+| contato-escrever | 8 | — |
+| contatos-criar | 6 | — |
+| rep-contato | 10 | — |
+| rep-rastreio | 4 | — |
+| motor-buscar | 6 | responde: **parado por saldo** (394 < piso 400) |
+| motor-classificar | 4 | sem alvos |
+| motor-validar | 6 | sem números pendentes |
+| motor-dossie | 5 | sem alvos |
+| motor-contatos | 8 | painel responde |
+| motor-painel | 4 | 1.406 com dossiê / 886 prontos |
+| motor-saude | 4 | — |
+| motor-saldo | 4 | — |
+| motor-prontos | 4 | — |
+| motor-pedir | 5 | — |
+| motor-templates | 4 | — |
+| ghl-contatos-sync | 14 | 61 contatos / 23 clientes em 3 páginas |
+| sankhya-cross | 11 | — |
+| cross-sell-abc | 6 | 3.327 clientes, 3.326 com recomendação |
+| cep-geocode | 5 | 2.881 CEPs, fila zerada |
+| saldo-dedup | 7 | fila vazia |
+| entregas-dedup | 5 | — |
+| recompra-demote | 5 | — |
+| recompra-reap | 4 | — |
+| host-upload | 8 | reenvio byte-idêntico do gestor.html (md5 igual) |
+| relatorio-coletar | 10 | **93 conversas / 41 de negócio / 635 mensagens em 24/08** |
+| relatorio-transcrever | 16 | — |
+| relatorio-analisar | 9 | — |
+| relatorio-entregar | 9 | — |
+| relatorio-ver | 4 | — |
+
+`relatorio-cron` não precisou de mudança: ele chama as outras funções com a
+chave **publishable**, que continua válida.
+
+### Regra do roteiro estendida
+
+`campanhas-redes` passou a ler `roteiro_cliente_apto` (a mesma view do roteiro
+por prioridade), então o store-check de rede também deixa de fora quem tem
+pendência ou está com o giro em dia. O rótulo "em dia (Nd)" na lista virou
+"compra recente (Nd)" — dizia "em dia" para cliente que a regra oficial não
+considera em dia, e isso contradizia a instrução.
+
 ### Ainda pendente
 
-- Funções ainda com a chave antiga: família `motor-*`, `ghl-contatos-sync`,
-  `sankhya-cross`, `contatos-criar`, `rep-contato`, `rep-rastreio`,
-  `campanhas-bulk`, `campanhas-artes`, `campanhas-redes`, `campanhas-ia-propoe`,
-  `fila-config`, `cross-sell-abc`, `saldo-dedup`, `entregas-dedup`,
-  `recompra-demote`, `recompra-reap`, `cep-geocode`, `host-upload`.
+- **Funções de outras empresas do grupo** com a mesma chave antiga (fora do
+  escopo Nitron, mas quebradas do mesmo jeito): `copiloto-*`, `emp-diag`,
+  `emp-erp-refresh`, `emp-conversas-classificar`, `hyak-contatos-sync`,
+  `roga-*`, `constelacao-*`, `produtos-sankhya-sync`, `anuncio-*`, `ml-*`.
+  A correção é a mesma linha do `srvKey()`.
+- `entregas-nuke` (ferramenta destrutiva de uso manual, sem cron) também
+  segue com a chave antiga. Ela falha fechada: sem leitura, não apaga nada.
+- **Motor de prospecção parado por crédito**, não pela chave: saldo 394 no
+  ScrapeGraphAI contra um piso de 400. Recarregar para o enriquecimento voltar.
 - Ticket para o suporte da Supabase: o secret reservado
   `SUPABASE_SERVICE_ROLE_KEY`, descrito como "Legacy service role key", está
   sendo populado com um valor `sb_secret_`. `set role service_role` funciona e o
   relógio do banco está correto — é defeito do lado da plataforma.
 - Quando a Supabase corrigir, o `SRV_JWT` pode sair: o `srvKey()` já dá
   preferência a ele mas volta sozinho para o secret padrão se ele for removido.
+- Os dois P0 do diagnóstico continuam abertos: revogar INSERT/UPDATE/DELETE do
+  `anon` + RLS + login na frente do painel; e os três cron jobs em 401
+  (`ml-calc-batch` ×2, `sankhya-cross` — este último já corrigido na chave, mas
+  o cron precisa ser reconferido).

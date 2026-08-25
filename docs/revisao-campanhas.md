@@ -228,3 +228,55 @@ Os mapas de códigos na tela são uma segunda fonte de verdade sobre quais campa
 ninguém avisa quando as duas divergem. Duas melhorias possíveis: o cartão da campanha sem tela
 poderia dizer *"sem tela ainda"* em vez de não responder ao clique; e o `campanhas-listar`
 poderia devolver, por campanha, qual fluxo a opera, tirando os mapas do HTML.
+
+---
+
+## 7. Comunicado aos representantes (25/08)
+
+Campanha nova, `rep_comunicado`, no pipe `representantes`. É a primeira **sem gatilho de dado**: não
+há recorte de snapshot que defina o público nem texto escrito por IA — o recado é da gestão, muda a
+cada envio, e quem recebe é escolhido a dedo na tela.
+
+Isso obrigou uma mudança pequena no catálogo: `campanhas.fonte_msg` só admitia `ia` e `arte`, e
+agora admite `manual`. Sem isso seria preciso cadastrar a campanha mentindo que a IA escreve.
+
+### Como funciona
+
+- `campanhas-comunicado` (GET) devolve **a rede inteira** com os contatos de cada representante,
+  montados exatamente como no `campanhas-preview` (snap_rep + `rep_contato_extra` + as duas bases do
+  codparc do rep: `snap_contato` e `ghl_contato`), com os rótulos `CRM·empresa`/`CRM·casado` que a
+  tela usa para deixar vínculo fraco desmarcado.
+- Canal interno da casa (`AUTO ATEND.`, `E-COMMERCE MRKT`, `<SEM VENDEDOR>`, as próprias
+  assistentes…) é marcado `interno: true` — regra: sem celular **ou** e-mail `@nitron.com.br` /
+  `@nitronplast.com.br`. São 12 de 79 linhas; ficam fora da lista, com aviso.
+- Tabela `comunicado` guarda os recados anteriores (título, WhatsApp, assunto, corpo) para reuso —
+  é o que atende o "vai mudar bastante ao decorrer do tempo".
+- Marcadores no texto: `[REP]` vira o nome do representante e `[ASSISTENTE]` o nome da assistente.
+- O envio entra na `fila_envio` como qualquer outra campanha, então respeita 1 WhatsApp por
+  instância a cada 2 min, e cada rep sai pela instância da assistente dele.
+
+### Decisões embutidas
+
+- **Sem IA.** Num comunicado não existe dado de onde a IA partir; o conteúdo é da gestão. Um
+  "ajustar o tom com IA" sobre o texto escrito é possível depois, e seria reescrita, não invenção.
+- **Um celular por rep, pré-marcado.** Mandar o mesmo recado para três números do mesmo
+  representante é ruído. O primeiro celular de vínculo forte vem marcado; o resto fica visível para
+  marcar à mão.
+- **Sem instância, não enfileira.** Coerente com o `campanhas-enviar`: melhor não enviar do que
+  enviar pelo número errado. Hoje os 67 representantes têm instância, então nenhum cai nessa.
+- **O texto vive no estado da tela, não no DOM.** A lista redesenha a cada filtro ou clique num
+  rep; se o texto fosse lido do `textarea`, o comunicado seria apagado no meio da escrita.
+
+### Três representantes precisam de atenção no ERP
+
+O celular no Sankhya está no formato antigo (8 dígitos, sem o nono), então a tela não consegue
+afirmar que é celular e não pré-marca — aparecem na lista com o número visível para marcar à mão:
+
+| rep | instância | números no Sankhya |
+|---|---|---|
+| JOSÉ ALVES | Isadora | `6291528624`, `062 99152864` |
+| MORAES | Juliete | `556292619843` (o do CRM é vínculo fraco) |
+| WALDEMAR | Juliete | `8396015000`, `558393120861` |
+
+É o mesmo problema que fez o José Alves só ser encontrado no CRM por e-mail na conferência de
+proprietários: o Sankhya guarda o número sem o nono dígito, o CRM com.

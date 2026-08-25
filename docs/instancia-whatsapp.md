@@ -170,6 +170,36 @@ aprendeu de útil no caminho:
 em série, 7 instâncias × ~35s estouravam o tempo da função e o cron abortaria no
 meio, deixando a fila parada sem aviso.
 
+## Beatriz desligada (25/08) — o ERP mudou, o CRM não
+
+A Beatriz saiu da empresa e a carteira dela foi dividida. Puxado direto do Sankhya
+(`TGFVEN` com `CODGER` → `APELIDO` do gerente), o organograma hoje não tem Beatriz em
+lugar nenhum, e os 23 representantes que eram dela ficaram assim:
+
+| nova responsável | representantes |
+|---|---|
+| **Isadora** (9) | FABIO, FABIOLA, JOSÉ ALVES, JOSÉ FERNANDO, MARCOS AURELIO, NELSON, PAULO DRESCH, SEBASTIAO, WILSON |
+| **Juliete** (14) | ARNESTO, CARLOS ALFAYA, CASSIO, EDMILSON, FIGUEROA, GIOVANE, GOIANDY, HELENA SANTOS S, JOÃO CARLOS, LUCIO, LUIZ CASTRO, MAURO, REGINALDO, WALDEMAR |
+
+O problema é que **o número de saída segue o proprietário do contato no CRM**, e lá 17
+desses contatos continuavam com a Beatriz. Ou seja: a mensagem sairia por um número que
+ninguém mais atende, e as respostas cairiam numa caixa sem dono.
+
+Ação imediata tomada: `instancia_ghl` marca `Beatriz` como `ativa = false` — não apagada,
+para o `Instance Source: Beatriz` das conversas antigas continuar reconhecível. Com ela
+fora do cadastro ativo, o `campanhas-enviar` recusa qualquer envio que tente sair por ela,
+e a tela do comunicado passa a mostrar esses representantes como **"sem instância — não
+sai"**, com a etiqueta *"→ atribuir a Isadora/Juliete no CRM"* tirada do organograma.
+
+Estado: 44 representantes saem (Juliete 25 · Isadora 18 · Camyla 1); **22 bloqueados** até
+que o contato tenha proprietária ativa no CRM — 8 para Isadora e 14 para Juliete. Cinco
+deles já estavam sem proprietário antes do desligamento (ANNA CAROLINA, DENIZE,
+MARIA JULIA, ROBERTO, RONALDO JR).
+
+Isso é a mesma lição do caso da instância: o organograma do ERP é a fonte de quem atende,
+mas quem decide o número é o CRM, e nada mantém os dois em acordo. Enquanto não houver essa
+costura, todo remanejamento de assistente exige a troca correspondente no CRM.
+
 ## Pendente
 
 - [ ] **Instância própria para comunicação direta ao cliente.** Quando existir,

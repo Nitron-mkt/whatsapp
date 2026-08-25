@@ -1006,6 +1006,10 @@
     h += '<div class="cbox" style="padding:0"><div style="padding:12px 14px 8px"><div class="lab" style="padding:0 0 6px">👥 Quem recebe</div>'
       + (!COMD.crm_lido ? '<div class="note" style="color:#b7791f;margin-bottom:6px">⚠ não consegui ler o proprietário no CRM agora — a instância mostrada é a do organograma do Sankhya, que pode não ser o número de saída.</div>' : '')
       + (dn ? ('<div class="note" style="color:#b7791f;margin-bottom:6px">⚠ <b>' + dn + '</b> representante(s) com o organograma do Sankhya discordando do proprietário no CRM. A instância acima é a do <b>CRM</b>, que é quem decide o número de saída — o organograma aparece só como aviso na linha.</div>') : '')
+      + (function () { var n = 0, q = {}; comReps().forEach(function (r) { if (!comInst(r) && r.assistente) { n++; q[r.assistente] = (q[r.assistente] || 0) + 1; } });
+          if (!n) return '';
+          var quem = Object.keys(q).sort().map(function (k) { return esc(k) + " " + q[k]; }).join(" · ");
+          return '<div class="note" style="color:#c0392b;margin-bottom:6px">⛔ <b>' + n + '</b> representante(s) sem proprietária ativa no CRM — <b>não entram no envio</b>. O organograma do Sankhya indica: ' + quem + '. Atribua o contato a ela no CRM para voltarem a sair.</div>'; })()
       + '<div class="cfoot" style="margin-bottom:6px">'
       + '<button class="btn out" id="comTodos">Marcar todos</button><button class="btn out" id="comNenhum">Desmarcar todos</button>'
       + '<input class="ei" id="comBusca" placeholder="buscar representante" value="' + esc(COMF.busca) + '" style="max-width:220px">'
@@ -1041,6 +1045,7 @@
     var inst = iv ? '<span class="wtag" style="background:#e7e0f5;color:#5b3fa0">📲 ' + esc(iv) + '</span>'
                   : '<span class="wtag" style="background:#f7ecd6;color:#b7791f">sem instância — não sai</span>';
     if (comDiverge(r)) inst += '<span class="wtag" style="background:#fdeee4;color:#b7791f" title="O organograma do Sankhya aponta outra assistente. Vale o CRM, que é quem decide o número de saída.">⚠ organograma: ' + esc(r.assistente) + '</span>';
+    else if (!iv && r.assistente) inst += '<span class="wtag" style="background:#fdeee4;color:#b7791f" title="Ninguém do cadastro ativo é proprietária deste contato no CRM. Pelo organograma do Sankhya, quem atende agora é esta.">→ atribuir a ' + esc(r.assistente) + ' no CRM</span>';
     var marca = sel ? ('<span class="wtag">' + (nt ? ('📱 ' + nt) : '') + (nt && ne ? ' · ' : '') + (ne ? ('✉ ' + ne) : '') + (!nt && !ne ? 'nenhum contato marcado' : '') + '</span>') : '';
     var h = '<div class="crow"><span class="cnum">' + n + '</span>'
       + '<span class="cexp" data-exp="' + r.codvend + '">' + (ab ? "▼" : "▶") + '</span>'

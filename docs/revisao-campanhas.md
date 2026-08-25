@@ -280,3 +280,42 @@ afirmar que é celular e não pré-marca — aparecem na lista com o número vis
 
 É o mesmo problema que fez o José Alves só ser encontrado no CRM por e-mail na conferência de
 proprietários: o Sankhya guarda o número sem o nono dígito, o CRM com.
+
+### Refinamento de 25/08 — e uma mudança no ERP que apareceu no caminho
+
+A tela passou a usar os mesmos mecanismos das outras campanhas: linha numerada com ▶ para escolher
+os contatos, **Marcar todos / Desmarcar todos**, e o painel de fila que se atualiza sozinho a cada
+15s (o `statusFila` agora pinta em `filaResumoCom`/`filaListaCom` quando é o comunicado que está
+aberto — ids próprios, sem repetir os do fluxo principal). A cadência vem de `fila_config`, não de
+número chutado: a fila manda 1 WhatsApp por instância a cada `wpp_intervalo_seg` e as instâncias
+correm em paralelo, então o disparo termina quando a maior fila de uma instância termina —
+`(n-1) × intervalo`. A tela mostra isso antes de você confirmar.
+
+**Ao medir a cadência, apareceu que o organograma do Sankhya mudou.** Em 25/08 às 15:16 o
+`cache-refresh` trouxe `assistente_raw` com JULIETE 39, ISADORA 28, ESTEVANY 2, VALERIA 1, MONICA 1
+— e **Beatriz zero**. No dia anterior a Beatriz tinha 17 representantes. O `CODGER` dos reps dela foi
+alterado no ERP e o CRM não acompanhou: **19 representantes passaram a divergir**.
+
+Isso deixou de ser detalhe porque o número de saída segue o **proprietário do contato no CRM**, não
+o organograma. Usar `snap_rep.assistente` na tela causaria dois danos:
+
+1. A tela mostraria "📲 Juliete" e o representante receberia da Beatriz — o desconexo que a
+   investigação de 24/08 fechou.
+2. Pior para o ZaptosWPP: a fila agruparia 16 mensagens da Beatriz como se fossem de outra
+   instância e as dispararia **sem espaçamento entre si**, no mesmo número.
+
+Por isso `campanhas-comunicado` v3 lê o proprietário real: uma única busca no GHL
+(`POST /contacts/search`, `contains_set` com os telefones dos reps) e o `assignedTo` traduzido pela
+coluna `instancia_ghl.usuario_ghl_id`. Cada rep vem com `assistente` (organograma) **e**
+`instancia_crm` (a que vale). A tela roteia, agrupa a cadência, filtra e preenche `[ASSISTENTE]`
+pela `instancia_crm`; o organograma aparece só como aviso ⚠ na linha divergente, com contagem no
+topo. Se a leitura do CRM falhar, cai no organograma e diz na tela que caiu.
+
+Efeito medido: agrupando pela instância real a distribuição é Juliete 24 · Isadora 18 · Beatriz 16 ·
+Camyla 1 → **~46 min**; pelo organograma dava ~1 h 12 min e sem espaçamento na Beatriz. Cinco
+representantes ficam de fora por não terem proprietário no CRM.
+
+**Pendente de decisão sua:** os 19 divergentes. O ERP e o CRM discordam sobre quem atende esses
+representantes; o código respeita o CRM porque é ele que decide o número, mas quem está certo é
+pergunta de gestão.
+

@@ -1,9 +1,19 @@
-// campanhas-comunicado (v1) — apoio a campanha rep_comunicado: recado livre da gestao para a rede
+// campanhas-comunicado (v3) — apoio a campanha rep_comunicado: recado livre da gestao para a rede
 // de representantes. NAO tem gatilho de dado e NAO usa IA: o texto e escrito na tela e muda a cada
 // envio, entao aqui so devolvemos a rede inteira com os contatos de cada rep (para a pessoa
 // escolher) e guardamos os comunicados anteriores para reuso.
 //
-// GET  -> { reps:[{codvend,nome,assistente,interno,telefones,emails}], salvos:[...], atualizado }
+// GET  -> { reps:[...], salvos:[...], cfg:{wpp_intervalo_seg,...}, atualizado }
+//         cfg vem de fila_config para a tela estimar o tempo do disparo pela cadencia real
+//         (1 WhatsApp por instancia a cada wpp_intervalo_seg), em vez de chutar 2 min.
+//
+// v3: cada rep vem com DUAS instancias: `assistente` (organograma do Sankhya) e `instancia_crm`
+// (a assistente que e PROPRIETARIA do contato no GoHighLevel). Quem manda no numero de saida e a
+// segunda — o ZaptosWPP roteia pelo usuario remetente, que numa mensagem de API e o assignedTo do
+// contato. Em 25/08 o ERP moveu os 17 reps da Beatriz para Juliete/Isadora e o CRM nao acompanhou:
+// 19 reps passaram a divergir. Usar o organograma faria a tela mostrar um numero e o cliente
+// receber de outro, e faria a fila agrupar errado — dois reps do mesmo numero real disparando
+// juntos, que e justamente o que nao se deve fazer com o ZaptosWPP.
 // POST { titulo, texto_wpp, assunto, texto_email, id? } -> grava/atualiza um comunicado
 // POST { apagar:<id> }                                  -> remove um comunicado
 //
@@ -47,6 +57,29 @@ async function repBasesMap(sb: any): Promise<Record<string, any[]>> {
   return byVend;
 }
 
+const API = "https://services.leadconnectorhq.com";
+const LOC = "rZ8y7lzqV7fzxsartaX2";
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146.0 Safari/537.36";
+function e164(fone: any): string { const d = digits(fone); if (!d) return ""; if (d.length <= 11) return "+55" + d; return "+" + d; }
+// Uma unica busca no GHL com todos os telefones dos reps; devolve fone normalizado -> assignedTo.
+async function donosNoCRM(fones: string[]): Promise<Record<string, string> | null> {
+  const tok = Deno.env.get("GHL_TOKEN"); if (!tok || !fones.length) return null;
+  const out: Record<string, string> = {};
+  try {
+    for (let i = 0; i < fones.length; i += 90) {
+      const r = await fetch(API + "/contacts/search", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + tok, Version: "2021-07-28", "Content-Type": "application/json", Accept: "application/json", "User-Agent": UA },
+        body: JSON.stringify({ locationId: LOC, pageLimit: 100, filters: [{ field: "phone", operator: "contains_set", value: fones.slice(i, i + 90) }] }),
+      });
+      if (!r.ok) return null;
+      const d = await r.json().catch(() => ({}));
+      (d?.contacts || []).forEach((c: any) => { const k = nf(c?.phone); if (k && c?.assignedTo) out[k] = String(c.assignedTo); });
+    }
+    return out;
+  } catch { return null; }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
@@ -75,13 +108,29 @@ Deno.serve(async (req) => {
     const { data: extras, error: eE } = await sb.from("rep_contato_extra").select("*").eq("ativo", true); if (eE) throw eE;
     const exMap: Record<string, any[]> = {}; (extras || []).forEach((e: any) => { (exMap[e.codvend] = exMap[e.codvend] || []).push(e); });
     const baseV = await repBasesMap(sb);
-    const reps = (sreps || []).map((s: any) => {
+    let reps = (sreps || []).map((s: any) => {
       const rc = repContatos(s, (exMap[s.codvend] || []).concat(baseV[s.codvend] || []));
-      return { codvend: Number(s.codvend), nome: String(s.rep || ("Rep " + s.codvend)), assistente: s.assistente || null, interno: ehInterno(s), telefones: rc.telefones, emails: rc.emails };
+      return { codvend: Number(s.codvend), nome: String(s.rep || ("Rep " + s.codvend)), assistente: s.assistente || null, instancia_crm: null as string | null, interno: ehInterno(s), telefones: rc.telefones, emails: rc.emails };
     }).sort((a: any, b: any) => (Number(a.interno) - Number(b.interno)) || a.nome.localeCompare(b.nome, "pt-BR"));
 
+    // instancia de verdade: a assistente proprietaria do contato no CRM
+    const { data: instRows } = await sb.from("instancia_ghl").select("instancia,usuario_ghl_id").eq("ativa", true);
+    const porUsuario: Record<string, string> = {};
+    (instRows || []).forEach((x: any) => { if (x.usuario_ghl_id) porUsuario[String(x.usuario_ghl_id)] = String(x.instancia); });
+    const fones: string[] = [];
+    reps.forEach((r: any) => (r.telefones || []).forEach((t: any) => { const v = e164(t.valor); if (v) fones.push(v); }));
+    const donos = await donosNoCRM(Array.from(new Set(fones)));
+    if (donos) {
+      reps = reps.map((r: any) => {
+        let inst: string | null = null;
+        for (const t of (r.telefones || [])) { const dono = donos[nf(t.valor)]; if (dono && porUsuario[dono]) { inst = porUsuario[dono]; break; } }
+        return { ...r, instancia_crm: inst };
+      });
+    }
+
     const { data: salvos, error: eS } = await sb.from("comunicado").select("*").order("atualizado", { ascending: false }).limit(50); if (eS) throw eS;
+    const { data: cfg } = await sb.from("fila_config").select("wpp_intervalo_seg,email_lote,wpp_ativo,email_ativo").eq("id", 1).maybeSingle();
     const { data: meta } = await sb.from("cache_meta").select("atualizado").eq("chave", "snapshot").maybeSingle();
-    return j({ reps, salvos: salvos || [], atualizado: meta?.atualizado || null });
+    return j({ reps, salvos: salvos || [], cfg: cfg || null, crm_lido: !!donos, atualizado: meta?.atualizado || null });
   } catch (e) { return j({ erro: detalhar(e) }, 500); }
 });

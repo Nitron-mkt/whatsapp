@@ -872,8 +872,8 @@
     postJSON(SUPA+"/functions/v1/fila-enfileirar",{itens:itens},function(r){if(btn){btn.disabled=false;btn.textContent="📅 Agendar todos na fila";}
       if(r.ok){if(stEl)stEl.innerHTML='<b>✓ '+r.enfileirados+' na fila</b>';if(FILATIMER)clearInterval(FILATIMER);statusFila();FILATIMER=setInterval(statusFila,15000);}else{if(stEl)stEl.textContent="✗ "+(r.erro||"falha");}});}
   function statusFila(){getJSON(SUPA+"/functions/v1/fila-enfileirar?campanha="+CUR,function(c){if(c.pendente===undefined&&c.enviado===undefined)return;
-    var res=$("filaResumo");if(res)res.innerHTML='<b>'+(c.pendente||0)+'</b> pendente ('+(c.whatsapp_pendente||0)+' wpp · '+(c.email_pendente||0)+' email) · <b style="color:#1a7f4b">'+(c.enviado||0)+'</b> enviados'+((c.erro||0)?(' · <b style="color:#c0392b">'+c.erro+'</b> erro'):'');
-    var lista=$("filaLista");if(lista){var its=c.itens||[];if(!its.length){lista.innerHTML='<div class="note" style="padding:14px">Fila vazia. Marque destinatários (reps e/ou clientes) e clique <b>Agendar na fila</b>.</div>';}
+    var res=$("filaResumoCom")||$("filaResumo");if(res)res.innerHTML='<b>'+(c.pendente||0)+'</b> pendente ('+(c.whatsapp_pendente||0)+' wpp · '+(c.email_pendente||0)+' email) · <b style="color:#1a7f4b">'+(c.enviado||0)+'</b> enviados'+((c.erro||0)?(' · <b style="color:#c0392b">'+c.erro+'</b> erro'):'');
+    var lista=$("filaListaCom")||$("filaLista");if(lista){var its=c.itens||[];if(!its.length){lista.innerHTML='<div class="note" style="padding:14px">Fila vazia. Marque os destinatários e clique <b>Agendar na fila</b>.</div>';}
       else{var h='<table class="ftab"><thead><tr><th>Quando</th><th>Público</th><th>Canal</th><th>Destinatário</th><th>Status</th></tr></thead><tbody>';
         its.forEach(function(r){var dest=r.canal==="email"?(r.email||""):(r.fone||"");var inst=r.instancia?(" · 📲 "+r.instancia):"";var arte=r.template_id?" 🎨arte":"";var stc=r.status==="enviado"?"#1a7f4b":(r.status==="erro"?"#c0392b":"#b7791f");var when=String(r.enviado_em||r.criado_em||"").replace("T"," ").slice(5,16);
           h+='<tr><td class="note">'+when+'</td><td>'+(r.publico==="rep"?"👔 rep":"🏢 cliente")+'</td><td>'+(r.canal==="email"?"✉ email":"📱 wpp")+arte+'</td><td><b>'+esc(r.nome||"")+'</b><div class="note">'+esc(dest)+inst+'</div></td><td style="color:'+stc+'"><b>'+r.status+'</b>'+(r.resultado?('<div class="note">'+esc(r.resultado)+'</div>'):"")+'</td></tr>';});
@@ -896,23 +896,40 @@
     postJSON(SUPA+"/functions/v1/campanhas-enviar",body,function(r){st.textContent=r.ok?"✓ teste enviado ao seu e-mail":("✗ "+(r.motivo||r.erro||"falha"));st.style.color=r.ok?"#1a7a44":"#c0392b";});}
   /* ===== COMUNICADO AOS REPRESENTANTES =====
      Campanha sem gatilho: o texto e escrito aqui e vale exatamente como esta. Sem IA — num
-     comunicado nao ha dado de onde a IA partir; o conteudo e da gestao. A tela serve para (1)
-     escrever/reusar o recado e (2) escolher a dedo quem recebe. O envio entra na fila, que respeita
-     1 WhatsApp por instancia a cada 2 min, e cada rep sai pela instancia da assistente dele.
+     comunicado nao ha dado de onde a IA partir; o conteudo e da gestao.
+     Usa os MESMOS mecanismos das outras campanhas: linha .rrow/.rmain com ▶ para escolher os
+     contatos, barra de marcar/desmarcar todos, envio pela fila (1 WhatsApp por instancia a cada
+     wpp_intervalo_seg, respeitando o ZaptosWPP) e o painel de fila que se atualiza sozinho.
      Marcadores: [REP] vira o nome do representante e [ASSISTENTE] o nome da assistente. */
-  var COMD = { reps: [], salvos: [] }, COMSEL = {}, COMCT = {}, COMF = { busca: "", inst: "" }, COMEMAIL = false, COMID = null;
-  /* o texto vive AQUI, nao no DOM: comRender() redesenha a caixa toda a cada filtro ou clique
-     num rep, e ler do textarea faria o comunicado ser apagado no meio da escrita. */
+  var COMD = { reps: [], salvos: [], cfg: null }, COMSEL = {}, COMCT = {}, COMAB = {};
+  var COMF = { busca: "", inst: "" }, COMEMAIL = false, COMID = null;
+  /* o texto vive AQUI, nao no DOM: a lista se repinta a cada filtro e ler do textarea faria o
+     comunicado ser apagado no meio da escrita. */
   var COMTXT = { w: "", a: "", c: "" }, COMTIT = "";
   function comCk(cv, tipo, val) { return cv + "|" + tipo + "|" + val; }
   function comReps() { return (COMD.reps || []).filter(function (r) { return !r.interno; }); }
+  function comInternos() { return (COMD.reps || []).filter(function (r) { return r.interno; }); }
   function comVisiveis() {
     var b = COMF.busca.trim().toLowerCase();
-    return (COMD.reps || []).filter(function (r) {
-      if (COMF.inst && r.assistente !== COMF.inst) return false;
+    return comReps().filter(function (r) {
+      if (COMF.inst && comInst(r) !== COMF.inst) return false;
       if (b && r.nome.toLowerCase().indexOf(b) < 0) return false;
       return true;
     });
+  }
+  /* A instancia que VALE e a do proprietario no CRM: o ZaptosWPP roteia pelo usuario remetente,
+     que numa mensagem de API e o assignedTo do contato. O organograma do Sankhya (r.assistente) so
+     serve para avisar quando os dois discordam. Se nao der para ler o CRM, cai no organograma. */
+  function comInst(r) { return (COMD.crm_lido ? r.instancia_crm : (r.instancia_crm || r.assistente)) || null; }
+  function comDiverge(r) { return !!(COMD.crm_lido && r.instancia_crm && r.assistente && r.instancia_crm !== r.assistente); }
+  function comDivN() { var n = 0; comReps().forEach(function (r) { if (comDiverge(r)) n++; }); return n; }
+  function comTelForte(r) { return (r.telefones || []).filter(function (x) { return foneCel(x.valor) !== false && !rotFuzzy(x.rotulo); })[0] || null; }
+  function comMarcar(r, on) {
+    COMSEL[r.codvend] = !!on;
+    Object.keys(COMCT).forEach(function (k) { if (k.indexOf(r.codvend + "|") === 0) delete COMCT[k]; });
+    if (!on) return;
+    var t = comTelForte(r); if (t) COMCT[comCk(r.codvend, "tel", t.valor)] = true;
+    if (COMEMAIL) { var e0 = (r.emails || []).filter(function (x) { return !rotFuzzy(x.rotulo); })[0]; if (e0) COMCT[comCk(r.codvend, "em", e0.valor)] = true; }
   }
   function abrirComunicado() {
     $("op-nome").textContent = "Comunicado aos representantes";
@@ -921,12 +938,9 @@
     $("kaFlow").innerHTML = '<div class="note" style="padding:16px">carregando a rede…</div>';
     getJSON(SUPA + "/functions/v1/campanhas-comunicado", function (d) {
       if (!d || d.erro) { $("kaFlow").innerHTML = '<div class="note" style="padding:16px;color:#c0392b">erro ao carregar: ' + esc((d && d.erro) || "falha") + '</div>'; return; }
-      COMD = d; COMSEL = {}; COMCT = {}; COMID = null; COMTIT = ""; COMTXT = { w: "", a: "", c: "" }; COMEMAIL = false;
-      comReps().forEach(function (r) {
-        COMSEL[r.codvend] = true;
-        var t = (r.telefones || []).filter(function (x) { return foneCel(x.valor) !== false && !rotFuzzy(x.rotulo); })[0];
-        if (t) COMCT[comCk(r.codvend, "tel", t.valor)] = true;   // 1 celular forte por rep, o resto a pessoa marca
-      });
+      COMD = d; COMSEL = {}; COMCT = {}; COMAB = {}; COMID = null; COMTIT = "";
+      COMTXT = { w: "", a: "", c: "" }; COMEMAIL = false; COMF = { busca: "", inst: "" };
+      comReps().forEach(function (r) { comMarcar(r, true); });
       comRender();
     });
   }
@@ -935,65 +949,47 @@
     (COMD.salvos || []).forEach(function (s) { h += '<option value="' + s.id + '">' + esc(s.titulo) + '</option>'; });
     return h;
   }
-  function comInstChips() {
-    var insts = {}; comReps().forEach(function (r) { if (r.assistente) insts[r.assistente] = (insts[r.assistente] || 0) + 1; });
-    var h = '<button class="cbtn' + (COMF.inst ? "" : " on") + '" data-inst="">Todas (' + comReps().length + ')</button>';
-    Object.keys(insts).sort().forEach(function (k) { h += '<button class="cbtn' + (COMF.inst === k ? " on" : "") + '" data-inst="' + esc(k) + '">' + esc(k) + ' (' + insts[k] + ')</button>'; });
-    return h;
-  }
-  function comContagem() {
-    var reps = 0, w = 0, e = 0;
+  /* cadencia real: a fila manda 1 WhatsApp por instancia a cada wpp_intervalo_seg, e as instancias
+     correm em paralelo. Logo o disparo termina quando a MAIOR fila de uma instancia termina, e a
+     primeira mensagem de cada instancia sai na hora — dai (n-1) intervalos. */
+  function comEstim() {
+    var iv = Math.max(30, Number((COMD.cfg || {}).wpp_intervalo_seg || 120));
+    var porInst = {}, emails = 0, wpp = 0, reps = 0, semInst = 0;
     (COMD.reps || []).forEach(function (r) {
       if (!COMSEL[r.codvend]) return;
       var nw = 0, ne = 0;
       (r.telefones || []).forEach(function (t) { if (COMCT[comCk(r.codvend, "tel", t.valor)]) nw++; });
       (r.emails || []).forEach(function (t) { if (COMCT[comCk(r.codvend, "em", t.valor)]) ne++; });
-      if (nw || ne) reps++; w += nw; e += ne;
+      var inst = comInst(r);
+      if (nw && !inst) { semInst += nw; nw = 0; }
+      if (nw) porInst[inst] = (porInst[inst] || 0) + nw;
+      wpp += nw; emails += ne; if (nw || ne) reps++;
     });
-    return { reps: reps, w: w, e: e };
+    var maior = 0, quem = "";
+    Object.keys(porInst).forEach(function (k) { if (porInst[k] > maior) { maior = porInst[k]; quem = k; } });
+    return { iv: iv, porInst: porInst, maior: maior, quem: quem, seg: maior > 1 ? (maior - 1) * iv : 0, wpp: wpp, emails: emails, reps: reps, semInst: semInst };
   }
-  function comLinhaRep(r) {
-    var sel = !!COMSEL[r.codvend];
-    var inst = r.assistente ? '<span class="wtag" style="background:#e7e0f5;color:#5b3fa0">📲 ' + esc(r.assistente) + '</span>'
-                            : '<span class="wtag" style="background:#f7ecd6;color:#b7791f">sem instância — não sai</span>';
-    var h = '<div class="craw' + (sel ? " on" : "") + '">'
-      + '<label class="crhead"><input type="checkbox" class="crchk" data-cv="' + r.codvend + '"' + (sel ? " checked" : "") + '>'
-      + '<b>' + esc(r.nome) + '</b>' + inst + '<span class="note" style="margin-left:auto">#' + r.codvend + '</span></label>';
-    if (sel) {
-      h += '<div class="crcts">';
-      (r.telefones || []).forEach(function (t) {
-        var on = !!COMCT[comCk(r.codvend, "tel", t.valor)];
-        h += '<label class="ctopt"><input type="checkbox" class="crct" data-cv="' + r.codvend + '" data-tipo="tel" data-val="' + esc(t.valor) + '"' + (on ? " checked" : "") + '>'
-          + '<span class="cf">' + foneIco(t.valor) + '</span><span>' + esc(t.valor) + '</span>'
-          + (t.rotulo ? '<span class="note">' + esc(t.rotulo) + '</span>' : '') + '</label>';
-      });
-      if (COMEMAIL) (r.emails || []).forEach(function (t) {
-        var on = !!COMCT[comCk(r.codvend, "em", t.valor)];
-        h += '<label class="ctopt"><input type="checkbox" class="crct" data-cv="' + r.codvend + '" data-tipo="em" data-val="' + esc(t.valor) + '"' + (on ? " checked" : "") + '>'
-          + '<span class="cf">✉</span><span>' + esc(t.valor) + '</span>'
-          + (t.rotulo ? '<span class="note">' + esc(t.rotulo) + '</span>' : '') + '</label>';
-      });
-      if (!(r.telefones || []).length && !(COMEMAIL && (r.emails || []).length)) h += '<div class="note" style="color:#b7791f">sem contato cadastrado</div>';
-      h += '</div>';
-    }
-    return h + '</div>';
+  function comTempo(seg) {
+    if (seg <= 0) return "imediato";
+    var m = Math.round(seg / 60);
+    if (m < 60) return "~" + m + " min";
+    var h = Math.floor(m / 60), r = m % 60;
+    return "~" + h + " h" + (r ? (" " + r + " min") : "");
   }
   function comRender() {
-    var vis = comVisiveis(), reps = vis.filter(function (r) { return !r.interno; }), internos = vis.filter(function (r) { return r.interno; });
-    var c = comContagem();
     var h = '<style>'
       + '.cbox{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:10px 0;background:#fff}'
       + '.cbtn{font:inherit;font-size:12.5px;padding:4px 11px;border-radius:999px;border:1px solid var(--line);background:#fff;color:#6a7f78;cursor:pointer;margin:0 5px 5px 0}'
       + '.cbtn:hover{border-color:#0f7d94;color:#0f7d94}.cbtn.on{background:#1b1e24;border-color:#1b1e24;color:#fff}'
-      + '.craw{border:1px solid var(--line);border-radius:8px;margin:6px 0;background:#fff}'
-      + '.craw.on{border-color:#bcd7cf}'
-      + '.crhead{display:flex;align-items:center;gap:8px;padding:8px 11px;cursor:pointer}'
-      + '.crcts{padding:2px 11px 9px 30px;display:flex;flex-wrap:wrap;gap:4px 14px}'
-      + '.cfoot{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}'
+      + '.crow{display:flex;align-items:center;gap:9px;padding:7px 12px;border-top:1px solid var(--line)}'
+      + '.crow:hover{background:#f6faf8}.cnum{font-variant-numeric:tabular-nums;color:#9aa1ab;font-size:12px;min-width:26px;text-align:right}'
+      + '.cexp{cursor:pointer;user-select:none;color:#6a7f78;width:14px}'
+      + '.ccts{padding:2px 12px 9px 62px;display:flex;flex-wrap:wrap;gap:4px 14px;background:#f7faf9;border-top:1px dashed var(--line)}'
+      + '.cfoot{display:flex;align-items:center;gap:10px;flex-wrap:wrap}'
+      + '.cfila{margin-top:12px;border:1px solid var(--line);border-radius:10px;overflow:hidden}'
       + '</style>';
     h += '<div class="cbox"><div class="lab" style="padding:0 0 6px">📚 Biblioteca de comunicados</div>'
-      + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
-      + '<select id="comSalvos" class="ei" style="max-width:320px">' + comOpcoesSalvas() + '</select>'
+      + '<div class="cfoot"><select id="comSalvos" class="ei" style="max-width:320px">' + comOpcoesSalvas() + '</select>'
       + '<button class="btn out" id="comCarregar">Carregar</button>'
       + '<button class="btn out" id="comApagar">🗑 Apagar</button>'
       + '<span class="note" id="comBibSt"></span></div></div>';
@@ -1004,36 +1000,115 @@
       + '<div id="comEmailBox" style="display:' + (COMEMAIL ? "" : "none") + '">'
       + '<div class="lab">Assunto</div><input class="ei" id="comAss" style="width:100%" placeholder="Comunicado Nitron" value="' + esc(COMTXT.a) + '">'
       + '<div class="lab">Corpo do e-mail</div><textarea id="comCorpo" rows="6" style="width:100%">' + esc(COMTXT.c) + '</textarea></div>'
-      + '<div class="cfoot"><input class="ei" id="comTitulo" placeholder="dar um nome para reusar depois" style="max-width:280px" value="' + esc(COMTIT) + '">'
+      + '<div class="cfoot" style="margin-top:10px"><input class="ei" id="comTitulo" placeholder="dar um nome para reusar depois" style="max-width:280px" value="' + esc(COMTIT) + '">'
       + '<button class="btn out" id="comSalvar">💾 Salvar na biblioteca</button><span class="note" id="comSalvoSt"></span></div></div>';
-    h += '<div class="cbox"><div class="lab" style="padding:0 0 6px">👥 Quem recebe</div>'
-      + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">'
-      + '<input class="ei" id="comBusca" placeholder="buscar representante" value="' + esc(COMF.busca) + '" style="max-width:240px">'
-      + '<button class="btn out" id="comTodos">Marcar visíveis</button><button class="btn out" id="comNenhum">Desmarcar visíveis</button></div>'
-      + '<div style="margin-bottom:8px">' + comInstChips() + '</div>'
-      + '<div class="fbig" style="margin-bottom:6px"><b>' + c.reps + '</b> representante(s) · <b>' + c.w + '</b> WhatsApp · <b>' + c.e + '</b> e-mail(s)</div>';
-    h += reps.map(comLinhaRep).join("") || '<div class="note">nenhum representante com esse filtro</div>';
-    if (internos.length) h += '<div class="note" style="margin-top:10px;color:#b7791f">'
-      + internos.length + ' canal(is) interno(s) fora da lista (' + internos.map(function (x) { return esc(x.nome); }).join(", ")
-      + ') — não são representantes; ficam de fora do comunicado.</div>';
-    h += '</div>';
+    var dn = comDivN();
+    h += '<div class="cbox" style="padding:0"><div style="padding:12px 14px 8px"><div class="lab" style="padding:0 0 6px">👥 Quem recebe</div>'
+      + (!COMD.crm_lido ? '<div class="note" style="color:#b7791f;margin-bottom:6px">⚠ não consegui ler o proprietário no CRM agora — a instância mostrada é a do organograma do Sankhya, que pode não ser o número de saída.</div>' : '')
+      + (dn ? ('<div class="note" style="color:#b7791f;margin-bottom:6px">⚠ <b>' + dn + '</b> representante(s) com o organograma do Sankhya discordando do proprietário no CRM. A instância acima é a do <b>CRM</b>, que é quem decide o número de saída — o organograma aparece só como aviso na linha.</div>') : '')
+      + '<div class="cfoot" style="margin-bottom:6px">'
+      + '<button class="btn out" id="comTodos">Marcar todos</button><button class="btn out" id="comNenhum">Desmarcar todos</button>'
+      + '<input class="ei" id="comBusca" placeholder="buscar representante" value="' + esc(COMF.busca) + '" style="max-width:220px">'
+      + '<span class="note" id="comFiltroInfo"></span></div>'
+      + '<div id="comChips"></div><div class="fbig" id="comResumo" style="margin-top:4px"></div>'
+      + '<div class="note" id="comCad" style="margin-top:2px"></div></div>'
+      + '<div id="comLista"></div></div>';
     h += '<div class="cbox"><div class="cfoot"><button class="btn big ok" id="comFila">📅 Agendar na fila</button>'
       + '<button class="btn out" id="comTeste">Testar no meu e-mail</button>'
-      + '<span class="note">WhatsApp: 1 por instância a cada 2 min · roda sozinho</span>'
-      + '<span class="fbig" id="comSt" style="margin-left:auto"></span></div></div>';
+      + '<span class="note" id="comCadNota"></span><span class="fbig" id="comSt" style="margin-left:auto"></span></div>'
+      + '<div class="cfila"><div class="oh" style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:#f6faf8;border-bottom:1px solid var(--line)">'
+      + '<b style="font-size:13px">Fila deste comunicado</b><span class="note" id="filaResumoCom" style="margin-left:auto"></span></div>'
+      + '<div id="filaListaCom"></div></div></div>';
     $("kaFlow").innerHTML = h;
-    comLigar();
+    comLigarFixos();
+    comPintarLista();
     comPreview();
+    if (FILATIMER) clearInterval(FILATIMER);
+    statusFila(); FILATIMER = setInterval(statusFila, 15000);
   }
-  function comPreview() {
-    var t = COMTXT.w;
-    var ex = comReps().filter(function (r) { return COMSEL[r.codvend]; })[0] || comReps()[0];
-    var p = $("comPrev"); if (!p) return;
-    if (!t.trim()) { p.textContent = "escreva o recado acima — a prévia aparece aqui"; return; }
-    p.innerHTML = '<b>Prévia para ' + esc(ex ? ex.nome : "um rep") + ':</b><br>'
-      + esc(fillMk(t, { REP: ex ? ex.nome : "REP", ASSISTENTE: (ex && ex.assistente) || "" })).replace(/\n/g, "<br>");
+  function comChipsHTML() {
+    var insts = {}; comReps().forEach(function (r) { var i = comInst(r); if (i) insts[i] = (insts[i] || 0) + 1; });
+    var h = '<button class="cbtn' + (COMF.inst ? "" : " on") + '" data-inst="">Todas (' + comReps().length + ')</button>';
+    Object.keys(insts).sort().forEach(function (k) { h += '<button class="cbtn' + (COMF.inst === k ? " on" : "") + '" data-inst="' + esc(k) + '">' + esc(k) + ' (' + insts[k] + ')</button>'; });
+    return h;
   }
-  function comLigar() {
+  function comLinha(r, n) {
+    var sel = !!COMSEL[r.codvend], ab = !!COMAB[r.codvend];
+    var nt = 0, ne = 0;
+    (r.telefones || []).forEach(function (t) { if (COMCT[comCk(r.codvend, "tel", t.valor)]) nt++; });
+    (r.emails || []).forEach(function (t) { if (COMCT[comCk(r.codvend, "em", t.valor)]) ne++; });
+    var iv = comInst(r);
+    var inst = iv ? '<span class="wtag" style="background:#e7e0f5;color:#5b3fa0">📲 ' + esc(iv) + '</span>'
+                  : '<span class="wtag" style="background:#f7ecd6;color:#b7791f">sem instância — não sai</span>';
+    if (comDiverge(r)) inst += '<span class="wtag" style="background:#fdeee4;color:#b7791f" title="O organograma do Sankhya aponta outra assistente. Vale o CRM, que é quem decide o número de saída.">⚠ organograma: ' + esc(r.assistente) + '</span>';
+    var marca = sel ? ('<span class="wtag">' + (nt ? ('📱 ' + nt) : '') + (nt && ne ? ' · ' : '') + (ne ? ('✉ ' + ne) : '') + (!nt && !ne ? 'nenhum contato marcado' : '') + '</span>') : '';
+    var h = '<div class="crow"><span class="cnum">' + n + '</span>'
+      + '<span class="cexp" data-exp="' + r.codvend + '">' + (ab ? "▼" : "▶") + '</span>'
+      + '<input type="checkbox" class="cchk" data-cv="' + r.codvend + '"' + (sel ? " checked" : "") + '>'
+      + '<b style="min-width:190px">' + esc(r.nome) + '</b>' + inst + marca
+      + '<span class="note" style="margin-left:auto">#' + r.codvend + '</span></div>';
+    if (ab) {
+      h += '<div class="ccts">';
+      (r.telefones || []).forEach(function (t) {
+        var on = !!COMCT[comCk(r.codvend, "tel", t.valor)];
+        h += '<label class="ctopt"><input type="checkbox" class="cct" data-cv="' + r.codvend + '" data-tipo="tel" data-val="' + esc(t.valor) + '"' + (on ? " checked" : "") + '>'
+          + '<span class="cf">' + foneIco(t.valor) + '</span><span>' + esc(t.valor) + '</span>'
+          + (t.rotulo ? '<span class="note">' + esc(t.rotulo) + '</span>' : '') + '</label>';
+      });
+      (r.emails || []).forEach(function (t) {
+        var on = !!COMCT[comCk(r.codvend, "em", t.valor)];
+        h += '<label class="ctopt"><input type="checkbox" class="cct" data-cv="' + r.codvend + '" data-tipo="em" data-val="' + esc(t.valor) + '"' + (on ? " checked" : "") + '>'
+          + '<span class="cf">✉</span><span>' + esc(t.valor) + '</span>'
+          + (t.rotulo ? '<span class="note">' + esc(t.rotulo) + '</span>' : '') + '</label>';
+      });
+      if (!(r.telefones || []).length && !(r.emails || []).length) h += '<div class="note" style="color:#b7791f">sem contato cadastrado</div>';
+      h += '</div>';
+    }
+    return h;
+  }
+  function comPintarLista() {
+    var vis = comVisiveis(), e = comEstim();
+    var ch = $("comChips"); if (ch) { ch.innerHTML = comChipsHTML(); ch.querySelectorAll(".cbtn").forEach(function (el) { el.addEventListener("click", function () { COMF.inst = el.getAttribute("data-inst") || ""; comPintarLista(); }); }); }
+    var fi = $("comFiltroInfo"); if (fi) fi.textContent = vis.length === comReps().length ? (comReps().length + " representantes") : (vis.length + " de " + comReps().length + " na tela");
+    var rs = $("comResumo");
+    if (rs) rs.innerHTML = '<b>' + e.reps + '</b> representante(s) · <b>' + e.wpp + '</b> WhatsApp · <b>' + e.emails + '</b> e-mail(s)'
+      + (e.semInst ? (' · <span style="color:#b7791f">' + e.semInst + ' sem instância, não entra</span>') : '');
+    var cad = $("comCad");
+    if (cad) {
+      if (!e.wpp) cad.textContent = "";
+      else {
+        var porI = Object.keys(e.porInst).sort().map(function (k) { return esc(k) + " " + e.porInst[k]; }).join(" · ");
+        cad.innerHTML = 'Cadência: 1 WhatsApp por instância a cada ' + Math.round(e.iv / 60) + ' min, instâncias em paralelo → termina em <b>' + comTempo(e.seg) + '</b>'
+          + (e.maior > 1 ? (' (a fila mais longa é <b>' + esc(e.quem) + '</b>, com ' + e.maior + ')') : '') + '. Por instância: ' + porI + '.';
+      }
+    }
+    var cn = $("comCadNota"); if (cn) cn.textContent = e.wpp ? ("entra na fila e roda sozinho · " + comTempo(e.seg) + " para terminar") : "";
+    var box = $("comLista"); if (!box) return;
+    var hh = vis.map(function (r, i) { return comLinha(r, i + 1); }).join("") || '<div class="note" style="padding:14px">nenhum representante com esse filtro</div>';
+    var ints = comInternos();
+    if (ints.length) hh += '<div class="note" style="padding:10px 14px;border-top:1px solid var(--line);color:#b7791f">'
+      + ints.length + ' canal(is) interno(s) fora da lista (' + ints.map(function (x) { return esc(x.nome); }).join(", ") + ') — não são representantes.</div>';
+    box.innerHTML = hh;
+    box.querySelectorAll(".cexp").forEach(function (el) {
+      el.addEventListener("click", function () { var cv = +el.getAttribute("data-exp"); COMAB[cv] = !COMAB[cv]; comPintarLista(); });
+    });
+    box.querySelectorAll(".cchk").forEach(function (el) {
+      el.addEventListener("change", function () {
+        var cv = +el.getAttribute("data-cv");
+        var r = (COMD.reps || []).filter(function (x) { return x.codvend === cv; })[0];
+        if (r) comMarcar(r, el.checked);
+        comPintarLista();
+      });
+    });
+    box.querySelectorAll(".cct").forEach(function (el) {
+      el.addEventListener("change", function () {
+        var k = comCk(+el.getAttribute("data-cv"), el.getAttribute("data-tipo"), el.getAttribute("data-val"));
+        if (el.checked) COMCT[k] = true; else delete COMCT[k];
+        comPintarLista();
+      });
+    });
+  }
+  function comLigarFixos() {
     var w = $("comWpp"); if (w) w.addEventListener("input", function () { COMTXT.w = w.value; comPreview(); });
     var aa = $("comAss"); if (aa) aa.addEventListener("input", function () { COMTXT.a = aa.value; });
     var cc = $("comCorpo"); if (cc) cc.addEventListener("input", function () { COMTXT.c = cc.value; });
@@ -1041,41 +1116,27 @@
     var em = $("comEmail");
     if (em) em.addEventListener("change", function () {
       COMEMAIL = em.checked;
+      var bx = $("comEmailBox"); if (bx) bx.style.display = COMEMAIL ? "" : "none";
       if (!COMEMAIL) Object.keys(COMCT).forEach(function (k) { if (k.indexOf("|em|") > 0) delete COMCT[k]; });
       else comReps().forEach(function (r) { if (!COMSEL[r.codvend]) return; var e0 = (r.emails || []).filter(function (x) { return !rotFuzzy(x.rotulo); })[0]; if (e0) COMCT[comCk(r.codvend, "em", e0.valor)] = true; });
-      comRender();
+      comPintarLista();
     });
-    var b = $("comBusca");
-    if (b) b.addEventListener("input", function () { COMF.busca = b.value; comRender(); var nb = $("comBusca"); if (nb) { nb.focus(); nb.setSelectionRange(nb.value.length, nb.value.length); } });
-    document.querySelectorAll("#kaFlow .cbtn").forEach(function (el) {
-      el.addEventListener("click", function () { COMF.inst = el.getAttribute("data-inst") || ""; comRender(); });
-    });
-    document.querySelectorAll("#kaFlow .crchk").forEach(function (el) {
-      el.addEventListener("change", function () {
-        var cv = +el.getAttribute("data-cv"); COMSEL[cv] = el.checked;
-        if (el.checked) {
-          var r = (COMD.reps || []).filter(function (x) { return x.codvend === cv; })[0];
-          var t = r ? (r.telefones || []).filter(function (x) { return foneCel(x.valor) !== false && !rotFuzzy(x.rotulo); })[0] : null;
-          if (t) COMCT[comCk(cv, "tel", t.valor)] = true;
-        } else Object.keys(COMCT).forEach(function (k) { if (k.indexOf(cv + "|") === 0) delete COMCT[k]; });
-        comRender();
-      });
-    });
-    document.querySelectorAll("#kaFlow .crct").forEach(function (el) {
-      el.addEventListener("change", function () {
-        var k = comCk(+el.getAttribute("data-cv"), el.getAttribute("data-tipo"), el.getAttribute("data-val"));
-        if (el.checked) COMCT[k] = true; else delete COMCT[k];
-        var c = comContagem(); var f = document.querySelector("#kaFlow .fbig");
-        if (f) f.innerHTML = '<b>' + c.reps + '</b> representante(s) · <b>' + c.w + '</b> WhatsApp · <b>' + c.e + '</b> e-mail(s)';
-      });
-    });
-    var mt = $("comTodos"); if (mt) mt.addEventListener("click", function () { comVisiveis().forEach(function (r) { if (r.interno) return; COMSEL[r.codvend] = true; var t = (r.telefones || []).filter(function (x) { return foneCel(x.valor) !== false && !rotFuzzy(x.rotulo); })[0]; if (t) COMCT[comCk(r.codvend, "tel", t.valor)] = true; }); comRender(); });
-    var mn = $("comNenhum"); if (mn) mn.addEventListener("click", function () { comVisiveis().forEach(function (r) { COMSEL[r.codvend] = false; Object.keys(COMCT).forEach(function (k) { if (k.indexOf(r.codvend + "|") === 0) delete COMCT[k]; }); }); comRender(); });
+    var b = $("comBusca"); if (b) b.addEventListener("input", function () { COMF.busca = b.value; comPintarLista(); });
+    var mt = $("comTodos"); if (mt) mt.addEventListener("click", function () { comVisiveis().forEach(function (r) { comMarcar(r, true); }); comPintarLista(); });
+    var mn = $("comNenhum"); if (mn) mn.addEventListener("click", function () { comVisiveis().forEach(function (r) { comMarcar(r, false); }); comPintarLista(); });
     var cg = $("comCarregar"); if (cg) cg.addEventListener("click", comCarregar);
     var ap = $("comApagar"); if (ap) ap.addEventListener("click", comApagar);
     var sv = $("comSalvar"); if (sv) sv.addEventListener("click", comSalvar);
     var fl = $("comFila"); if (fl) fl.addEventListener("click", comFila);
     var ts = $("comTeste"); if (ts) ts.addEventListener("click", comTeste);
+  }
+  function comPreview() {
+    var p = $("comPrev"); if (!p) return;
+    var t = COMTXT.w;
+    if (!t.trim()) { p.textContent = "escreva o recado acima — a prévia aparece aqui"; return; }
+    var ex = comReps().filter(function (r) { return COMSEL[r.codvend]; })[0] || comReps()[0];
+    p.innerHTML = '<b>Prévia para ' + esc(ex ? ex.nome : "um rep") + ':</b><br>'
+      + esc(fillMk(t, { REP: ex ? ex.nome : "REP", ASSISTENTE: (ex && comInst(ex)) || "" })).replace(/\n/g, "<br>");
   }
   function comCarregar() {
     var sel = $("comSalvos"), st = $("comBibSt");
@@ -1087,29 +1148,34 @@
     comRender();
     var q = $("comSalvos"); if (q) q.value = String(s.id);
     var st2 = $("comBibSt");
-    if (st2) st2.innerHTML = "<b style='color:#1a7f4b'>\u2713 carregado</b> \u2014 editar e salvar atualiza este mesmo comunicado";
+    if (st2) st2.innerHTML = "<b style='color:#1a7f4b'>✓ carregado</b> — editar e salvar atualiza este mesmo comunicado";
   }
   function comApagar() {
-    var sel = $("comSalvos"), st = $("comBibSt"); if (!sel || !sel.value) { if (st) st.textContent = "escolha um comunicado da lista"; return; }
+    var sel = $("comSalvos"), st = $("comBibSt");
+    if (!sel || !sel.value) { if (st) st.textContent = "escolha um comunicado da lista"; return; }
     if (!confirm("Apagar esse comunicado da biblioteca? O que já foi enviado não muda.")) return;
     if (st) st.textContent = "apagando…";
     postJSON(SUPA + "/functions/v1/campanhas-comunicado", { apagar: +sel.value }, function (r) {
-      if (r && r.ok) { COMD.salvos = (COMD.salvos || []).filter(function (x) { return x.id !== r.apagado; }); if (COMID === r.apagado) COMID = null; comRender(); var s2 = $("comBibSt"); if (s2) s2.textContent = "✓ apagado"; }
-      else if (st) st.textContent = "✗ " + ((r && r.erro) || "falha");
+      if (r && r.ok) {
+        COMD.salvos = (COMD.salvos || []).filter(function (x) { return x.id !== r.apagado; });
+        if (COMID === r.apagado) { COMID = null; }
+        var s2 = $("comSalvos"); if (s2) s2.innerHTML = comOpcoesSalvas();
+        var s3 = $("comBibSt"); if (s3) s3.textContent = "✓ apagado";
+      } else if (st) st.textContent = "✗ " + ((r && r.erro) || "falha");
     });
   }
   function comSalvar() {
-    var st = $("comSalvoSt"), tit = COMTIT;
-    if (!tit.trim()) { if (st) { st.textContent = "dê um nome antes de salvar"; st.style.color = "#b7791f"; } return; }
+    var st = $("comSalvoSt");
+    if (!COMTIT.trim()) { if (st) { st.textContent = "dê um nome antes de salvar"; st.style.color = "#b7791f"; } return; }
     if (st) { st.textContent = "salvando…"; st.style.color = "#6a7f78"; }
-    var body = { titulo: tit, texto_wpp: COMTXT.w, assunto: COMTXT.a, texto_email: COMTXT.c };
+    var body = { titulo: COMTIT, texto_wpp: COMTXT.w, assunto: COMTXT.a, texto_email: COMTXT.c };
     if (COMID) body.id = COMID;
     postJSON(SUPA + "/functions/v1/campanhas-comunicado", body, function (r) {
       if (r && r.ok && r.salvo) {
         COMID = r.salvo.id;
         COMD.salvos = [r.salvo].concat((COMD.salvos || []).filter(function (x) { return x.id !== r.salvo.id; }));
         var sel = $("comSalvos"); if (sel) { sel.innerHTML = comOpcoesSalvas(); sel.value = String(r.salvo.id); }
-        if (st) { st.innerHTML = "<b style='color:#1a7f4b'>✓ salvo</b>"; }
+        if (st) st.innerHTML = "<b style='color:#1a7f4b'>✓ salvo</b>";
       } else if (st) { st.textContent = "✗ " + ((r && r.erro) || "falha"); st.style.color = "#c0392b"; }
     });
   }
@@ -1118,11 +1184,12 @@
     var itens = [], semInst = 0;
     (COMD.reps || []).forEach(function (r) {
       if (!COMSEL[r.codvend]) return;
-      var mk = { REP: r.nome, ASSISTENTE: r.assistente || "" };
+      var inst = comInst(r);
+      var mk = { REP: r.nome, ASSISTENTE: inst || "" };
       (r.telefones || []).forEach(function (t) {
         if (!COMCT[comCk(r.codvend, "tel", t.valor)]) return;
-        if (!r.assistente) { semInst++; return; }   // sem instancia o WhatsApp sairia pelo numero errado
-        itens.push({ campanha: "rep_comunicado", publico: "rep", canal: "whatsapp", fone: t.valor, instancia: r.assistente, corpo: fillMk(tW, mk), nome: r.nome });
+        if (!inst) { semInst++; return; }   // sem instancia o WhatsApp sairia pelo numero errado
+        itens.push({ campanha: "rep_comunicado", publico: "rep", canal: "whatsapp", fone: t.valor, instancia: inst, corpo: fillMk(tW, mk), nome: r.nome });
       });
       (r.emails || []).forEach(function (e) {
         if (!COMCT[comCk(r.codvend, "em", e.valor)]) return;
@@ -1134,22 +1201,24 @@
   function comFila() {
     var st = $("comSt"), btn = $("comFila");
     if (!COMTXT.w.trim()) { st.textContent = "escreva o comunicado primeiro"; st.style.color = "#b7791f"; return; }
-    var r = comItens();
+    var r = comItens(), e = comEstim();
     if (!r.itens.length) { st.textContent = "marque ao menos um contato"; st.style.color = "#b7791f"; return; }
-    if (!confirm("Agendar " + r.itens.length + " envio(s) na fila?")) return;
+    if (!confirm("Agendar " + r.itens.length + " envio(s) na fila?\n\nTermina em " + comTempo(e.seg) + " (1 WhatsApp por instância a cada " + Math.round(e.iv / 60) + " min).")) return;
     btn.disabled = true; btn.textContent = "agendando…"; st.textContent = ""; st.style.color = "#6a7f78";
     postJSON(SUPA + "/functions/v1/fila-enfileirar", { itens: r.itens }, function (d) {
       btn.disabled = false; btn.textContent = "📅 Agendar na fila";
-      if (d && d.ok) { st.innerHTML = "<b style='color:#1a7f4b'>✓ " + d.enfileirados + " na fila</b>" + (r.semInst ? (" · " + r.semInst + " sem instância, não enfileirado(s)") : ""); }
-      else { st.textContent = "✗ " + ((d && d.erro) || "falha"); st.style.color = "#c0392b"; }
+      if (d && d.ok) {
+        st.innerHTML = "<b style='color:#1a7f4b'>✓ " + d.enfileirados + " na fila</b>" + (r.semInst ? (" · " + r.semInst + " sem instância, fora") : "");
+        if (FILATIMER) clearInterval(FILATIMER); statusFila(); FILATIMER = setInterval(statusFila, 15000);
+      } else { st.textContent = "✗ " + ((d && d.erro) || "falha"); st.style.color = "#c0392b"; }
     });
   }
   function comTeste() {
-    var st = $("comSt"), t = COMTXT.w;
-    if (!t.trim()) { st.textContent = "escreva o comunicado primeiro"; st.style.color = "#b7791f"; return; }
+    var st = $("comSt");
+    if (!COMTXT.w.trim()) { st.textContent = "escreva o comunicado primeiro"; st.style.color = "#b7791f"; return; }
     var ex = comReps().filter(function (r) { return COMSEL[r.codvend]; })[0] || comReps()[0];
     st.textContent = "testando…"; st.style.color = "#6a7f78";
-    var corpo = fillMk(t, { REP: ex ? ex.nome : "REP", ASSISTENTE: (ex && ex.assistente) || "" });
+    var corpo = fillMk(COMTXT.w, { REP: ex ? ex.nome : "REP", ASSISTENTE: (ex && comInst(ex)) || "" });
     postJSON(SUPA + "/functions/v1/campanhas-enviar", { test: true, canal: "email", assunto: "[TESTE] " + (COMTXT.a || "Comunicado Nitron"), texto: corpo }, function (d) {
       st.textContent = (d && d.ok) ? "✓ teste enviado ao seu e-mail" : ("✗ " + ((d && d.motivo) || (d && d.erro) || "falha"));
       st.style.color = (d && d.ok) ? "#1a7a44" : "#c0392b";

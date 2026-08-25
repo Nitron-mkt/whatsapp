@@ -918,10 +918,10 @@
     });
   }
   /* A instancia que VALE e a do proprietario no CRM: o ZaptosWPP roteia pelo usuario remetente,
-     que numa mensagem de API e o assignedTo do contato. O organograma do Sankhya (r.assistente) so
+     que numa mensagem de API e o assignedTo do contato. O organograma do Sankhya (r.instancia_erp) so
      serve para avisar quando os dois discordam. Se nao der para ler o CRM, cai no organograma. */
-  function comInst(r) { return (COMD.crm_lido ? r.instancia_crm : (r.instancia_crm || r.assistente)) || null; }
-  function comDiverge(r) { return !!(COMD.crm_lido && r.instancia_crm && r.assistente && r.instancia_crm !== r.assistente); }
+  function comInst(r) { return (COMD.crm_lido ? r.instancia_crm : (r.instancia_crm || r.instancia_erp)) || null; }
+  function comDiverge(r) { return !!(COMD.crm_lido && r.instancia_crm && r.instancia_erp && r.instancia_crm !== r.instancia_erp); }
   function comDivN() { var n = 0; comReps().forEach(function (r) { if (comDiverge(r)) n++; }); return n; }
   function comTelForte(r) { return (r.telefones || []).filter(function (x) { return foneCel(x.valor) !== false && !rotFuzzy(x.rotulo); })[0] || null; }
   function comMarcar(r, on) {
@@ -1006,7 +1006,7 @@
     h += '<div class="cbox" style="padding:0"><div style="padding:12px 14px 8px"><div class="lab" style="padding:0 0 6px">👥 Quem recebe</div>'
       + (!COMD.crm_lido ? '<div class="note" style="color:#b7791f;margin-bottom:6px">⚠ não consegui ler o proprietário no CRM agora — a instância mostrada é a do organograma do Sankhya, que pode não ser o número de saída.</div>' : '')
       + (dn ? ('<div class="note" style="color:#b7791f;margin-bottom:6px">⚠ <b>' + dn + '</b> representante(s) com o organograma do Sankhya discordando do proprietário no CRM. A instância acima é a do <b>CRM</b>, que é quem decide o número de saída — o organograma aparece só como aviso na linha.</div>') : '')
-      + (function () { var n = 0, q = {}; comReps().forEach(function (r) { if (!comInst(r) && r.assistente) { n++; q[r.assistente] = (q[r.assistente] || 0) + 1; } });
+      + (function () { var n = 0, q = {}; comReps().forEach(function (r) { if (!comInst(r) && r.instancia_erp) { n++; q[r.instancia_erp] = (q[r.instancia_erp] || 0) + 1; } });
           if (!n) return '';
           var quem = Object.keys(q).sort().map(function (k) { return esc(k) + " " + q[k]; }).join(" · ");
           return '<div class="note" style="color:#c0392b;margin-bottom:6px">⛔ <b>' + n + '</b> representante(s) sem proprietária ativa no CRM — <b>não entram no envio</b>. O organograma do Sankhya indica: ' + quem + '. Atribua o contato a ela no CRM para voltarem a sair.</div>'; })()
@@ -1044,13 +1044,14 @@
     var iv = comInst(r);
     var inst = iv ? '<span class="wtag" style="background:#e7e0f5;color:#5b3fa0">📲 ' + esc(iv) + '</span>'
                   : '<span class="wtag" style="background:#f7ecd6;color:#b7791f">sem instância — não sai</span>';
-    if (comDiverge(r)) inst += '<span class="wtag" style="background:#fdeee4;color:#b7791f" title="O organograma do Sankhya aponta outra assistente. Vale o CRM, que é quem decide o número de saída.">⚠ organograma: ' + esc(r.assistente) + '</span>';
-    else if (!iv && r.assistente) inst += '<span class="wtag" style="background:#fdeee4;color:#b7791f" title="Ninguém do cadastro ativo é proprietária deste contato no CRM. Pelo organograma do Sankhya, quem atende agora é esta.">→ atribuir a ' + esc(r.assistente) + ' no CRM</span>';
+    if (comDiverge(r)) inst += '<span class="wtag" style="background:#fdeee4;color:#b7791f" title="O organograma do Sankhya aponta outra assistente. Vale o CRM, que é quem decide o número de saída.">⚠ organograma: ' + esc(r.instancia_erp) + '</span>';
+    else if (!iv && r.instancia_erp) inst += '<span class="wtag" style="background:#fdeee4;color:#b7791f" title="Ninguém do cadastro ativo é proprietária deste contato no CRM. Pelo organograma do Sankhya, quem atende agora é esta.">→ atribuir a ' + esc(r.instancia_erp) + ' no CRM</span>';
     var marca = sel ? ('<span class="wtag">' + (nt ? ('📱 ' + nt) : '') + (nt && ne ? ' · ' : '') + (ne ? ('✉ ' + ne) : '') + (!nt && !ne ? 'nenhum contato marcado' : '') + '</span>') : '';
     var h = '<div class="crow"><span class="cnum">' + n + '</span>'
       + '<span class="cexp" data-exp="' + r.codvend + '">' + (ab ? "▼" : "▶") + '</span>'
       + '<input type="checkbox" class="cchk" data-cv="' + r.codvend + '"' + (sel ? " checked" : "") + '>'
       + '<b style="min-width:190px">' + esc(r.nome) + '</b>' + inst + marca
+      + (r.clientes ? '<span class="wtag">' + r.clientes + ' cli</span>' : '<span class="wtag" style="background:#eef4f1;color:#41564f">sem carteira</span>')
       + '<span class="note" style="margin-left:auto">#' + r.codvend + '</span></div>';
     if (ab) {
       h += '<div class="ccts">';
@@ -1067,6 +1068,11 @@
           + (t.rotulo ? '<span class="note">' + esc(t.rotulo) + '</span>' : '') + '</label>';
       });
       if (!(r.telefones || []).length && !(r.emails || []).length) h += '<div class="note" style="color:#b7791f">sem contato cadastrado</div>';
+      h += '<div style="width:100%;display:flex;gap:6px;align-items:center;margin-top:4px">'
+        + '<button class="btn out" style="padding:2px 9px;font-size:12px" data-add="' + r.codvend + '" data-tipo="telefone">+ telefone</button>'
+        + '<button class="btn out" style="padding:2px 9px;font-size:12px" data-add="' + r.codvend + '" data-tipo="email">+ e-mail</button>'
+        + '<span class="note" id="comaddst-' + r.codvend + '"></span></div>'
+        + '<div style="width:100%" id="comadd-' + r.codvend + '"></div>';
       h += '</div>';
     }
     return h;
@@ -1105,12 +1111,48 @@
         comPintarLista();
       });
     });
+    box.querySelectorAll("[data-add]").forEach(function (el) {
+      el.addEventListener("click", function () { comAbrirAdd(+el.getAttribute("data-add"), el.getAttribute("data-tipo")); });
+    });
     box.querySelectorAll(".cct").forEach(function (el) {
       el.addEventListener("change", function () {
         var k = comCk(+el.getAttribute("data-cv"), el.getAttribute("data-tipo"), el.getAttribute("data-val"));
         if (el.checked) COMCT[k] = true; else delete COMCT[k];
         comPintarLista();
       });
+    });
+  }
+  /* cadastrar contato novo direto da campanha, no MESMO endpoint que as outras telas usam
+     (rep-contato -> rep_contato_extra), para o numero valer em todas elas e nao so aqui. */
+  function comAbrirAdd(cv, tipo) {
+    var box = $("comadd-" + cv); if (!box) return;
+    box.innerHTML = '<div style="display:flex;gap:6px;margin:4px 0;align-items:center">'
+      + '<input id="comaddin-' + cv + '" placeholder="' + (tipo === "telefone" ? "WhatsApp com DDD (ex: 11 99999-9999)" : "e-mail") + '" style="flex:1;max-width:320px;border:1px solid var(--line);border-radius:7px;padding:5px 9px;font:inherit;font-size:12px">'
+      + '<button class="btn ok" style="padding:3px 11px;font-size:12px" id="comaddok-' + cv + '">Salvar</button>'
+      + '<button class="btn out" style="padding:3px 9px;font-size:12px" id="comaddno-' + cv + '">cancelar</button></div>';
+    var inp = $("comaddin-" + cv), ok = $("comaddok-" + cv), no = $("comaddno-" + cv);
+    if (no) no.addEventListener("click", function () { box.innerHTML = ""; });
+    if (ok) ok.addEventListener("click", function () { comSalvarAdd(cv, tipo); });
+    if (inp) { inp.focus(); inp.addEventListener("keydown", function (ev) { if (ev.key === "Enter") comSalvarAdd(cv, tipo); }); }
+  }
+  function comSalvarAdd(cv, tipo) {
+    var inp = $("comaddin-" + cv), st = $("comaddst-" + cv); if (!inp) return;
+    var v = (inp.value || "").trim();
+    if (!v) { if (st) { st.textContent = "digite um valor"; st.style.color = "#b7791f"; } inp.focus(); return; }
+    if (tipo === "telefone" && digits(v).length < 10) { if (st) { st.textContent = "telefone precisa de DDD"; st.style.color = "#b7791f"; } inp.focus(); return; }
+    if (tipo === "email" && v.indexOf("@") < 1) { if (st) { st.textContent = "e-mail invalido"; st.style.color = "#b7791f"; } inp.focus(); return; }
+    if (st) { st.textContent = "salvando\u2026"; st.style.color = "#6a7f78"; }
+    postJSON(SUPA + "/functions/v1/rep-contato", { codvend: cv, tipo: tipo, valor: v, rotulo: "manual" }, function (r) {
+      if (!r || r.erro) { if (st) { st.textContent = "\u2717 " + ((r && r.erro) || "falha"); st.style.color = "#c0392b"; } return; }
+      var rep = (COMD.reps || []).filter(function (x) { return x.codvend === cv; })[0];
+      if (rep) {
+        if (tipo === "telefone") { rep.telefones = (rep.telefones || []).concat([{ valor: v, rotulo: "manual" }]); COMCT[comCk(cv, "tel", v)] = true; }
+        else { rep.emails = (rep.emails || []).concat([{ valor: v, rotulo: "manual" }]); if (COMEMAIL) COMCT[comCk(cv, "em", v)] = true; }
+        COMSEL[cv] = true; COMAB[cv] = true;
+      }
+      comPintarLista();
+      var st2 = $("comaddst-" + cv);
+      if (st2) st2.innerHTML = r.jaexistia ? "<b>ja estava cadastrado</b>" : "<b style='color:#1a7f4b'>\u2713 cadastrado e marcado</b>";
     });
   }
   function comLigarFixos() {

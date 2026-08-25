@@ -200,6 +200,64 @@ Isso é a mesma lição do caso da instância: o organograma do ERP é a fonte d
 mas quem decide o número é o CRM, e nada mantém os dois em acordo. Enquanto não houver essa
 costura, todo remanejamento de assistente exige a troca correspondente no CRM.
 
+## A rede inteira, e o "quem atende" vindo do ERP por ID (25/08)
+
+A tela de METAS POR REPRESENTANTE do Sankhya mostra a assistente como o **gerente** do
+representante (`TGFVEN.CODGER`), que é o mesmo dado que a gente já lia. Não existe tabela de
+metas com campo de proprietária: `AD_TGFMETPARC` é meta por parceiro e `AD_METCUST` não tem
+esse campo. O que a tela mostra, portanto, já estava ao alcance — o que faltava era **alcance**
+e **precisão**.
+
+**Alcance.** O `snap_rep` é montado a partir de quem tem carteira e cobria 67 reps. O ERP tem
+**98 ativos** (`TIPVEND='R' AND ATIVO='S'`), todos sob Isadora (51) ou Juliete (47) — só a
+HELENA (cód. 68) está sem gerente, sem carteira e sem parceiro, resíduo. Os 31 que faltavam são
+representantes novos, ainda sem cliente. O comunicado passou a ler `rep_carteira`, que o
+`rep-refresh` monta com a rede inteira, e agora lista os 98.
+
+**Precisão.** `rep_carteira` traz `assist_idcrm` = `AD_IDCRM` do gerente no Sankhya, que é o
+**id do usuário da assistente no GoHighLevel**. Ou seja: "quem atende" vem do ERP por ID, sem
+casar nome de pessoa. É o fim de duas classes de erro que já custaram tempo aqui — o `Monica`
+sem acento que não amarrava, e a quebra silenciosa quando a Beatriz saiu e o nome dela
+simplesmente desapareceu do organograma. `rep-refresh` v3 passou a trazer também
+`AD_CELULAR` e `EMAIL` do próprio rep (93 dos 98 têm celular), que é o que permite falar com o
+rep novo que ainda não tem parceiro cadastrado.
+
+### As 18 atribuições feitas no CRM
+
+Com a autorização da gestão, os contatos sem proprietária ativa foram atribuídos à assistente
+que o ERP indica: **8 para Isadora** (ANNA CAROLINA, FABIO, FABIOLA, MARCOS AURELIO,
+OSCAR PIMENTEL, PAULO DRESCH, SÉRGIO, WILSON) e **10 para Juliete** (ARNESTO, CARLOS ALFAYA,
+CASSIO, DENIZE, GOIANDY, LUIZ CASTRO, MARIA JULIA, MAURO, REGINALDO, RONALDO JR).
+
+Treze ficaram de fora **de propósito**, com motivo registrado:
+
+| motivo | representantes |
+|---|---|
+| sem contato no CRM (rep novo) | ADEMIR V., DEBORA, JOSÉ ALVES, JUCIARA, MICHELLA, PH, PLINIO, WLADMIR PENEDO |
+| mais de um contato no mesmo telefone | EDMILSON, ROBERTO, WALDEMAR |
+| telefone compartilhado com outro rep | ELIEL, GIOVANE |
+
+O caso ELIEL/GIOVANE é de dado, não de sistema: **os dois têm o mesmo celular** no cadastro
+(`+55 92 99989-3723`), então caem no mesmo contato do CRM e é impossível roteá-los para
+assistentes diferentes. O ELIEL não tem `AD_CELULAR` próprio; o número dele veio da base do
+parceiro. Enquanto os dois compartilharem o número, um dos dois vai receber pelo número da
+assistente do outro.
+
+Resultado na tela: de 44 representantes roteáveis para **78** (Juliete 41 · Isadora 36 ·
+Camyla 1), com 10 ainda bloqueados — os 13 acima menos os que não tinham telefone algum.
+
+### Cadastrar número na própria campanha
+
+Cada linha aberta ganhou **+ telefone** e **+ e-mail**, no mesmo endpoint que as outras telas já
+usam (`rep-contato` → `rep_contato_extra`). O número cadastrado ali vale em **todas** as
+campanhas, não só no comunicado, e entra já marcado no envio.
+
+### Segurança: mais uma chave chumbada
+
+`rep-contato` tinha o mesmo problema do `fila-enfileirar`: um JWT de `service_role` escrito no
+fonte como fallback do `srvKey()`. Removido (v3). São dois achados em dois dias, os dois em
+funções que **não** passaram pela restauração da queda de 23/08 — vale varrer as demais.
+
 ## Pendente
 
 - [ ] **Instância própria para comunicação direta ao cliente.** Quando existir,

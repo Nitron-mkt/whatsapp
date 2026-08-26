@@ -1,4 +1,7 @@
-// fila-enfileirar (v15) — POST grava itens na fila_envio. GET devolve contagem + lista recente (p/ o painel da tela).
+// fila-enfileirar (v16) — POST grava itens na fila_envio. GET devolve contagem + lista recente (p/ o painel da tela).
+// v16: aceita `campos` — campos personalizados do CRM a gravar no contato ANTES do envio. Tem de ser
+// antes: o template do GHL e renderizado no momento em que a mensagem sai, entao campo gravado depois
+// aparece vazio na arte.
 // v15: TIRADA a chave de servico que estava CHUMBADA no fonte como fallback. Era um JWT de
 // service_role valido ate 2101: quem lesse o codigo da funcao tinha acesso total ao banco, e
 // rotacionar exigiria redeploy. Agora so SRV_JWT (secret do projeto), como nas outras funcoes.
@@ -34,7 +37,9 @@ Deno.serve(async (req) => {
     const rows = itens.filter((it) => (it.canal === "whatsapp" && it.fone) || (it.canal === "email" && it.email)).map((it) => ({
       campanha: it.campanha || null, publico: it.publico || null, canal: it.canal, instancia: it.instancia || null,
       fone: it.fone || null, email: it.email || null, nome: it.nome || null, assunto: it.assunto || null,
-      corpo: it.corpo || "", template_id: it.template_id || null, merge: it.merge || null, codparc: it.codparc || null, status: "pendente",
+      corpo: it.corpo || "", template_id: it.template_id || null, merge: it.merge || null, codparc: it.codparc || null,
+      // campos do CRM a gravar no contato antes do envio (o template do GHL le do contato)
+      campos: it.campos || null, status: "pendente",
     }));
     for (let i = 0; i < rows.length; i += 500) { const { error } = await sb.from("fila_envio").insert(rows.slice(i, i + 500)); if (error) return j({ erro: detalhar(error) }, 500); }
     return j({ ok: true, enfileirados: rows.length });

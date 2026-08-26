@@ -1,4 +1,4 @@
-// fila-processar (v18) — cron (1/min). Le fila_config: email em lote (email_lote) se email_ativo; WhatsApp 1 por instancia a cada wpp_intervalo_seg se wpp_ativo. Chama campanhas-enviar (passa merge).
+// fila-processar (v19) — cron (1/min). Le fila_config: email em lote (email_lote) se email_ativo; WhatsApp 1 por instancia a cada wpp_intervalo_seg se wpp_ativo. Chama campanhas-enviar (passa merge).
 // BILINGUE: drena tanto as linhas do GESTOR (status='pendente', texto em `corpo`, com assunto)
 // quanto as do MOTOR (status='agendado', texto em `mensagem`, sem assunto). texto = corpo||mensagem.
 // v13: chave de servico via srvKey(). Desde 23/08 a plataforma injeta em
@@ -7,6 +7,8 @@
 // v15: confere a instancia contra o cadastro instancia_ghl antes de enviar. Antes bloqueava so
 // instancia NULA — token invalido (ex.: "<sem", "Monica" sem acento) passava e o #contact_instance
 // nao amarrava nada, entao a mensagem saia pela instancia errada e o cliente recebia algo desconexo.
+// v19: repassa `campos` — os campos personalizados do CRM que a linha quer gravar no contato antes do
+//      envio, para o template do GHL ter o que imprimir na arte.
 // v18: RAJADA COM ESPERA SORTEADA. Antes a rodada soltava 1 mensagem por instancia, e como a rodada
 //      e o cron de 1x/min o piso real era 1 mensagem por minuto por instancia — 139 clientes levariam
 //      2h20 numa instancia so, por limite do cron e nao por politica. Agora fila_config.wpp_burst diz
@@ -72,12 +74,12 @@ Deno.serve(async (req) => {
       if (!texto) { await sb.from("fila_envio").update({ status: "erro", resultado: "sem texto (corpo/mensagem vazios)" }).eq("id", m.id); return false; }
       const assunto = m.assunto || ("Nitron — " + (m.nome || "")).trim();
       const body = m.canal === "email"
-        ? { canal: "email", email: m.email, nome: m.nome, assunto, texto, templateId: m.template_id || undefined, merge: m.merge || undefined, codparc: m.codparc || undefined }
+        ? { canal: "email", email: m.email, nome: m.nome, assunto, texto, templateId: m.template_id || undefined, merge: m.merge || undefined, codparc: m.codparc || undefined, campos: m.campos || undefined }
         // usar_dono nas campanhas de CLIENTE: o WhatsApp sai pelo numero de quem e dono do contato no
         // CRM, entao ali a gente manda pela dona de fato (e o campanhas-enviar acerta o nome no texto).
         // Nas de REPRESENTANTE nao: divergir do organograma e um aviso para a gestao, e a linha fica
         // com erro dizendo de quem o contato e — melhor do que mandar em nome de quem nao mandou.
-        : { canal: "whatsapp", fone: m.fone, nome: m.nome, instancia: m.instancia, texto, codparc: m.codparc || undefined, usar_dono: m.publico === "cliente", margem_ms: rajada ? 0 : undefined, exigir_confirmacao: rajada ? false : undefined };
+        : { canal: "whatsapp", fone: m.fone, nome: m.nome, instancia: m.instancia, texto, codparc: m.codparc || undefined, campos: m.campos || undefined, usar_dono: m.publico === "cliente", margem_ms: rajada ? 0 : undefined, exigir_confirmacao: rajada ? false : undefined };
       let ok = false, resumo = "";
       try {
         const r = await fetch(url + "/functions/v1/campanhas-enviar", { method: "POST", headers: { "Authorization": "Bearer " + key, "Content-Type": "application/json" }, body: JSON.stringify(body) });

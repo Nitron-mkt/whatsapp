@@ -361,7 +361,7 @@
         REPSEL[r.codvend]={tel:(r.telefones||[]).filter(function(t){return foneCel(t.valor)!==false&&!rotFuzzy(t.rotulo);}).map(function(t){return t.valor;}),email:(r.emails||[]).filter(function(e){return !rotFuzzy(e.rotulo);}).map(function(e){return e.valor;})};
         var itag=tagInst(r.codvend,r.assistente);
         html+='<div class="rrow"><div class="rmain"><span class="exp" onclick="toggleCli('+r.codvend+')" id="ex-'+r.codvend+'">▶</span><input type="checkbox" class="repchk" data-cod="'+r.codvend+'" data-nome="'+esc(r.nome)+'" checked><span class="rn">'+esc(r.nome)+'</span> '+itag+'<span class="wtag">'+((r.telefones||[]).length)+' tel · '+((r.emails||[]).length)+' email</span><span class="rc">'+r.clientes+' '+uni+'</span>'+val+'</div><div class="cli" id="cli-'+r.codvend+'"></div></div>';});
-      $("reps").innerHTML=html;arteVarsHTML();fetchModelos();if(FILATIMER)clearInterval(FILATIMER);statusFila();FILATIMER=setInterval(statusFila,15000);});}
+      $("reps").innerHTML=html;arteVarsHTML();fetchModelos();if(campKind()==="voucher")carregarVoucher();if(FILATIMER)clearInterval(FILATIMER);statusFila();FILATIMER=setInterval(statusFila,15000);});}
   function repContatosHTML(cod){var rd=REPDATA[cod]||{telefones:[],emails:[]};var sel=REPSEL[cod]||{tel:[],email:[]};
     var delbtn=function(tipo,valor){return '<button class="btn" style="margin-left:auto;padding:1px 8px;color:#c0392b" title="excluir" onclick="event.preventDefault();event.stopPropagation();removeRepContato('+cod+',\''+tipo+'\',\''+esc(valor)+'\')">✕</button>';};
     var h='<div style="background:#eef4f1;border:1px solid #d9e0dc;border-radius:9px;padding:8px 10px;margin:2px 0 8px"><div style="font-size:11px;font-weight:700;color:#41564f;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">📲 Enviar ao rep — escolha os contatos</div>';
@@ -470,6 +470,23 @@
     if(mc)mc.style.display=(t==="cli")?"":"none";
     if(tt)tt.textContent=(t==="cli")?"✍️ Mensagem e e-mail ao CLIENTE":"✍️ Mensagem e e-mail ao REPRESENTANTE";
     var ar=$("arteDest");if(ar)ar.textContent=(t==="cli")?"vale para o e-mail do cliente":"vale para o e-mail do representante";}
+  /* O template do GHL so imprime campo do contato, e o percentual do voucher existia no CRM apenas
+     no contato da EMPRESA — a campanha manda para os contatos das PESSOAS, onde o campo vinha vazio.
+     Entao a tela leva os valores junto com o item da fila e o envio grava no contato que recebe.
+     As duas partes (voucher e adicional) nao vem do campanhas-preview, que devolve so a soma: vem da
+     view voucher_cli, que e a mesma fonte. */
+  var VOUCHER={};
+  function carregarVoucher(cb){VOUCHER={};getJSON(SUPA+"/rest/v1/voucher_cli?select=codparc,pct,perc_voucher,perc_adic&limit=2000",function(d){if(Array.isArray(d))d.forEach(function(r){VOUCHER[r.codparc]=r;});if(cb)cb();});}
+  /* Campos do CRM que este item precisa gravar antes de sair. Hoje so a campanha de voucher tem. */
+  function camposCrm(c){
+    if(campKind()!=="voucher")return null;
+    var v=VOUCHER[c.codparc]||{};
+    var out={};
+    if(v.perc_voucher!=null)out.voucher_pct=v.perc_voucher;
+    if(v.perc_adic!=null)out.voucher_adic=v.perc_adic;
+    if(c.pct!=null)out.voucher_total=c.pct;
+    if(c.validade)out.voucher_validade=c.validade;
+    return Object.keys(out).length?out:null;}
   var CLISOEMAIL=false;
   function cliSoEmailMudou(){var c=$("cliSoEmail");CLISOEMAIL=!!(c&&c.checked);previewModelo();renderCliFlat();}
   function ckey(o){return o.canal+"|"+o.valor;}
@@ -487,6 +504,10 @@
     var cc=$("cliCount");
     if(cc){
       var h2='<b>'+selN+'</b> de '+CLIFLAT.length+' marcados'+(q?(' · '+vis.length+' no filtro'):'');
+      if(campKind()==="voucher"){
+        // o gestor precisa saber quais tags existem no template sem ir cavar no CRM
+        h2+=' · <span class="wtag" style="background:#e7f3ec;color:#1a7f4b" title="Ao enviar, estes campos do contato sao gravados no CRM antes de a arte ser renderizada: contact.voucher_positivacao (% voucher), contact.adicional_positivacao (% adicional), contact.total_pontos (% total) e contact.voucher_validade (validade).">🏷 grava 4 campos no CRM</span>';
+      }
       if(CLISOEMAIL){
         // com "so e-mail", quem nao tem e-mail nao recebe nada — melhor dizer isso antes de enfileirar
         var semMail=CLIFLAT.filter(function(c){return CLISEL[c.codparc]&&!channelOpts(c).some(function(x){return x.canal==="email";});}).length;
@@ -544,7 +565,7 @@
     var tid=arteSel();var itens=[];var pend=0;
     function fin(){pend--;if(pend<=0){if(!itens.length){st.textContent="nada para enfileirar (marque contatos do rep/cliente)";btn.disabled=false;btn.textContent="📅 Agendar na fila";return;}postJSON(SUPA+"/functions/v1/fila-enfileirar",{itens:itens},function(r){btn.disabled=false;btn.textContent="📅 Agendar na fila";if(r.ok){st.innerHTML="<b>✓ "+r.enfileirados+" na fila</b>";if(FILATIMER)clearInterval(FILATIMER);statusFila();FILATIMER=setInterval(statusFila,15000);}else{st.textContent="✗ "+(r.erro||"falha");}});}}
     if(reps.length){pend++;postJSON(SUPA+"/functions/v1/campanhas-disparar",{codigo:CUR,publico:"rep",reps:reps,modeloRep:repTpl},function(d){(d.itens||[]).forEach(function(it){var rs=REPSEL[it.codvend]||{tel:[],email:[]};var inst=instDe(it.codvend,(REPDATA[it.codvend]||{}).assistente);(rs.tel||[]).forEach(function(f){itens.push({campanha:CUR,publico:"rep",canal:"whatsapp",fone:f,instancia:inst,corpo:it.whatsapp,nome:it.rep});});(rs.email||[]).forEach(function(e){itens.push({campanha:CUR,publico:"rep",canal:"email",email:e,assunto:it.email_assunto,corpo:it.email_corpo,template_id:tid||null,nome:it.rep,merge:{rep:it.rep}});});});fin();});}
-    if(clientes.length){pend++;postJSON(SUPA+"/functions/v1/campanhas-disparar",{codigo:CUR,publico:"cliente",clientes:clientes.map(function(c){var o={codparc:c.codparc,nome:c.nome,saldo:c.saldo,pct:c.pct,validade:c.validade,dias:c.dias,crosssell:c.crosssell,novidades:c.novidades,valtxt:c.valtxt,situacao:c.situacao};var mm=String(c.valtxt||"").match(/(\d+)\s*d/);if(mm)o.clube_vig_dias=+mm[1];return o;}),modeloCliente:cliTpl},function(d){(d.itens||[]).forEach(function(it,idx){var c=clientes[idx]||{};(c.chans||[]).forEach(function(ch){if(ch.canal==="email"){itens.push({campanha:CUR,publico:"cliente",canal:"email",email:ch.valor,assunto:it.email_assunto,corpo:it.email_corpo,template_id:tid||null,nome:c.nome,codparc:c.codparc,merge:c.merge});}else{itens.push({campanha:CUR,publico:"cliente",canal:"whatsapp",fone:ch.valor,instancia:c.instancia,corpo:it.whatsapp,nome:c.nome,codparc:c.codparc});}});});fin();});}}
+    if(clientes.length){pend++;postJSON(SUPA+"/functions/v1/campanhas-disparar",{codigo:CUR,publico:"cliente",clientes:clientes.map(function(c){var o={codparc:c.codparc,nome:c.nome,saldo:c.saldo,pct:c.pct,validade:c.validade,dias:c.dias,crosssell:c.crosssell,novidades:c.novidades,valtxt:c.valtxt,situacao:c.situacao};var mm=String(c.valtxt||"").match(/(\d+)\s*d/);if(mm)o.clube_vig_dias=+mm[1];return o;}),modeloCliente:cliTpl},function(d){(d.itens||[]).forEach(function(it,idx){var c=clientes[idx]||{};(c.chans||[]).forEach(function(ch){if(ch.canal==="email"){itens.push({campanha:CUR,publico:"cliente",canal:"email",email:ch.valor,assunto:it.email_assunto,corpo:it.email_corpo,template_id:tid||null,nome:c.nome,codparc:c.codparc,merge:c.merge,campos:camposCrm(c)});}else{itens.push({campanha:CUR,publico:"cliente",canal:"whatsapp",fone:ch.valor,instancia:c.instancia,corpo:it.whatsapp,nome:c.nome,codparc:c.codparc,campos:camposCrm(c)});}});});fin();});}}
   function abrirKA(cod){var foco={ka_cross_sell:"Foco cross-sell — ampliar mix/ticket na conta",ka_ruptura_rede:"Foco ruptura — item de alto giro parado na rede",ka_revisao_trimestral:"Revisão trimestral — pauta estratégica"}[cod]||"Briefing";$("op-nome").textContent="Key Accounts — grandes contas";$("op-meta").textContent="Tratamento humano · dossiê do CRM · não dispara nada · "+foco;$("op-kpis").innerHTML="";var ai=$("atuInfo");if(ai)ai.textContent="";
     $("kaFlow").innerHTML='<div class="note" style="padding:16px">carregando grandes contas…</div>';
     getJSON(SUPA+"/functions/v1/campanhas-keyaccounts?limit=60",function(d){if(d.erro||!d.contas){$("kaFlow").innerHTML='<div class="note" style="padding:16px;color:#c0392b">erro ao carregar</div>';return;}

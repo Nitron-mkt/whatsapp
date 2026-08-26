@@ -1,4 +1,4 @@
-// campanhas-enviar (v26) — email com ARTE + {{...}}. Garante contato. WhatsApp via SMS+#contact_instance. Recusa WhatsApp para telefone FIXO (10 digitos). ?diag mostra rate-limit.
+// campanhas-enviar (v27) — email com ARTE + {{...}}. Garante contato. WhatsApp via SMS+#contact_instance. Recusa WhatsApp para telefone FIXO (10 digitos). ?diag mostra rate-limit.
 // v22: TRAVA DE INSTANCIA. Antes, sem instancia ele mandava o texto SEM amarrar — a mensagem saia pela ultima instancia
 //      a que aquele contato ficou preso (de outro assunto, de outro mes), e o cliente recebia algo desconexo.
 //      Agora WhatsApp sem instancia e RECUSADO, e o token e conferido contra o cadastro instancia_ghl (cache de 5 min).
@@ -28,6 +28,12 @@
 //      Contato sem dono e o pior caso — o numero de saida fica indefinido. Agora, ao criar, o contato
 //      ja e atribuido ao usuario da instancia pedida, entao a mensagem sai pelo numero certo na
 //      primeira mensagem, sem precisar de passada previa de reatribuicao.
+// v27: GRAVA CAMPO DO CRM ANTES DE ENVIAR. O template do GHL so sabe imprimir campo do contato, e e
+//      renderizado no momento do envio — campo gravado depois sai vazio na arte. Entao `campos` vem no
+//      corpo por chave semantica e e escrito no contato que esta recebendo, no mesmo ponto onde o
+//      CODPARC ja era gravado. Escrever no contato do DESTINATARIO e o ponto: o percentual do voucher
+//      existia no CRM so no contato da EMPRESA (tag sankhya-cliente), e a campanha manda para os
+//      contatos das PESSOAS (comprador, financeiro), onde o campo vinha vazio.
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type, apikey", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const j = (o: unknown, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -35,6 +41,28 @@ const API = "https://services.leadconnectorhq.com";
 const LOC = "rZ8y7lzqV7fzxsartaX2";
 const RENATO = "bnKA8BWCRaTeiBC2rjRs";
 const FID_CODPARC = "HaDWHgnJSjDDdPF7XFDH";
+// de-para das chaves semanticas para o id do campo personalizado no GHL. Os tres primeiros ja
+// existiam (da positivacao) e sao alimentados tambem por outro processo, no contato da empresa; aqui
+// a gente preenche no contato que recebe. O de validade foi criado em 26/08 (contact.voucher_validade).
+const FID_CAMPO: Record<string, string> = {
+  voucher_pct: "II773kLNc7R4Pw278zcf",       // contact.voucher_positivacao  = PERC_VOUCHER
+  voucher_adic: "h6yFBPOnoe4af0BDWNIB",      // contact.adicional_positivacao = PERC_ADIC
+  voucher_total: "8YX7LVJcbwiqD8dHwUSe",     // contact.total_pontos          = a soma
+  voucher_validade: "sQsGU460EXuId97hpKEi",  // contact.voucher_validade      = texto "31/08/2026"
+};
+// Grava no contato os campos pedidos. Devolve o que foi gravado, ou null quando nao havia nada.
+async function gravarCampos(contactId: string, campos: any): Promise<string[] | null> {
+  if (!campos || typeof campos !== "object") return null;
+  const cf = Object.keys(campos)
+    .filter((k) => FID_CAMPO[k] && campos[k] !== null && campos[k] !== undefined && String(campos[k]) !== "")
+    .map((k) => ({ id: FID_CAMPO[k], value: String(campos[k]) }));
+  if (!cf.length) return null;
+  try {
+    const r = await ghl("PUT", `/contacts/${contactId}`, { customFields: cf });
+    if (!r.ok) return null;
+    return cf.map((x) => x.id);
+  } catch { return null; }
+}
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146.0 Safari/537.36";
 const srvKey = () => Deno.env.get("SRV_JWT") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const numEnv = (nome: string, padrao: number) => { const v = Number(Deno.env.get(nome)); return Number.isFinite(v) && v > 0 ? v : padrao; };
@@ -238,7 +266,7 @@ Deno.serve(async (req) => {
     let instUsada = instancia;
     if (contactId && canal !== "email" && b.ignorar_dono !== true) dono = await donoDoContato(contactId);
     if (b.lookup) return j({ ok: !!contactId, contactId, via, criado, instancia: instancia || null, dono_crm: dono, dono_divergente: !!(dono && dono !== instancia) });
-    if (!texto && !b.templateId) return j({ ok: false, motivo: "sem texto nem arte" }, 400);
+    if (!texto && !b.templateId && b.so_campos !== true) return j({ ok: false, motivo: "sem texto nem arte" }, 400);
     if (!contactId) return j({ ok: false, motivo: "nao foi possivel achar/criar contato no CRM", email: b.email, fone: b.fone });
     if (dono && dono !== instancia) {
       if (b.usar_dono === true) instUsada = dono;
@@ -247,6 +275,11 @@ Deno.serve(async (req) => {
         motivo: "o contato e da " + dono + " no CRM, entao o WhatsApp sairia pelo numero dela e nao pelo da " + instancia + " — texto nao enviado. Ajuste o proprietario no CRM ou mande pela " + dono + ".",
       });
     }
+
+    // campos do CRM antes do envio, para o template ter o que imprimir
+    const camposGravados = await gravarCampos(contactId, b.campos);
+    // so_campos: grava e para. Serve para conferir o de-para dos campos sem mandar mensagem nenhuma.
+    if (b.so_campos === true) return j({ ok: !!camposGravados, contactId, via, criado, campos_gravados: camposGravados, motivo: camposGravados ? undefined : "nenhum campo reconhecido em `campos`" });
 
     // no WhatsApp o texto chega da tela ja com o [ASSISTENTE] trocado, entao se o envio passou para a
     // dona do contato o nome escrito no texto tambem precisa mudar — senao a mensagem sai do numero
@@ -259,6 +292,6 @@ Deno.serve(async (req) => {
     const mergeUsado = (instUsada !== instancia && b.merge && typeof b.merge === "object") ? { ...b.merge, instancia: instUsada, assistente: instUsada } : b.merge;
     const res: any = await enviarMsg(contactId, canal, textoUsado, b.assunto, b.templateId, instUsada || undefined, b.fone, b.nome, mergeUsado, { espera_ms: b.espera_ms, margem_ms: b.margem_ms, exigir_confirmacao: b.exigir_confirmacao });
     const ok = res.status >= 200 && res.status < 300;
-    return j({ ok, contactId, via, criado, canal, instancia: instUsada || null, instancia_pedida: instUsada !== instancia ? instancia : undefined, texto_ajustado: textoAjustado || undefined, dono_crm: dono, arte: !!b.templateId, arte_ok: res.arte_ok, motivo: ok ? undefined : (res.recusado || ("GHL " + res.status + ": " + res.body)), bind_nao_confirmado: res.recusado ? true : undefined, resultado: res, teste: !!b.test });
+    return j({ ok, contactId, via, criado, canal, instancia: instUsada || null, instancia_pedida: instUsada !== instancia ? instancia : undefined, texto_ajustado: textoAjustado || undefined, campos_gravados: camposGravados || undefined, dono_crm: dono, arte: !!b.templateId, arte_ok: res.arte_ok, motivo: ok ? undefined : (res.recusado || ("GHL " + res.status + ": " + res.body)), bind_nao_confirmado: res.recusado ? true : undefined, resultado: res, teste: !!b.test });
   } catch (e) { return j({ ok: false, erro: String(e) }, 500); }
 });

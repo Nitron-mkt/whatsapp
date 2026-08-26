@@ -124,7 +124,7 @@
       <div id="roteiroFlow" style="display:none"></div>
       <div id="opFlow">
       <div id="enriqBar" style="display:none;border:1px solid #cfe0d9;border-radius:9px;padding:9px 12px;margin-bottom:10px;background:#eef6f2"><span style="font-weight:600;color:#0f6e56">✨ Enriquecer contatos desta base</span> <span class="note">revalidar WhatsApp/e-mail/Instagram dos clientes deste ciclo (Motor)</span> <button class="btn ok" style="margin-left:8px" onclick="enriqDaqui()">Abrir enriquecimento →</button></div>
-      <div class="arte">🎨 Arte do CRM (e-mail): <select id="arte" onchange="verArte()"><option value="">Sem arte — usa o texto da IA</option></select><span class="note">e-mail sai com o design do marketing (GHL)</span><span class="note" id="arteNote" style="display:block;margin-top:3px"></span></div>
+      <div class="arte">🎨 Arte do CRM (e-mail): <select id="arte" onchange="verArte()"><option value="">Sem arte — usa o texto da IA</option></select><span class="note">e-mail sai com o design do marketing (GHL) · <b id="arteDest">vale para o e-mail do representante</b></span><span class="note" id="arteNote" style="display:block;margin-top:3px"></span></div>
       <details class="arteVars" style="margin:6px 0 10px"><summary style="cursor:pointer;font-size:12px;color:#12514c;font-weight:600">📋 Variáveis para montar a arte no GHL <b id="arteVarsCamp"></b> (clique para ver)</summary>
         <div class="note" id="arteVarsBox" style="margin-top:7px;line-height:1.8;background:#f4f8f6;border:1px solid var(--line);border-radius:8px;padding:10px 12px"></div>
       </details>
@@ -148,20 +148,21 @@
           <input id="cliBusca" class="ei" style="max-width:280px" placeholder="🔎 buscar cliente, rep…" oninput="renderCliFlat()">
           <button class="btn" onclick="selFlat(true)">Marcar todos</button>
           <button class="btn" onclick="selFlat(false)">Nenhum</button>
+          <label class="lbl" style="font-size:12px;gap:5px"><input type="checkbox" id="cliSoEmail" onchange="cliSoEmailMudou()"> só <b>e-mail</b> <span class="note">(não manda WhatsApp para cliente)</span></label>
           <span class="note" id="cliCount" style="margin-left:auto"></span>
         </div>
         <div class="list" id="cliFlatList" style="max-height:400px;overflow:auto"><div class="note" style="padding:12px">carregando clientes…</div></div>
       </div>
       <div style="margin-top:14px">
-        <div style="display:flex;gap:9px;align-items:center;margin-bottom:8px;flex-wrap:wrap"><b style="font-size:13.5px">✍️ Mensagens da campanha</b><button class="btn" onclick="fetchModelos()">🔄 Gerar modelo com IA</button><span class="note" id="modstat"></span></div>
-        <div class="draft">
+        <div style="display:flex;gap:9px;align-items:center;margin-bottom:8px;flex-wrap:wrap"><b style="font-size:13.5px" id="msgTitulo">✍️ Mensagens da campanha</b><button class="btn" onclick="fetchModelos()">🔄 Gerar modelo com IA</button><span class="note" id="modstat"></span></div>
+        <div class="draft" id="msgRep">
           <div class="dh">📱 Mensagem ao REPRESENTANTE <span class="note" style="font-weight:400">· variáveis: <code>[REP]</code> nome · <code>[LISTA]</code> lista de clientes (entra sozinha)</span></div>
           <div class="lab">WhatsApp</div><textarea id="mrep_wpp" rows="6" oninput="previewModelo()"></textarea>
           <div class="lab">Email — assunto</div><input class="ei" id="mrep_ass" oninput="previewModelo()">
           <div class="lab">Email — corpo</div><textarea id="mrep_corpo" rows="6"></textarea>
           <div class="note" id="prev_rep" style="margin-top:6px"></div>
         </div>
-        <div class="draft climsg">
+        <div class="draft climsg" id="msgCli">
           <div class="dh">🏢 Mensagem ao CLIENTE <span class="note" style="font-weight:400">· variáveis: <code>[CLIENTE]</code> nome · <code>[VALOR]</code> saldo/%/dias</span></div>
           <div class="lab">WhatsApp</div><textarea id="mcli_wpp" rows="4" oninput="previewModelo()"></textarea>
           <div class="lab">Email — assunto</div><input class="ei" id="mcli_ass">
@@ -457,10 +458,20 @@
      getElementById ainda por cima devolvia o botao errado, entao o "agendando..." aparecia no
      lugar errado. Agora, existindo rascunho, o de cima tambem manda os rascunhos, e diz isso. */
   function rotuloAgendar(){var b=$("btnAgendar");if(!b)return;
-    b.textContent=DRAFTS.length?"\U0001f4c5 Agendar os rascunhos (o texto da tela)":"\U0001f4c5 Agendar na fila";}
+    b.textContent=DRAFTS.length?"📅 Agendar os rascunhos (o texto da tela)":"📅 Agendar na fila";}
+  /* A aba manda tambem no painel de mensagens: quem esta olhando representante nao precisa ver o
+     texto do cliente, e vice-versa. Os dois textos continuam existindo e sendo enviados — o que muda
+     e o que fica na tela, porque ler os dois juntos era o que fazia editar no campo errado. */
   function setTab(t){TAB=t;var tr=$("tabRep"),tc=$("tabCli"),pr=$("paneRep"),pc=$("paneCli");if(!tr)return;
     if(t==="cli"){tr.classList.remove("active");tc.classList.add("active");pr.style.display="none";pc.style.display="";if(!CLIFLAT_LOADED)loadCliFlat();}
-    else{tc.classList.remove("active");tr.classList.add("active");pc.style.display="none";pr.style.display="";}}
+    else{tc.classList.remove("active");tr.classList.add("active");pc.style.display="none";pr.style.display="";}
+    var mr=$("msgRep"),mc=$("msgCli"),tt=$("msgTitulo");
+    if(mr)mr.style.display=(t==="cli")?"none":"";
+    if(mc)mc.style.display=(t==="cli")?"":"none";
+    if(tt)tt.textContent=(t==="cli")?"✍️ Mensagem e e-mail ao CLIENTE":"✍️ Mensagem e e-mail ao REPRESENTANTE";
+    var ar=$("arteDest");if(ar)ar.textContent=(t==="cli")?"vale para o e-mail do cliente":"vale para o e-mail do representante";}
+  var CLISOEMAIL=false;
+  function cliSoEmailMudou(){var c=$("cliSoEmail");CLISOEMAIL=!!(c&&c.checked);previewModelo();renderCliFlat();}
   function ckey(o){return o.canal+"|"+o.valor;}
   function normFone(v){var d=String(v||"").replace(/\D/g,"");if(d.length>11&&d.slice(0,2)==="55")d=d.slice(2);return d;}
   function channelOpts(c){var out=[],seen={};(c.contatos||[]).forEach(function(ct){if(ct.fone){var k="w|"+normFone(ct.fone);if(k!=="w|"&&!seen[k]){seen[k]=1;out.push({canal:"whatsapp",valor:ct.fone,funcao:ct.funcao||"",nome:ct.nome||"",origem:ct.origem||""});}}if(ct.email){var e=String(ct.email).trim().toLowerCase();var k2="e|"+e;if(e&&!seen[k2]){seen[k2]=1;out.push({canal:"email",valor:ct.email,funcao:ct.funcao||"",nome:ct.nome||"",origem:ct.origem||""});}}});return out;}
@@ -473,7 +484,17 @@
   function renderCliFlat(){var box=$("cliFlatList");if(!box)return;var q=($("cliBusca")?$("cliBusca").value:"").toLowerCase().trim();
     var vis=CLIFLAT.filter(function(c){if(!q)return true;return (String(c.nome||"")+" "+String(c.rep||"")).toLowerCase().indexOf(q)>=0;});
     var selN=CLIFLAT.filter(function(c){return CLISEL[c.codparc];}).length;
-    var cc=$("cliCount");if(cc)cc.innerHTML='<b>'+selN+'</b> de '+CLIFLAT.length+' marcados'+(q?(' · '+vis.length+' no filtro'):'');
+    var cc=$("cliCount");
+    if(cc){
+      var h2='<b>'+selN+'</b> de '+CLIFLAT.length+' marcados'+(q?(' · '+vis.length+' no filtro'):'');
+      if(CLISOEMAIL){
+        // com "so e-mail", quem nao tem e-mail nao recebe nada — melhor dizer isso antes de enfileirar
+        var semMail=CLIFLAT.filter(function(c){return CLISEL[c.codparc]&&!channelOpts(c).some(function(x){return x.canal==="email";});}).length;
+        h2+=' · <span class="wtag" style="background:#e7e0f5;color:#5b3fa0">✉ só e-mail</span>';
+        if(semMail)h2+=' <span class="wtag" style="background:#fdeee4;color:#b7791f">'+semMail+' sem e-mail — não recebe</span>';
+      }
+      cc.innerHTML=h2;
+    }
     if(!vis.length){box.innerHTML='<div class="note" style="padding:12px">nenhum cliente'+(q?' no filtro':'')+'</div>';return;}
     var h="";vis.slice(0,400).forEach(function(c){var cod=c.codparc,ops=channelOpts(c);
       h+='<div class="clfrow"><div class="clflat"><input type="checkbox" id="clf-'+cod+'" class="clfchk" '+(CLISEL[cod]?"checked":"")+' onchange="toggleFlat('+cod+',this.checked)"><span onclick="expCont('+cod+')" style="cursor:pointer;flex:1"><span id="clx-'+cod+'" style="color:#6a7f78">▶</span> <span class="cn">'+esc(c.nome)+'</span> <span class="cr">· '+esc(c.rep||"")+' · </span><span class="cr" id="clr-'+cod+'">'+canaisResumo(c)+'</span></span><span class="cvv">'+cliVal(c)+'</span></div>';
@@ -515,7 +536,7 @@
     if(DRAFTS.length)return agendarTodos();
     var btn=$("btnAgendar"),st=$("filaStatus");btn.disabled=true;btn.textContent="agendando…";st.textContent="preparando…";
     var reps=[];document.querySelectorAll(".repchk:checked").forEach(function(c){reps.push(parseInt(c.getAttribute("data-cod")));});
-    var clientes=[];CLIFLAT.forEach(function(c){if(!CLISEL[c.codparc])return;var sel=CLICT[c.codparc]||defaultSel(c);var chans=Object.keys(sel).map(function(k){return sel[k];});if(!chans.length)return;var vi=valorInfo(c);clientes.push({codparc:c.codparc,nome:c.nome,saldo:c.saldo,pct:c.pct,validade:c.validade,dias:c.dias,crosssell:c.crosssell,novidades:c.novidades,valtxt:c.valtxt,situacao:c.situacao,instancia:c.assistente||null,chans:chans,merge:{cliente:c.nome,saldo:vi.saldo,valor:vi.valor,validade:vi.validade,dias:vi.dias}});});
+    var clientes=[];CLIFLAT.forEach(function(c){if(!CLISEL[c.codparc])return;var sel=CLICT[c.codparc]||defaultSel(c);var chans=Object.keys(sel).map(function(k){return sel[k];});if(CLISOEMAIL)chans=chans.filter(function(x){return x.canal==="email";});if(!chans.length)return;var vi=valorInfo(c);clientes.push({codparc:c.codparc,nome:c.nome,saldo:c.saldo,pct:c.pct,validade:c.validade,dias:c.dias,crosssell:c.crosssell,novidades:c.novidades,valtxt:c.valtxt,situacao:c.situacao,instancia:c.assistente||null,chans:chans,merge:{cliente:c.nome,saldo:vi.saldo,valor:vi.valor,validade:vi.validade,dias:vi.dias}});});
     var cliSelN=0;CLIFLAT.forEach(function(c){if(CLISEL[c.codparc])cliSelN++;});
     if(!reps.length&&!clientes.length){st.textContent=(cliSelN>reps.length?"clientes marcados não têm contato cadastrado":"marque reps (aba Representantes) e/ou clientes (aba Clientes)");btn.disabled=false;btn.textContent="📅 Agendar na fila";return;}
     var repTpl={whatsapp:$("mrep_wpp").value,email_assunto:$("mrep_ass").value,email_corpo:$("mrep_corpo").value};

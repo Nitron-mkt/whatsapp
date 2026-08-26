@@ -1,4 +1,4 @@
-// campanha-dono (v1) — empresta e devolve a propriedade dos contatos de uma campanha de cliente.
+// campanha-dono (v2) — empresta e devolve a propriedade dos contatos de uma campanha de cliente.
 //
 // Por que existe: o numero de WhatsApp que o cliente ve e o do usuario remetente, e numa mensagem de
 // API o remetente e o assignedTo do contato. Testamos `fromNumber` em 26/08 com o numero novo: o GHL
@@ -9,15 +9,23 @@
 // campanha_dono_emprestado e `devolver` recoloca cada um no lugar. Sem esse registro, devolver seria
 // adivinhar — e foi exatamente esse tipo de troca cega que a gestao tirou do CRM.
 //
-// POST { acao:"assumir", fones:[...], campanha? }  -> passa os contatos para a instancia de cliente
-// POST { acao:"devolver", campanha? }              -> devolve todos os emprestados em aberto
-// POST { acao:"varrer" }                           -> quem RESPONDEU volta para a assistente certa
+// POST { acao:"assumir", itens:[{fone,nome?,codparc?}], campanha?, criar? }
+// POST { acao:"devolver", campanha? }   -> devolve todos os emprestados em aberto
+// POST { acao:"varrer" }                -> quem RESPONDEU vai para os destinos de plantao
 // Qualquer uma aceita { seco:true } para so relatar.
 //
+// CRIAR: os leads enriquecidos do Motor NAO existem como contato no GHL — conferido em 26/08, uma
+// busca por contains_set nos telefones deles devolve zero. O contato so nasceria na hora do envio, e
+// nasceria SEM dono, o que e o pior caso (numero de saida indefinido). Entao com `criar` a gente cria
+// o contato ja pertencendo a instancia de campanha, com nome e codparc, antes de qualquer envio.
+// (O campanhas-enviar v26 tambem passou a criar contato ja com dono, entao este caminho e para quando
+// se quer o contato pronto ANTES do disparo.)
+//
 // `varrer` cobre o periodo em que ainda nao existe o workflow no CRM: pergunta ao GHL quais conversas
-// da instancia de campanha tem a ULTIMA mensagem de entrada e devolve esses contatos, cada um para a
-// assistente do representante daquele cliente (via crm-resposta-roteia). Cliente que respondeu nao
-// pode ficar esperando numa caixa que ninguem atende.
+// da instancia de campanha tem a ULTIMA mensagem de entrada e reparte esses contatos entre os
+// destinos de campanha_resposta_destino, por peso. Quem atende e DADO, nao codigo: mudar de pessoa e
+// um update na tabela. O reparto olha o historico ja entregue, entao a divisao continua par entre
+// rodadas, e nao so dentro de uma. Cliente que respondeu nao pode ficar numa caixa que ninguem atende.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type, apikey", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const j = (o: unknown, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
@@ -35,6 +43,7 @@ function variantes(fone: any): string[] {
 }
 const API = "https://services.leadconnectorhq.com";
 const LOC = "rZ8y7lzqV7fzxsartaX2";
+const FID_CODPARC = "HaDWHgnJSjDDdPF7XFDH";
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146.0 Safari/537.36";
 function ghl(method: string, path: string, body?: any) {
   return fetch(API + path, { method, headers: { "Authorization": "Bearer " + Deno.env.get("GHL_TOKEN"), "Version": "2021-07-28", "Content-Type": "application/json", "Accept": "application/json", "User-Agent": UA }, body: body ? JSON.stringify(body) : undefined });
@@ -61,7 +70,6 @@ Deno.serve(async (req) => {
     const seco = b.seco === true;
     const campanha = b.campanha ? String(b.campanha) : null;
     const sb = createClient(Deno.env.get("SUPABASE_URL")!, srvKey());
-    const base = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, "");
 
     // a instancia de campanha e a de escopo cliente, ativa
     const { data: instCli } = await sb.from("instancia_ghl").select("instancia,usuario_ghl_id").eq("ativa", true).eq("escopo", "cliente").order("instancia").limit(1).maybeSingle();
@@ -69,12 +77,32 @@ Deno.serve(async (req) => {
     const alvo = String(instCli.usuario_ghl_id);
 
     if (acao === "assumir") {
-      const fones: string[] = Array.isArray(b.fones) ? b.fones.map((x: any) => String(x)) : [];
-      if (!fones.length) return j({ ok: false, erro: "sem fones" }, 400);
+      // aceita ["11999999999"] ou [{fone,nome,codparc}] — a segunda forma deixa o contato criado com
+      // nome de gente em vez de "Contato +5511..."
+      const bruto: any[] = Array.isArray(b.itens) ? b.itens : (Array.isArray(b.fones) ? b.fones : []);
+      const itens = bruto.map((x: any) => (typeof x === "object" && x ? { fone: String(x.fone || ""), nome: x.nome ? String(x.nome) : "", codparc: x.codparc || null } : { fone: String(x), nome: "", codparc: null })).filter((x: any) => x.fone);
+      if (!itens.length) return j({ ok: false, erro: "sem itens" }, 400);
+      const criar = b.criar !== false;
       const out: any[] = [];
-      for (const f of fones) {
+      for (const it of itens) {
+        const f = it.fone;
         const c = await acharPorFone(f);
-        if (!c?.id) { out.push({ fone: f, acao: "nao_achei_no_crm" }); continue; }
+        if (!c?.id) {
+          if (!criar) { out.push({ fone: f, acao: "nao_achei_no_crm" }); continue; }
+          if (seco) { out.push({ fone: f, acao: "criaria", nome: it.nome || null }); continue; }
+          const campos: any = { locationId: LOC, phone: e164(f), firstName: it.nome || ("Cliente " + e164(f)), assignedTo: alvo };
+          if (it.codparc) campos.customFields = [{ id: FID_CODPARC, value: String(it.codparc) }];
+          const rc = await ghl("POST", "/contacts/upsert", campos);
+          const dc = await rc.json().catch(() => ({}));
+          const id = dc?.contact?.id || null;
+          if (!id) { out.push({ fone: f, acao: "erro", motivo: "upsert " + rc.status }); continue; }
+          await sb.from("campanha_dono_emprestado").upsert(
+            { contact_id: id, fone: f, dono_antes: null, dono_depois: alvo, campanha },
+            { onConflict: "contact_id", ignoreDuplicates: false },
+          );
+          out.push({ fone: f, contato: id, acao: "criado_na_campanha" });
+          continue;
+        }
         const antes = String(c.assignedTo || "") || null;
         if (antes === alvo) { out.push({ fone: f, contato: c.id, acao: "ja_era_da_campanha" }); continue; }
         if (seco) { out.push({ fone: f, contato: c.id, acao: "assumiria", dono_antes: antes }); continue; }
@@ -114,24 +142,35 @@ Deno.serve(async (req) => {
       if (!r.ok) return j({ ok: false, erro: "conversations/search " + r.status + ": " + (await r.text()).slice(0, 200) }, 502);
       const d = await r.json().catch(() => ({}));
       const convs = d?.conversations || [];
+
+      // quem esta de plantao, e quanto cada um ja recebeu (para o rateio nao desandar entre rodadas)
+      const { data: destinos, error: eD } = await sb.from("campanha_resposta_destino").select("usuario_ghl_id,nome,peso").eq("ativo", true).order("usuario_ghl_id"); if (eD) throw eD;
+      if (!destinos || !destinos.length) return j({ ok: false, erro: "campanha_resposta_destino sem ninguem ativo — nao ha para quem mandar a resposta" }, 400);
+      const { data: ja } = await sb.from("campanha_dono_emprestado").select("devolvido_para").not("devolvido_para", "is", null);
+      const conta: Record<string, number> = {};
+      destinos.forEach((x: any) => conta[x.usuario_ghl_id] = 0);
+      (ja || []).forEach((x: any) => { const k = String(x.devolvido_para); if (k in conta) conta[k]++; });
+      // proximo = quem esta mais atras do proprio peso (rateio ponderado, nao round-robin cego)
+      const proximo = () => destinos.slice().sort((a: any, b: any) =>
+        (conta[a.usuario_ghl_id] / Math.max(1, a.peso)) - (conta[b.usuario_ghl_id] / Math.max(1, b.peso))
+        || String(a.usuario_ghl_id).localeCompare(String(b.usuario_ghl_id)))[0];
+
       const out: any[] = [];
       for (const c of convs) {
         const cid = String(c?.contactId || "");
         if (!cid) continue;
-        if (seco) { out.push({ contato: cid, acao: "rotearia" }); continue; }
-        const rr = await fetch(base + "/functions/v1/crm-resposta-roteia", {
-          method: "POST",
-          headers: { "Authorization": "Bearer " + srvKey(), "Content-Type": "application/json" },
-          body: JSON.stringify({ contact_id: cid }),
-        });
-        const dd = await rr.json().catch(() => ({}));
-        if (dd?.acao === "atribuido") {
-          await sb.from("campanha_dono_emprestado").update({ devolvido_em: new Date().toISOString(), devolvido_para: dd.usuario_ghl_id || null }).eq("contact_id", cid).is("devolvido_em", null);
-        }
-        out.push({ contato: cid, acao: dd?.acao || "erro", instancia: dd?.instancia, motivo: dd?.motivo });
+        const dest = proximo();
+        if (seco) { out.push({ contato: cid, acao: "iria_para", para: dest.nome }); conta[dest.usuario_ghl_id]++; continue; }
+        const r2 = await ghl("PUT", `/contacts/${cid}`, { assignedTo: dest.usuario_ghl_id });
+        if (!r2.ok) { out.push({ contato: cid, acao: "erro", motivo: "PUT " + r2.status }); continue; }
+        conta[dest.usuario_ghl_id]++;
+        await sb.from("campanha_dono_emprestado").update({ devolvido_em: new Date().toISOString(), devolvido_para: dest.usuario_ghl_id }).eq("contact_id", cid).is("devolvido_em", null);
+        await sb.from("resposta_roteada").insert({ contact_id: cid, acao: "atribuido", instancia: instCli.instancia, usuario_ghl_id: dest.usuario_ghl_id, motivo: "respondeu a campanha · rateio para " + dest.nome });
+        out.push({ contato: cid, acao: "entregue", para: dest.nome });
       }
       const cont: Record<string, number> = {}; out.forEach((o) => cont[o.acao] = (cont[o.acao] || 0) + 1);
-      return j({ ok: true, acao, seco, responderam: convs.length, contagem: cont, itens: out });
+      const porPessoa: Record<string, number> = {}; destinos.forEach((x: any) => porPessoa[x.nome] = conta[x.usuario_ghl_id]);
+      return j({ ok: true, acao, seco, responderam: convs.length, contagem: cont, acumulado_por_pessoa: porPessoa, itens: out });
     }
 
     return j({ ok: false, erro: "acao deve ser assumir, devolver ou varrer" }, 400);

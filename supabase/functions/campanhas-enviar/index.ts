@@ -1,4 +1,4 @@
-// campanhas-enviar (v25) — email com ARTE + {{...}}. Garante contato. WhatsApp via SMS+#contact_instance. Recusa WhatsApp para telefone FIXO (10 digitos). ?diag mostra rate-limit.
+// campanhas-enviar (v26) — email com ARTE + {{...}}. Garante contato. WhatsApp via SMS+#contact_instance. Recusa WhatsApp para telefone FIXO (10 digitos). ?diag mostra rate-limit.
 // v22: TRAVA DE INSTANCIA. Antes, sem instancia ele mandava o texto SEM amarrar — a mensagem saia pela ultima instancia
 //      a que aquele contato ficou preso (de outro assunto, de outro mes), e o cliente recebia algo desconexo.
 //      Agora WhatsApp sem instancia e RECUSADO, e o token e conferido contra o cadastro instancia_ghl (cache de 5 min).
@@ -23,6 +23,11 @@
 //      instancia do cadastro, segue como antes — nao ha o que comparar, e recusar quebraria as
 //      campanhas de cliente. Nunca mexemos no assignedTo: mudar o dono tira a visibilidade do contato
 //      das outras assistentes (foi por isso que a gestao tirou aquele workflow do CRM).
+// v26: CONTATO NOVO NASCE COM DONO. Os leads enriquecidos do Motor nao existem no CRM (conferido em
+//      26/08: busca por telefone devolve zero), e o contato so nascia aqui, no envio, SEM proprietario.
+//      Contato sem dono e o pior caso — o numero de saida fica indefinido. Agora, ao criar, o contato
+//      ja e atribuido ao usuario da instancia pedida, entao a mensagem sai pelo numero certo na
+//      primeira mensagem, sem precisar de passada previa de reatribuicao.
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type, apikey", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const j = (o: unknown, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -41,7 +46,7 @@ function ghl(method: string, path: string, body: any, version = "2021-07-28") {
   return fetch(API + path, { method, headers: { "Authorization": "Bearer " + Deno.env.get("GHL_TOKEN"), "Version": version, "Content-Type": "application/json", "Accept": "application/json", "User-Agent": UA }, body: body ? JSON.stringify(body) : undefined });
 }
 // ---- cadastro de instancias (cache de 5 min por isolate) ----
-type Cadastro = { set: Set<string>; porUsuario: Record<string, string> };
+type Cadastro = { set: Set<string>; porUsuario: Record<string, string>; idDe: Record<string, string> };
 let instCache: { at: number; c: Cadastro } | null = null;
 async function cadastro(): Promise<Cadastro | null> {
   if (instCache && Date.now() - instCache.at < 300000) return instCache.c;
@@ -53,9 +58,9 @@ async function cadastro(): Promise<Cadastro | null> {
     const rows = await r.json();
     if (!Array.isArray(rows) || !rows.length) return null;
     const set = new Set<string>(rows.map((x: any) => String(x.instancia)));
-    const porUsuario: Record<string, string> = {};
-    rows.forEach((x: any) => { if (x.usuario_ghl_id) porUsuario[String(x.usuario_ghl_id)] = String(x.instancia); });
-    const c = { set, porUsuario };
+    const porUsuario: Record<string, string> = {}; const idDe: Record<string, string> = {};
+    rows.forEach((x: any) => { if (x.usuario_ghl_id) { porUsuario[String(x.usuario_ghl_id)] = String(x.instancia); idDe[String(x.instancia)] = String(x.usuario_ghl_id); } });
+    const c = { set, porUsuario, idDe };
     instCache = { at: Date.now(), c };
     return c;
   } catch { return null; }
@@ -106,16 +111,18 @@ async function buscarUm(q: string): Promise<any> {
 async function upsertContato(fields: any): Promise<string | null> {
   try { const r = await ghl("POST", "/contacts/upsert", { locationId: LOC, ...fields }); const d = await r.json().catch(() => ({})); return d?.contact?.id || null; } catch { return null; }
 }
-async function garantirPorFone(fone: string, nome?: string, codparc?: any) {
+async function garantirPorFone(fone: string, nome?: string, codparc?: any, dono?: string) {
   for (const v of foneVariants(fone)) { const c = await buscarUm(v); if (c?.id) return { id: c.id, via: "fone:" + v, criado: false }; }
   const fields: any = { phone: e164(fone), firstName: nome || ("Contato " + e164(fone)) };
   if (codparc) fields.customFields = [{ id: FID_CODPARC, value: String(codparc) }];
+  if (dono) fields.assignedTo = dono;   // nasce com dono: sem isso o numero de saida fica indefinido
   return { id: await upsertContato(fields), via: "criado", criado: true };
 }
-async function garantirPorEmail(email: string, nome?: string, codparc?: any) {
+async function garantirPorEmail(email: string, nome?: string, codparc?: any, dono?: string) {
   const c = await buscarUm(email.trim()); if (c?.id) return { id: c.id, via: "email", criado: false };
   const fields: any = { email: email.trim(), firstName: nome || email.trim() };
   if (codparc) fields.customFields = [{ id: FID_CODPARC, value: String(codparc) }];
+  if (dono) fields.assignedTo = dono;
   return { id: await upsertContato(fields), via: "criado", criado: true };
 }
 async function arteHtml(templateId: string): Promise<string | null> {
@@ -211,11 +218,15 @@ Deno.serve(async (req) => {
       if (validas && !validas.has(instancia)) return j({ ok: false, motivo: "instancia '" + instancia + "' nao esta no cadastro instancia_ghl (ativa)", instancia_invalida: true });
     }
 
+    // dono para o caso de o contato ainda nao existir: o usuario da instancia pedida
+    const cad = await cadastro();
+    const donoNovo = (instancia && cad?.idDe[instancia]) || undefined;
+
     let contactId: string | null = null; let via: string | undefined; let criado = false;
     if (b.test) { contactId = RENATO; via = "teste"; }
     else if (b.contact_id) { contactId = b.contact_id; via = "id"; }
-    else if (canal === "email") { if (!b.email) return j({ ok: false, motivo: "sem email" }); const a = await garantirPorEmail(b.email, b.nome, b.codparc); contactId = a.id; via = a.via; criado = a.criado; }
-    else { if (!b.fone) return j({ ok: false, motivo: "sem telefone" }); if (foneFixo(b.fone)) return j({ ok: false, motivo: "telefone fixo (sem WhatsApp)", fixo: true, fone: b.fone }); const a = await garantirPorFone(b.fone, b.nome, b.codparc); contactId = a.id; via = a.via; criado = a.criado; }
+    else if (canal === "email") { if (!b.email) return j({ ok: false, motivo: "sem email" }); const a = await garantirPorEmail(b.email, b.nome, b.codparc, donoNovo); contactId = a.id; via = a.via; criado = a.criado; }
+    else { if (!b.fone) return j({ ok: false, motivo: "sem telefone" }); if (foneFixo(b.fone)) return j({ ok: false, motivo: "telefone fixo (sem WhatsApp)", fixo: true, fone: b.fone }); const a = await garantirPorFone(b.fone, b.nome, b.codparc, donoNovo); contactId = a.id; via = a.via; criado = a.criado; }
     // ---- TRAVA DO PROPRIETARIO (so WhatsApp): o numero de saida e o do dono do contato ----
     // Vem antes do lookup de proposito: com lookup=true a tela consegue perguntar "por quem isso
     // sairia?" sem mandar nada.

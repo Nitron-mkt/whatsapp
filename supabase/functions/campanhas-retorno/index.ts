@@ -1,4 +1,6 @@
-// campanhas-retorno (v3) — entregas que voltaram CONSOLIDADAS POR MATRIZ (parc_matriz): 1 card por rede com todas as NFs das lojas. ?grupo=<matriz>&publico=cliente|rep manda p/ UM contato central listando todas as entregas. ?msg=nunota (single) mantido.
+// campanhas-retorno (v4) — entregas que voltaram CONSOLIDADAS POR MATRIZ (parc_matriz): 1 card por rede com todas as NFs das lojas. ?grupo=<matriz>&publico=cliente|rep manda p/ UM contato central listando todas as entregas. ?msg=nunota (single) mantido.
+// v4: a instancia vem da view rep_instancia (proprietario do contato no CRM, com o organograma do
+// Sankhya por ID como fallback), nao de snap_rep.assistente casado por nome.
 // v3: chave de servico via SRV_JWT (a SUPABASE_SERVICE_ROLE_KEY injetada pela plataforma virou sb_secret_ e o PostgREST recusa) + tom de parceria com o representante.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type, apikey", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
@@ -37,7 +39,11 @@ Deno.serve(async (req) => {
       const notas = membros.slice().sort((a: any, b: any) => Number(b.valor) - Number(a.valor)).map((c: any) => ({ nunota: c.nunota, loja: c.cliente, valor: Math.round(c.valor), valor_fmt: brl(c.valor), motivo: c.motivo, data: c.data_retorno }));
       const bd = notas.map((n: any) => `• ${n.loja} — NF ${n.nunota} (${n.data || ""}) ${n.valor_fmt}${n.motivo ? " · " + n.motivo : ""}`);
       let repRow: any = null; if (sede.codvend != null) { const { data: rr } = await sb.from("snap_rep").select("*").eq("codvend", sede.codvend).maybeSingle(); repRow = rr; }
-      const instancia = repRow?.assistente || null;
+      // A instancia vem da view rep_instancia (proprietario no CRM, com o organograma do Sankhya por
+      // ID como fallback). snap_rep.assistente e nome casado por nome do organograma: dizia quem
+      // DEVERIA atender, nao por qual numero a mensagem sai.
+      let riRow: any = null; if (sede.codvend != null) { const { data: ri } = await sb.from("rep_instancia").select("instancia,instancia_erp,divergente").eq("codvend", sede.codvend).maybeSingle(); riRow = ri; }
+      const instancia = riRow?.instancia || null;
       const out: any[] = []; const seen: any = {}; let aviso: string | null = null;
       if (publico === "cliente") { await contatosRede(sb, memArr, out, seen); if (!out.length) aviso = "rede sem contato cadastrado"; }
       else { if (!repRow) aviso = "rep sem contato no snapshot"; else { pushCanal(out, seen, "whatsapp", repRow.celular, "Rep", "Sankhya"); pushCanal(out, seen, "whatsapp", repRow.fone_parc, "Rep", "Sankhya"); pushCanal(out, seen, "email", repRow.email, "Rep", "Sankhya"); pushCanal(out, seen, "email", repRow.email_crm, "Rep", "CRM"); } }
@@ -50,7 +56,7 @@ Deno.serve(async (req) => {
       const fallbackRep = `Oi ${String(sede.rep || "").split(" ")[0] || "tudo bem"}, tudo bem?\n\nSo passando um aviso para voce nao ser pego de surpresa: ${membros.length} entrega(s) de ${nomeGrupo} voltaram sem ser entregues (${brl(valTot)}).\n\n${bd.join("\n")}\n\nA logistica ja esta olhando. Se voce preferir, a gente fala direto com o contato do cliente para reprogramar — ou vamos junto com voce, do jeito que funcionar melhor. O que podemos fazer para te ajudar a destravar isso?`;
       const fallback = publico === "rep" ? fallbackRep : "(nao foi possivel gerar)";
       const mensagem = (await claude(sys, "Contexto: " + ctx)) || fallback;
-      return j({ codparc: g, nunota: sede.nunota, nome: nomeGrupo, lojas: lojasN, publico, instancia, contatos: out, aviso, mensagem, valor: brl(valTot), notas });
+      return j({ codparc: g, nunota: sede.nunota, nome: nomeGrupo, lojas: lojasN, publico, instancia, instancia_erp: riRow?.instancia_erp || null, divergente: !!riRow?.divergente, contatos: out, aviso, mensagem, valor: brl(valTot), notas });
     }
 
     const { data, error } = await sb.from("retorno_pedido").select("*").limit(50000);

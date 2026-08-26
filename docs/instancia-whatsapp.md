@@ -258,6 +258,71 @@ campanhas, não só no comunicado, e entra já marcado no envio.
 fonte como fallback do `srvKey()`. Removido (v3). São dois achados em dois dias, os dois em
 funções que **não** passaram pela restauração da queda de 23/08 — vale varrer as demais.
 
+## Todas as campanhas passam a ler a mesma instância (26/08)
+
+O Comunicado já roteava certo — pelo proprietário do contato no CRM. As outras nove telas ainda
+liam `snap_rep.assistente`: o nome da assistente vindo do organograma do Sankhya, **casado por
+nome**. Isso erra duas vezes de uma vez — diz quem *deveria* atender, quando o que decide o número
+de saída é quem *é dono* do contato, e depende de o nome bater (foi o que quebrou quando a Beatriz
+saiu e o que fazia `Monica` sem acento não amarrar).
+
+Em vez de reescrever oito funções, a verdade foi para um lugar só e o dado passou a chegar certo:
+
+| peça | o que faz |
+| --- | --- |
+| `rep_carteira.instancia_crm` + `instancia_crm_em` | o dono no CRM, gravado; o horário existe para distinguir "nunca li o CRM" de "li e este rep não tem proprietária" |
+| view `rep_instancia` | `instancia_erp` (organograma, por `assist_idcrm` = ID do usuário no GHL), `instancia_crm`, `instancia` (a que vale) e `divergente` |
+| `rep-instancia-sync` | lê o CRM (uma busca por lote de telefones), grava `instancia_crm` e reaplica em `snap_rep.assistente`; cron diário 06:10, depois do `rep-refresh` das 05:55 |
+| gatilho `trg_snap_rep_instancia` | qualquer gravação em `snap_rep` recebe a instância efetiva; `assistente_raw` continua com o nome cru do ERP |
+
+Com isso as telas antigas ficaram certas sem mudar de código, e as duas que já tinham motivo para
+mudar passaram a ler a view direto: `campanhas-roteiro` (v14) e `campanhas-retorno` (v4), que agora
+também devolvem `instancia_erp` e `divergente`.
+
+### A trava que fecha a porta: `campanhas-enviar` v25
+
+Roteamento certo na tela não garante saída certa — o CRM pode mudar entre montar a lista e enviar.
+Então, antes de soltar o texto, a função lê o `assignedTo` do contato e compara com a instância
+pedida:
+
+- **dono é outra instância ativa** → o WhatsApp **não sai**, e o motivo diz de quem é o contato.
+- **dono não é nenhuma instância do cadastro** → segue como antes; não há o que comparar, e recusar
+  quebraria as campanhas de cliente.
+- **`usar_dono: true`** → em vez de recusar, manda pela dona de fato, e o nome dela substitui o da
+  outra no texto (senão a mensagem sai de um número e assinada por outra pessoa).
+
+A `fila-processar` (v17) usa `usar_dono` só nas linhas de **cliente**: ali o que importa é o cliente
+receber de quem o atende. Nas de **representante** a divergência continua sendo recusada de
+propósito — ela significa que o CRM está desalinhado do organograma, e isso é para a gestão ver, não
+para o código encobrir.
+
+`lookup: true` faz o caminho inteiro sem enviar nada, devolvendo `dono_crm` e `dono_divergente` —
+serve para conferir antes de disparar. Foi assim que se confirmou, ao vivo, o contato do Leonardo:
+
+```
+pedindo Isadora → {"dono_crm":"Juliete","dono_divergente":true}
+pedindo Juliete → {"dono_crm":"Juliete","dono_divergente":false}
+```
+
+Ou seja: aquele contato é da Juliete no CRM, e por isso as duas tentativas de 24/08 chegaram por ela
+por mais que o `#contact_instance` fosse aceito. Hoje o envio pararia antes, com o motivo escrito.
+
+### Como está a rede (leitura de 26/08)
+
+98 reps ativos · **83 com proprietária no CRM** (Juliete 44 · Isadora 38 · Camyla 1) · 8 sem contato
+no CRM · 7 com dono fora do cadastro · **4 divergentes**:
+
+| rep | organograma | CRM (vale) |
+| --- | --- | --- |
+| MARCELO BEZERRA | Isadora | Juliete |
+| MARCIO VIEIRA B | Isadora | Juliete |
+| NELSON | Isadora | Camyla |
+| TIAGO SANTOS | Isadora | Juliete |
+
+A tela do gestor mostra isso em cada linha de representante: a instância que vale, `⚠ organograma:`
+quando as duas discordam e `→ atribuir a … no CRM` quando ninguém do cadastro é dono — e nesse caso
+a linha já avisa que o WhatsApp não sai.
+
 ## Pendente
 
 - [ ] **Instância própria para comunicação direta ao cliente.** Quando existir,
@@ -273,9 +338,17 @@ funções que **não** passaram pela restauração da queda de 23/08 — vale va
 - [ ] `usuario_ghl` está cadastrado e ainda não é usado. Serve se um dia quisermos
       também **atribuir** o contato/oportunidade à assistente no GHL
       (`assignedTo`), não só mandar por ela.
-- [ ] **Decidir como rotear.** A alavanca validada é escrever `assignedTo` no
-      contato antes de enviar — o que reescreve o responsável no CRM e pode
-      disparar automações de "responsável alterado". Alternativa sem tocar no
-      CRM: testar `fromNumber`, que precisa dos 7 números do painel do ZaptosWPP.
-- [ ] Depois de decidir, baixar `BIND_MARGEM_MS` de 20s (a espera não influi na
-      saída; ficou de um diagnóstico errado).
+- [x] **Decidido em 26/08: rotear PELO dono, nunca mudar o dono.** Escrever
+      `assignedTo` era a alavanca tecnicamente validada, mas é exatamente o
+      workflow que a gestão tirou do CRM — trocar o proprietário tira a
+      visibilidade do contato das outras assistentes. Então a campanha manda por
+      quem já é dono, e avisa quando isso discorda do organograma.
+- [ ] Baixar `BIND_MARGEM_MS` de 20s: a espera não influi na saída (ficou de um
+      diagnóstico errado) e hoje custa 20s por mensagem.
+- [ ] O dono dos contatos de **cliente** não está no banco (`ghl_contato` não tem
+      coluna de proprietário), então ali a fila resolve na hora, por contato, com
+      `usar_dono`. Um `dono_crm` em `ghl_contato` deixaria a tela mostrar antes
+      do disparo por quem cada cliente vai receber.
+- [ ] 7 reps têm contato no CRM com dono **fora** do cadastro de instâncias — não
+      dá para saber por qual número sairia. Vale listar quem são e decidir se o
+      contato passa para uma das duas assistentes.

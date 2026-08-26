@@ -1,5 +1,6 @@
-// campanhas-roteiro (v13) — chave de servico via srvKey() (SRV_JWT, JWT legado) por causa
+// campanhas-roteiro (v14) — chave de servico via srvKey() (SRV_JWT, JWT legado) por causa
 // da chave sb_secret_ que o Data API recusa desde 23/08.
+// v14: a instancia vem da view rep_instancia (proprietario no CRM), nao de snap_rep.assistente.
 // (v12) — le de roteiro_cliente_apto: fora quem tem pendencia financeira
 // (inadimplente ou titulo vencido) e quem esta com giro em dia. Mensagem em tom de apoio.
 // (v9) — DISTANCIA REAL (haversine via cep_geo) com teto MAX_KM/dia; fallback regiao de CEP p/ sem coord. Agrupa por matriz. Ordem NN. Msg detalhada+numerada+espacada (com km). Exclui inad+intra.
@@ -34,7 +35,10 @@ const srvKey = () => Deno.env.get("SRV_JWT") || Deno.env.get("SUPABASE_SERVICE_R
 const VIS_DIA = 6; const MAX_DIAS = 22; const CEP3_JANELA = 20; const MAX_KM = 150; const LOTE_MAX = 15;
 
 // monta o roteiro de 1 rep. Sem I/O: geo e snap_rep vem de fora, pro modo lote carregar uma vez so.
-function montar(rep: number, rows: any[], sr: any, geo: Map<string, any>) {
+// `ri` e a linha da view rep_instancia: a instancia que VALE e a do proprietario do contato no CRM,
+// porque o WhatsApp sai pelo numero do usuario remetente. snap_rep.assistente e so o organograma do
+// Sankhya casado por nome — era ele que fazia a mensagem chegar pela assistente errada.
+function montar(rep: number, rows: any[], sr: any, geo: Map<string, any>, ri?: any) {
   const nodes = agrupar(rows).filter((n: any) => digits(n.cep).length >= 7).map((n: any) => { const g = geo.get(cep8(n.cep)); return { ...n, cepn: parseInt(cep8(n.cep)) || 0, lat: g ? g.lat : null, lng: g ? g.lng : null, prio: prioridade(n) }; });
   const nome = rows[0]?.rep || ("Rep " + rep);
   const visitados = new Set<number>(); const dias: any[] = [];
@@ -52,7 +56,7 @@ function montar(rep: number, rows: any[], sr: any, geo: Map<string, any>) {
   let msg = "Oi " + nome + ", tudo bem?\n\nSeparamos alguns clientes que podem fazer sentido para voce incluir na sua rota, pensando na proximidade entre eles — " + visitados.size + " contas distribuidas em " + dias.length + " dias, ate " + MAX_KM + "km por dia. E uma sugestao para facilitar o caminho; sinta-se livre para ajustar do jeito que funciona melhor pra voce.\n";
   dias.forEach((d: any) => { msg += "\n━━━ DIA " + d.dia + " · " + (d.cidade_base || "") + " e regiao (" + d.clientes.length + " visitas) ━━━\n📍 Referencia da regiao: " + d.ancora_nome + " — " + d.ancora_porque + "\n\nSugestao de sequencia:\n"; d.clientes.forEach((c: any) => { msg += "\n" + c.ordem + ") " + (c.ancora ? "⭐ " : "") + c.nome + "\n   " + (c.cidade || "") + " · CEP " + c.cep + (c.km != null ? (" · ~" + c.km + "km da referencia") : "") + " · " + c.motivo + "\n"; }); });
   msg += "\nO que podemos fazer para te ajudar nessa rota? Se tiver algum cliente em que voce queira um apoio antes da visita, ou alguma informacao que a gente possa levantar (historico de compra, mix, condicao comercial), me fala que eu preparo.";
-  return { rep: nome, codvend: rep, instancia: sr?.assistente || null, contatos, total: nodes.length, cobertos: visitados.size, dias, mensagem: msg };
+  return { rep: nome, codvend: rep, instancia: ri?.instancia || null, instancia_erp: ri?.instancia_erp || null, divergente: !!ri?.divergente, contatos, total: nodes.length, cobertos: visitados.size, dias, mensagem: msg };
 }
 
 Deno.serve(async (req) => {
@@ -70,9 +74,11 @@ Deno.serve(async (req) => {
       const cli: any[] = []; { let f = 0; while (true) { const { data } = await sb.from("roteiro_cliente_apto").select("*").in("codvend", cvs).range(f, f + 999); (data || []).forEach((r: any) => cli.push(r)); if (!data || data.length < 1000) break; f += 1000; } }
       const { data: srs } = await sb.from("snap_rep").select("*").in("codvend", cvs);
       const srBy: Record<string, any> = {}; (srs || []).forEach((s: any) => srBy[String(s.codvend)] = s);
+      const { data: ris } = await sb.from("rep_instancia").select("codvend,instancia,instancia_erp,divergente").in("codvend", cvs);
+      const riBy: Record<string, any> = {}; (ris || []).forEach((x: any) => riBy[String(x.codvend)] = x);
       const byRep: Record<string, any[]> = {};
       cli.forEach((c: any) => { if (intra.has(Number(c.codparc))) return; const k = String(c.codvend); (byRep[k] = byRep[k] || []).push(c); });
-      const lote = cvs.map((cv) => { const r = montar(cv, byRep[String(cv)] || [], srBy[String(cv)], geo); return { codvend: r.codvend, rep: r.rep, instancia: r.instancia, contatos: r.contatos, total: r.total, cobertos: r.cobertos, dias_n: r.dias.length, mensagem: r.mensagem }; });
+      const lote = cvs.map((cv) => { const r = montar(cv, byRep[String(cv)] || [], srBy[String(cv)], geo, riBy[String(cv)]); return { codvend: r.codvend, rep: r.rep, instancia: r.instancia, instancia_erp: r.instancia_erp, divergente: r.divergente, contatos: r.contatos, total: r.total, cobertos: r.cobertos, dias_n: r.dias.length, mensagem: r.mensagem }; });
       return j({ lote });
     }
 
@@ -88,6 +94,7 @@ Deno.serve(async (req) => {
     const todas: any[] = []; { let f = 0; while (true) { const { data } = await sb.from("roteiro_cliente_apto").select("*").eq("codvend", rep).range(f, f + 999); (data || []).forEach((r: any) => todas.push(r)); if (!data || data.length < 1000) break; f += 1000; } }
     const rows = todas.filter((c: any) => !intra.has(Number(c.codparc)));
     const { data: sr } = await sb.from("snap_rep").select("*").eq("codvend", rep).maybeSingle();
-    return j(montar(rep, rows, sr, geo));
+    const { data: ri } = await sb.from("rep_instancia").select("codvend,instancia,instancia_erp,divergente").eq("codvend", rep).maybeSingle();
+    return j(montar(rep, rows, sr, geo, ri));
   } catch (e) { return j({ erro: String(e) }, 500); }
 });

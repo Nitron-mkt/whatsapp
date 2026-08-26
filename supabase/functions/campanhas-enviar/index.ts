@@ -1,4 +1,4 @@
-// campanhas-enviar (v24) — email com ARTE + {{...}}. Garante contato. WhatsApp via SMS+#contact_instance. Recusa WhatsApp para telefone FIXO (10 digitos). ?diag mostra rate-limit.
+// campanhas-enviar (v25) — email com ARTE + {{...}}. Garante contato. WhatsApp via SMS+#contact_instance. Recusa WhatsApp para telefone FIXO (10 digitos). ?diag mostra rate-limit.
 // v22: TRAVA DE INSTANCIA. Antes, sem instancia ele mandava o texto SEM amarrar — a mensagem saia pela ultima instancia
 //      a que aquele contato ficou preso (de outro assunto, de outro mes), e o cliente recebia algo desconexo.
 //      Agora WhatsApp sem instancia e RECUSADO, e o token e conferido contra o cadastro instancia_ghl (cache de 5 min).
@@ -15,6 +15,14 @@
 //      "sem confirmacao" significa de verdade que o comando nao foi processado, e recusar e seguro.
 //      Margem em 20s: com 1,7s depois da confirmacao a mensagem saiu pela instancia antiga; com 22,6s
 //      saiu certa. A fila manda 1 por instancia a cada 120s, entao a espera nao custa vazao.
+// v25: CONFERE O PROPRIETARIO DO CONTATO NO CRM. O numero de saida e o do usuario remetente, e numa
+//      mensagem de API o remetente e o assignedTo do contato — o #contact_instance manda na atribuicao
+//      de entrada, nao na de saida. Entao antes de mandar a gente le o assignedTo: se ele e uma
+//      instancia ATIVA do cadastro e nao e a instancia pedida, o texto NAO sai (sairia pelo numero da
+//      outra assistente, com o [ASSISTENTE] do texto errado). Se o proprietario nao e nenhuma
+//      instancia do cadastro, segue como antes — nao ha o que comparar, e recusar quebraria as
+//      campanhas de cliente. Nunca mexemos no assignedTo: mudar o dono tira a visibilidade do contato
+//      das outras assistentes (foi por isso que a gestao tirou aquele workflow do CRM).
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type, apikey", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const j = (o: unknown, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -33,19 +41,37 @@ function ghl(method: string, path: string, body: any, version = "2021-07-28") {
   return fetch(API + path, { method, headers: { "Authorization": "Bearer " + Deno.env.get("GHL_TOKEN"), "Version": version, "Content-Type": "application/json", "Accept": "application/json", "User-Agent": UA }, body: body ? JSON.stringify(body) : undefined });
 }
 // ---- cadastro de instancias (cache de 5 min por isolate) ----
-let instCache: { at: number; set: Set<string> } | null = null;
-async function instanciasValidas(): Promise<Set<string> | null> {
-  if (instCache && Date.now() - instCache.at < 300000) return instCache.set;
+type Cadastro = { set: Set<string>; porUsuario: Record<string, string> };
+let instCache: { at: number; c: Cadastro } | null = null;
+async function cadastro(): Promise<Cadastro | null> {
+  if (instCache && Date.now() - instCache.at < 300000) return instCache.c;
   try {
     const base = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, ""); const k = srvKey();
     if (!base || !k) return null;
-    const r = await fetch(`${base}/rest/v1/instancia_ghl?ativa=eq.true&select=instancia`, { headers: { apikey: k, Authorization: "Bearer " + k } });
+    const r = await fetch(`${base}/rest/v1/instancia_ghl?ativa=eq.true&select=instancia,usuario_ghl_id`, { headers: { apikey: k, Authorization: "Bearer " + k } });
     if (!r.ok) return null;
     const rows = await r.json();
     if (!Array.isArray(rows) || !rows.length) return null;
     const set = new Set<string>(rows.map((x: any) => String(x.instancia)));
-    instCache = { at: Date.now(), set };
-    return set;
+    const porUsuario: Record<string, string> = {};
+    rows.forEach((x: any) => { if (x.usuario_ghl_id) porUsuario[String(x.usuario_ghl_id)] = String(x.instancia); });
+    const c = { set, porUsuario };
+    instCache = { at: Date.now(), c };
+    return c;
+  } catch { return null; }
+}
+async function instanciasValidas(): Promise<Set<string> | null> { const c = await cadastro(); return c ? c.set : null; }
+// Quem o CRM diz que e o dono do contato — e portanto por qual numero o WhatsApp vai sair.
+// null = nao deu para saber; "" = tem dono, mas ele nao e instancia nenhuma do cadastro ativo.
+async function donoDoContato(contactId: string): Promise<string | null> {
+  const c = await cadastro(); if (!c) return null;
+  try {
+    const r = await ghl("GET", `/contacts/${contactId}`, null);
+    if (!r.ok) return null;
+    const d = await r.json().catch(() => ({}));
+    const uid = String(d?.contact?.assignedTo || d?.assignedTo || "");
+    if (!uid) return "";
+    return c.porUsuario[uid] || "";
   } catch { return null; }
 }
 const formaOk = (s: string) => /^[\p{L}\p{N} ._-]{2,40}$/u.test(s);
@@ -190,11 +216,38 @@ Deno.serve(async (req) => {
     else if (b.contact_id) { contactId = b.contact_id; via = "id"; }
     else if (canal === "email") { if (!b.email) return j({ ok: false, motivo: "sem email" }); const a = await garantirPorEmail(b.email, b.nome, b.codparc); contactId = a.id; via = a.via; criado = a.criado; }
     else { if (!b.fone) return j({ ok: false, motivo: "sem telefone" }); if (foneFixo(b.fone)) return j({ ok: false, motivo: "telefone fixo (sem WhatsApp)", fixo: true, fone: b.fone }); const a = await garantirPorFone(b.fone, b.nome, b.codparc); contactId = a.id; via = a.via; criado = a.criado; }
-    if (b.lookup) return j({ ok: !!contactId, contactId, via, criado });
+    // ---- TRAVA DO PROPRIETARIO (so WhatsApp): o numero de saida e o do dono do contato ----
+    // Vem antes do lookup de proposito: com lookup=true a tela consegue perguntar "por quem isso
+    // sairia?" sem mandar nada.
+    // usar_dono=true: em vez de recusar, manda PELA dona do contato (e o [ASSISTENTE] do texto passa
+    // a ser ela tambem, senao a mensagem sai coerente no numero e incoerente no texto). E o que a
+    // fila usa nas campanhas de cliente. Nas de representante a divergencia e recusada de proposito:
+    // ali ela significa que o CRM esta desalinhado do organograma e a gestao precisa ver.
+    let dono: string | null = null;
+    let instUsada = instancia;
+    if (contactId && canal !== "email" && b.ignorar_dono !== true) dono = await donoDoContato(contactId);
+    if (b.lookup) return j({ ok: !!contactId, contactId, via, criado, instancia: instancia || null, dono_crm: dono, dono_divergente: !!(dono && dono !== instancia) });
     if (!texto && !b.templateId) return j({ ok: false, motivo: "sem texto nem arte" }, 400);
     if (!contactId) return j({ ok: false, motivo: "nao foi possivel achar/criar contato no CRM", email: b.email, fone: b.fone });
-    const res: any = await enviarMsg(contactId, canal, texto, b.assunto, b.templateId, instancia || undefined, b.fone, b.nome, b.merge, { espera_ms: b.espera_ms, margem_ms: b.margem_ms, exigir_confirmacao: b.exigir_confirmacao });
+    if (dono && dono !== instancia) {
+      if (b.usar_dono === true) instUsada = dono;
+      else return j({
+        ok: false, contactId, via, criado, canal, instancia, dono_crm: dono, dono_divergente: true,
+        motivo: "o contato e da " + dono + " no CRM, entao o WhatsApp sairia pelo numero dela e nao pelo da " + instancia + " — texto nao enviado. Ajuste o proprietario no CRM ou mande pela " + dono + ".",
+      });
+    }
+
+    // no WhatsApp o texto chega da tela ja com o [ASSISTENTE] trocado, entao se o envio passou para a
+    // dona do contato o nome escrito no texto tambem precisa mudar — senao a mensagem sai do numero
+    // de uma e assinada por outra.
+    let textoUsado = texto; let textoAjustado = false;
+    if (instUsada !== instancia && instancia && typeof texto === "string" && texto) {
+      const re = new RegExp("(?<![\\p{L}\\p{N}])" + instancia.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![\\p{L}\\p{N}])", "giu");
+      if (re.test(texto)) { textoUsado = texto.replace(re, instUsada); textoAjustado = true; }
+    }
+    const mergeUsado = (instUsada !== instancia && b.merge && typeof b.merge === "object") ? { ...b.merge, instancia: instUsada, assistente: instUsada } : b.merge;
+    const res: any = await enviarMsg(contactId, canal, textoUsado, b.assunto, b.templateId, instUsada || undefined, b.fone, b.nome, mergeUsado, { espera_ms: b.espera_ms, margem_ms: b.margem_ms, exigir_confirmacao: b.exigir_confirmacao });
     const ok = res.status >= 200 && res.status < 300;
-    return j({ ok, contactId, via, criado, canal, instancia: instancia || null, arte: !!b.templateId, arte_ok: res.arte_ok, motivo: ok ? undefined : (res.recusado || ("GHL " + res.status + ": " + res.body)), bind_nao_confirmado: res.recusado ? true : undefined, resultado: res, teste: !!b.test });
+    return j({ ok, contactId, via, criado, canal, instancia: instUsada || null, instancia_pedida: instUsada !== instancia ? instancia : undefined, texto_ajustado: textoAjustado || undefined, dono_crm: dono, arte: !!b.templateId, arte_ok: res.arte_ok, motivo: ok ? undefined : (res.recusado || ("GHL " + res.status + ": " + res.body)), bind_nao_confirmado: res.recusado ? true : undefined, resultado: res, teste: !!b.test });
   } catch (e) { return j({ ok: false, erro: String(e) }, 500); }
 });

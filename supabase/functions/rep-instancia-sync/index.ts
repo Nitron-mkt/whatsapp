@@ -1,0 +1,119 @@
+// rep-instancia-sync (v1) — grava em rep_carteira quem e o proprietario do contato de cada
+// representante no CRM, para TODAS as campanhas lerem a mesma verdade pela view rep_instancia.
+//
+// Por que isso existe: o numero de WhatsApp que o cliente ve e o do usuario remetente, e numa
+// mensagem de API o remetente e o assignedTo do contato no GHL. As campanhas antigas pegavam a
+// instancia de snap_rep.assistente — o nome da assistente vindo do organograma do Sankhya, casado
+// por nome. Isso e "quem deveria atender", nao "por qual numero sai", e por isso a mensagem chegava
+// pela assistente errada. Aqui a gente le o CRM de fato e guarda o resultado.
+//
+// GET/POST -> { ok, reps, com_dono, sem_contato_no_crm, dono_fora_do_cadastro, divergentes, por_instancia:{...} }
+// POST { seco:true } -> so calcula e devolve, sem gravar.
+//
+// A instancia_crm_em e gravada em TODAS as linhas lidas, inclusive nas que ficaram sem dono: sem
+// isso a view nao saberia diferenciar "nunca li o CRM" de "li e este rep nao tem proprietaria".
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type, apikey", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
+const j = (o: unknown, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
+const srvKey = () => Deno.env.get("SRV_JWT") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+const detalhar = (e: any) => [e?.message, e?.details, e?.hint, e?.code].filter(Boolean).join(" · ") || String(e);
+const digits = (s: any) => String(s || "").replace(/\D/g, "");
+const nf = (s: any) => digits(s).replace(/^0+/, "").replace(/^55/, "");
+function e164(fone: any): string { const d = digits(fone); if (!d) return ""; if (d.length <= 11) return "+55" + d; return "+" + d; }
+
+const API = "https://services.leadconnectorhq.com";
+const LOC = "rZ8y7lzqV7fzxsartaX2";
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146.0 Safari/537.36";
+// Uma busca no GHL por lote de telefones; devolve fone normalizado -> assignedTo.
+async function donosPorFone(fones: string[]): Promise<Record<string, string> | null> {
+  const tok = Deno.env.get("GHL_TOKEN"); if (!tok || !fones.length) return null;
+  const out: Record<string, string> = {};
+  try {
+    for (let i = 0; i < fones.length; i += 90) {
+      const r = await fetch(API + "/contacts/search", {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + tok, "Version": "2021-07-28", "Content-Type": "application/json", "Accept": "application/json", "User-Agent": UA },
+        body: JSON.stringify({ locationId: LOC, pageLimit: 100, filters: [{ field: "phone", operator: "contains_set", value: fones.slice(i, i + 90) }] }),
+      });
+      if (!r.ok) return null;
+      const d = await r.json().catch(() => ({}));
+      (d?.contacts || []).forEach((c: any) => { const k = nf(c?.phone); if (k && c?.assignedTo) out[k] = String(c.assignedTo); });
+    }
+    return out;
+  } catch { return null; }
+}
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  try {
+    const b = req.method === "POST" ? await req.json().catch(() => ({})) : {};
+    const sb = createClient(Deno.env.get("SUPABASE_URL")!, srvKey());
+
+    const { data: rcs, error: eR } = await sb.from("rep_carteira").select("codvend,apelido,codparc,celular,assist_idcrm"); if (eR) throw eR;
+    const { data: instRows, error: eI } = await sb.from("instancia_ghl").select("instancia,usuario_ghl_id").eq("ativa", true); if (eI) throw eI;
+    const porUsuario: Record<string, string> = {};
+    (instRows || []).forEach((x: any) => { if (x.usuario_ghl_id) porUsuario[String(x.usuario_ghl_id)] = String(x.instancia); });
+
+    const { data: extras, error: eE } = await sb.from("rep_contato_extra").select("codvend,valor").eq("ativo", true).eq("tipo", "telefone"); if (eE) throw eE;
+    const exMap: Record<string, string[]> = {}; (extras || []).forEach((e: any) => { (exMap[e.codvend] = exMap[e.codvend] || []).push(e.valor); });
+
+    // contatos da base do parceiro do proprio rep — mesmo conjunto que a tela do comunicado usa
+    const cps = Array.from(new Set((rcs || []).map((r: any) => Number(r.codparc)).filter((x: number) => x > 0)));
+    const baseCp: Record<string, string[]> = {};
+    for (let i = 0; i < cps.length; i += 300) {
+      const ch = cps.slice(i, i + 300);
+      const { data: sc, error: e1 } = await sb.from("snap_contato").select("codparc,fone").in("codparc", ch); if (e1) throw e1;
+      (sc || []).forEach((c: any) => { if (c.fone) (baseCp[c.codparc] = baseCp[c.codparc] || []).push(c.fone); });
+      const { data: gc, error: e2 } = await sb.from("ghl_contato").select("codparc,fone").in("codparc", ch); if (e2) throw e2;
+      (gc || []).forEach((c: any) => { if (c.fone) (baseCp[c.codparc] = baseCp[c.codparc] || []).push(c.fone); });
+    }
+
+    const reps = (rcs || []).map((r: any) => {
+      const cv = String(r.codvend); const cp = String(r.codparc || 0);
+      const tels: string[] = []; const vistos = new Set<string>();
+      ([r.celular] as any[]).concat(exMap[cv] || []).concat(baseCp[cp] || []).forEach((v: any) => {
+        const k = nf(v); if (k && k.length >= 10 && !vistos.has(k)) { vistos.add(k); tels.push(String(v)); }
+      });
+      return { codvend: Number(r.codvend), nome: String(r.apelido || ("Rep " + r.codvend)), tels, instancia_erp: (r.assist_idcrm && porUsuario[String(r.assist_idcrm)]) || null };
+    });
+
+    const fones = Array.from(new Set(reps.flatMap((r) => r.tels.map((t) => e164(t)).filter(Boolean))));
+    const donos = await donosPorFone(fones);
+    if (!donos) return j({ ok: false, erro: "nao consegui ler o CRM — nada foi gravado (melhor manter o valor antigo do que apagar)" }, 502);
+
+    let com = 0, sem = 0, fora = 0, div = 0;
+    const porInst: Record<string, number> = {};
+    const linhas = reps.map((r) => {
+      let inst: string | null = null; let dono_fora = false;
+      for (const t of r.tels) {
+        const dono = donos[nf(t)];
+        if (!dono) continue;
+        if (porUsuario[dono]) { inst = porUsuario[dono]; break; }
+        dono_fora = true;   // achou o contato, mas o dono nao e assistente do cadastro
+      }
+      if (inst) { com++; porInst[inst] = (porInst[inst] || 0) + 1; if (r.instancia_erp && r.instancia_erp !== inst) div++; }
+      else if (dono_fora) fora++;
+      else sem++;
+      return { codvend: r.codvend, nome: r.nome, instancia_crm: inst, instancia_erp: r.instancia_erp };
+    });
+
+    const agora = new Date().toISOString();
+    let snap = 0;
+    if (b.seco !== true) {
+      for (const l of linhas) {
+        const { error } = await sb.from("rep_carteira").update({ instancia_crm: l.instancia_crm, instancia_crm_em: agora }).eq("codvend", l.codvend);
+        if (error) throw error;
+      }
+      // as campanhas antigas leem snap_rep.assistente; o gatilho ja corrige o que for gravado dali
+      // pra frente, e aqui a gente reaplica no que ja estava na tabela.
+      const { data: n, error: eN } = await sb.rpc("snap_rep_reaplica_instancia");
+      if (eN) throw eN;
+      snap = Number(n) || 0;
+    }
+    return j({
+      ok: true, seco: b.seco === true, reps: linhas.length, telefones_consultados: fones.length,
+      com_dono: com, sem_contato_no_crm: sem, dono_fora_do_cadastro: fora, divergentes: div,
+      por_instancia: porInst, snap_rep_ajustados: snap, lido_em: agora,
+      detalhe: b.detalhe === true ? linhas : undefined,
+    });
+  } catch (e) { return j({ ok: false, erro: detalhar(e) }, 500); }
+});

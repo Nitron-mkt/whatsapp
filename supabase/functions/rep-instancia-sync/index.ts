@@ -1,4 +1,4 @@
-// rep-instancia-sync (v1) — grava em rep_carteira quem e o proprietario do contato de cada
+// rep-instancia-sync (v3) — grava em rep_carteira quem e o proprietario do contato de cada
 // representante no CRM, para TODAS as campanhas lerem a mesma verdade pela view rep_instancia.
 //
 // Por que isso existe: o numero de WhatsApp que o cliente ve e o do usuario remetente, e numa
@@ -10,6 +10,11 @@
 // GET/POST -> { ok, reps, com_dono, sem_contato_no_crm, dono_fora_do_cadastro, divergentes, por_instancia:{...} }
 // POST { seco:true } -> so calcula e devolve, sem gravar.
 //
+// v3: quando varios contatos dividem o mesmo telefone (ha rep com 2 e 3 contatos repetidos no CRM),
+// guardamos TODOS os donos daquele numero e escolhemos o que e assistente do cadastro. Antes o
+// ultimo da lista vencia, e se ele fosse um dono qualquer o rep aparecia como "sem instancia"
+// mesmo tendo um contato certo — foi o que aconteceu com ROBERTO e WALDEMAR.
+//
 // A instancia_crm_em e gravada em TODAS as linhas lidas, inclusive nas que ficaram sem dono: sem
 // isso a view nao saberia diferenciar "nunca li o CRM" de "li e este rep nao tem proprietaria".
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -20,14 +25,23 @@ const detalhar = (e: any) => [e?.message, e?.details, e?.hint, e?.code].filter(B
 const digits = (s: any) => String(s || "").replace(/\D/g, "");
 const nf = (s: any) => digits(s).replace(/^0+/, "").replace(/^55/, "");
 function e164(fone: any): string { const d = digits(fone); if (!d) return ""; if (d.length <= 11) return "+55" + d; return "+" + d; }
+// celular brasileiro tem 11 digitos (DDD + 9 + 8), mas o Sankhya guarda muito numero antigo com 10 e
+// o CRM guarda com 9. Sem procurar as duas formas, o rep aparece como "sem dono" tendo dono.
+function variantes(fone: any): string[] {
+  const d = nf(fone); if (d.length < 10) return [];
+  const out = new Set<string>([d]);
+  if (d.length === 10) out.add(d.slice(0, 2) + "9" + d.slice(2));
+  if (d.length === 11 && d[2] === "9") out.add(d.slice(0, 2) + d.slice(3));
+  return [...out];
+}
 
 const API = "https://services.leadconnectorhq.com";
 const LOC = "rZ8y7lzqV7fzxsartaX2";
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146.0 Safari/537.36";
-// Uma busca no GHL por lote de telefones; devolve fone normalizado -> assignedTo.
-async function donosPorFone(fones: string[]): Promise<Record<string, string> | null> {
+// Uma busca no GHL por lote de telefones; devolve fone normalizado -> TODOS os assignedTo achados.
+async function donosPorFone(fones: string[]): Promise<Record<string, string[]> | null> {
   const tok = Deno.env.get("GHL_TOKEN"); if (!tok || !fones.length) return null;
-  const out: Record<string, string> = {};
+  const out: Record<string, string[]> = {};
   try {
     for (let i = 0; i < fones.length; i += 90) {
       const r = await fetch(API + "/contacts/search", {
@@ -37,10 +51,28 @@ async function donosPorFone(fones: string[]): Promise<Record<string, string> | n
       });
       if (!r.ok) return null;
       const d = await r.json().catch(() => ({}));
-      (d?.contacts || []).forEach((c: any) => { const k = nf(c?.phone); if (k && c?.assignedTo) out[k] = String(c.assignedTo); });
+      (d?.contacts || []).forEach((c: any) => { const k = nf(c?.phone); if (k && c?.assignedTo) (out[k] = out[k] || []).push(String(c.assignedTo)); });
     }
     return out;
   } catch { return null; }
+}
+// Mesma ideia, por e-mail: ha rep cujo telefone no Sankhya nao casa com nenhum do CRM.
+async function donosPorEmail(mails: string[]): Promise<Record<string, string[]>> {
+  const tok = Deno.env.get("GHL_TOKEN"); if (!tok || !mails.length) return {};
+  const out: Record<string, string[]> = {};
+  try {
+    for (let i = 0; i < mails.length; i += 90) {
+      const r = await fetch(API + "/contacts/search", {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + tok, "Version": "2021-07-28", "Content-Type": "application/json", "Accept": "application/json", "User-Agent": UA },
+        body: JSON.stringify({ locationId: LOC, pageLimit: 100, filters: [{ field: "email", operator: "contains_set", value: mails.slice(i, i + 90) }] }),
+      });
+      if (!r.ok) return out;
+      const d = await r.json().catch(() => ({}));
+      (d?.contacts || []).forEach((c: any) => { const k = String(c?.email || "").trim().toLowerCase(); if (k && c?.assignedTo) (out[k] = out[k] || []).push(String(c.assignedTo)); });
+    }
+  } catch { /* o que vier vale */ }
+  return out;
 }
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -48,13 +80,14 @@ Deno.serve(async (req) => {
     const b = req.method === "POST" ? await req.json().catch(() => ({})) : {};
     const sb = createClient(Deno.env.get("SUPABASE_URL")!, srvKey());
 
-    const { data: rcs, error: eR } = await sb.from("rep_carteira").select("codvend,apelido,codparc,celular,assist_idcrm"); if (eR) throw eR;
+    const { data: rcs, error: eR } = await sb.from("rep_carteira").select("codvend,apelido,codparc,celular,email,assist_idcrm"); if (eR) throw eR;
     const { data: instRows, error: eI } = await sb.from("instancia_ghl").select("instancia,usuario_ghl_id").eq("ativa", true); if (eI) throw eI;
     const porUsuario: Record<string, string> = {};
     (instRows || []).forEach((x: any) => { if (x.usuario_ghl_id) porUsuario[String(x.usuario_ghl_id)] = String(x.instancia); });
 
-    const { data: extras, error: eE } = await sb.from("rep_contato_extra").select("codvend,valor").eq("ativo", true).eq("tipo", "telefone"); if (eE) throw eE;
-    const exMap: Record<string, string[]> = {}; (extras || []).forEach((e: any) => { (exMap[e.codvend] = exMap[e.codvend] || []).push(e.valor); });
+    const { data: extras, error: eE } = await sb.from("rep_contato_extra").select("codvend,tipo,valor").eq("ativo", true); if (eE) throw eE;
+    const exMap: Record<string, string[]> = {}; const exMail: Record<string, string[]> = {};
+    (extras || []).forEach((e: any) => { const m = e.tipo === "email" ? exMail : exMap; (m[e.codvend] = m[e.codvend] || []).push(e.valor); });
 
     // contatos da base do parceiro do proprio rep — mesmo conjunto que a tela do comunicado usa
     const cps = Array.from(new Set((rcs || []).map((r: any) => Number(r.codparc)).filter((x: number) => x > 0)));
@@ -73,23 +106,29 @@ Deno.serve(async (req) => {
       ([r.celular] as any[]).concat(exMap[cv] || []).concat(baseCp[cp] || []).forEach((v: any) => {
         const k = nf(v); if (k && k.length >= 10 && !vistos.has(k)) { vistos.add(k); tels.push(String(v)); }
       });
-      return { codvend: Number(r.codvend), nome: String(r.apelido || ("Rep " + r.codvend)), tels, instancia_erp: (r.assist_idcrm && porUsuario[String(r.assist_idcrm)]) || null };
+      const mails = ([r.email] as any[]).concat(exMail[cv] || []).map((x: any) => String(x || "").trim().toLowerCase()).filter(Boolean);
+      return { codvend: Number(r.codvend), nome: String(r.apelido || ("Rep " + r.codvend)), tels, mails, instancia_erp: (r.assist_idcrm && porUsuario[String(r.assist_idcrm)]) || null };
     });
 
-    const fones = Array.from(new Set(reps.flatMap((r) => r.tels.map((t) => e164(t)).filter(Boolean))));
+    const fones = Array.from(new Set(reps.flatMap((r) => r.tels.flatMap((t) => variantes(t)).map((t) => e164(t)).filter(Boolean))));
     const donos = await donosPorFone(fones);
     if (!donos) return j({ ok: false, erro: "nao consegui ler o CRM — nada foi gravado (melhor manter o valor antigo do que apagar)" }, 502);
+    const donosMail = await donosPorEmail(Array.from(new Set(reps.flatMap((r) => r.mails))));
 
     let com = 0, sem = 0, fora = 0, div = 0;
     const porInst: Record<string, number> = {};
     const linhas = reps.map((r) => {
       let inst: string | null = null; let dono_fora = false;
-      for (const t of r.tels) {
-        const dono = donos[nf(t)];
-        if (!dono) continue;
-        if (porUsuario[dono]) { inst = porUsuario[dono]; break; }
-        dono_fora = true;   // achou o contato, mas o dono nao e assistente do cadastro
-      }
+      // um numero pode ter mais de um contato no CRM; vale o dono que e assistente do cadastro
+      const avaliar = (donosDoAlvo?: string[]) => {
+        for (const dono of (donosDoAlvo || [])) {
+          if (porUsuario[dono]) { inst = porUsuario[dono]; return true; }
+          dono_fora = true;   // achou o contato, mas o dono nao e assistente do cadastro
+        }
+        return false;
+      };
+      for (const t of r.tels.flatMap((x) => variantes(x))) { if (avaliar(donos[nf(t)])) break; }
+      if (!inst) for (const m of r.mails) { if (avaliar(donosMail[m])) break; }
       if (inst) { com++; porInst[inst] = (porInst[inst] || 0) + 1; if (r.instancia_erp && r.instancia_erp !== inst) div++; }
       else if (dono_fora) fora++;
       else sem++;

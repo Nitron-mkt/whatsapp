@@ -151,6 +151,7 @@
           <label class="lbl" style="font-size:12px;gap:5px"><input type="checkbox" id="cliSoEmail" onchange="cliSoEmailMudou()"> só <b>e-mail</b> <span class="note">(não manda WhatsApp para cliente)</span></label>
           <span class="note" id="cliCount" style="margin-left:auto"></span>
         </div>
+        <div id="cliValBar" style="display:none;margin:0 0 10px"></div>
         <div class="list" id="cliFlatList" style="max-height:400px;overflow:auto"><div class="note" style="padding:12px">carregando clientes…</div></div>
       </div>
       <div style="margin-top:14px">
@@ -165,13 +166,14 @@
         <div class="draft climsg" id="msgCli">
           <div class="dh">🏢 Mensagem ao CLIENTE <span class="note" style="font-weight:400">· variáveis: <code>[CLIENTE]</code> nome · <code>[VALOR]</code> saldo/%/dias</span></div>
           <div class="lab">WhatsApp</div><textarea id="mcli_wpp" rows="4" oninput="previewModelo()"></textarea>
-          <div class="lab">Email — assunto</div><input class="ei" id="mcli_ass">
-          <div class="lab">Email — corpo</div><textarea id="mcli_corpo" rows="4"></textarea>
+          <div class="lab">Email — assunto</div><input class="ei" id="mcli_ass" oninput="previewModelo()">
+          <div class="lab" id="labCliCorpo">Email — corpo</div><textarea id="mcli_corpo" rows="4"></textarea>
+          <div class="note" id="notaCliCorpo" style="margin-top:4px"></div>
           <div class="note" id="prev_cli" style="margin-top:6px"></div>
         </div>
         <div class="fila">
-          <button class="btn big ok" id="btnAgendar" onclick="agendarFila()">📅 Agendar na fila</button>
-          <span class="note">aplica os modelos aos <b>selecionados</b> e enfileira · WhatsApp 1/instância a cada 2 min · e-mail em lote · roda sozinho</span>
+          <button class="btn big ok" id="btnAgendar" onclick="agendarFila()">📅 Criar fila e enviar</button>
+          <span class="note">monta a fila com os <b>selecionados</b> e <b>manda em seguida</b>, na cadência configurada · e-mail em lote · o painel abaixo mostra o andamento</span>
           <span class="fbig" id="filaStatus" style="margin-left:auto"></span>
         </div>
         <div id="filaPanel" style="margin-top:12px;border:1px solid var(--line);border-radius:10px;overflow:hidden">
@@ -322,8 +324,44 @@
               (previa:true), pelo mesmo caminho do envio, para nao existir "na tela ficou bom".  */
   var ARTEMODO="real";
   function arteModo(m){ARTEMODO=m;verArte();}
+  /* Com arte escolhida, o campo "Email — corpo" nao manda em nada: o corpo do e-mail e o HTML da
+     arte, e o texto daqui so serve de reserva se o download da arte falhar. Deixar a IA escrever ali
+     um texto que ninguem vai ler e convite a erro — a pessoa edita, confere, e sai outra coisa.
+     Entao quando ha arte o campo passa a MOSTRAR o texto da propria arte, em leitura, e o que sobra
+     para editar e o assunto. Sem arte, volta o texto da IA, guardado em MCLI_CORPO_IA. */
+  var ARTETXT=null, MCLI_CORPO_IA=null, ARTETMR=null;
+  /* a previa real e uma ida ao servidor; digitando no assunto ou no WhatsApp isso viraria
+     uma chamada por tecla. Espera a pessoa parar de digitar. */
+  function verArteTarde(){if(ARTETMR)clearTimeout(ARTETMR);ARTETMR=setTimeout(verArte,600);}
+  function arteEscolhida(){var s=$("arte");return !!(s&&s.value);}
+  function htmlParaTexto(h){
+    var t=String(h||"");
+    t=t.replace(/<!--[\s\S]*?-->/g," ");
+    t=t.replace(/<(script|style|head)[\s\S]*?<\/\1>/gi," ");
+    t=t.replace(/<br\s*\/?>/gi,"\n");
+    t=t.replace(/<\/(p|div|tr|li|h[1-6]|table|td|th)>/gi,"\n");
+    t=t.replace(/<[^>]+>/g," ");
+    var d=document.createElement("textarea");d.innerHTML=t;t=d.value;   /* desescapa &amp;, &nbsp; */
+    var ls=t.replace(/\r/g,"").replace(/[ \t\u00a0]+/g," ").split("\n").map(function(x){return x.trim();});
+    var out=[];ls.forEach(function(x){if(x===""&&out[out.length-1]==="")return;out.push(x);});
+    return out.join("\n").trim();}
+  function aplicarArteNoCorpo(){
+    var ta=$("mcli_corpo"),lab=$("labCliCorpo"),nota=$("notaCliCorpo");
+    if(!ta)return;
+    if(arteEscolhida()&&ARTETXT){
+      if(MCLI_CORPO_IA===null)MCLI_CORPO_IA=ta.value;
+      if(ta.value!==ARTETXT)ta.value=ARTETXT;
+      ta.readOnly=true;ta.rows=12;ta.style.background="#f4f8f6";ta.style.color="#41564f";
+      if(lab)lab.innerHTML='Email — corpo <span class="note" style="font-weight:400">(vem da arte, não editável)</span>';
+      if(nota)nota.innerHTML='🎨 O corpo deste e-mail é a <b>arte do GHL</b> — está aí só para você ver o texto que vai sair (e serve de reserva se a arte não carregar). <b>Edite apenas o assunto.</b> A arte renderizada está na prévia lá em cima.';
+    }else{
+      if(MCLI_CORPO_IA!==null){ta.value=MCLI_CORPO_IA;MCLI_CORPO_IA=null;}
+      ta.readOnly=false;ta.rows=4;ta.style.background="";ta.style.color="";
+      if(lab)lab.textContent="Email — corpo";
+      if(nota)nota.innerHTML="";
+    }}
   function verArte(){var s=$("arte");var opt=s&&s.selectedIndex>=0?s.options[s.selectedIndex]:null;var url=opt?opt.getAttribute("data-preview"):"";var prev=$("artePrev");if(!prev)return;
-    if(!s||!s.value||!url){prev.style.display="none";prev.innerHTML="";return;}
+    if(!s||!s.value||!url){prev.style.display="none";prev.innerHTML="";ARTETXT=null;aplicarArteNoCorpo();return;}
     prev.style.display="block";
     var nome=esc(opt.textContent);
     var cab=function(extra){return '<div style="background:#eef4f1;padding:6px 10px;font-size:11.5px;color:#41564f;display:flex;align-items:center;gap:6px;flex-wrap:wrap"><b>👁 Prévia da arte:</b> <span>'+nome+'</span>'
@@ -349,7 +387,8 @@
       else if((d.tags||[]).length)av='<div class="note" style="padding:7px 11px;background:#eaf6ef;color:#1a7f4b;border-top:1px solid #cfe0d9">✓ as '+d.tags.length+' variáveis do template foram preenchidas: '+d.tags.map(function(t){return "<code>{{"+esc(t)+"}}</code>";}).join(" ")+'</div>';
       var ass=d.assunto?('<div class="note" style="padding:6px 11px;border-top:1px solid #e3ebe7"><b>Assunto:</b> '+esc(d.assunto)+'</div>'):'';
       prev.innerHTML='<div style="border:1px solid #d9e0dc;border-radius:9px;overflow:hidden">'+cab('<span class="note">com os dados de <b>'+esc(ex.nome)+'</b></span>')+ass+'<iframe id="arteIf" style="width:100%;height:440px;border:0;background:#fff"></iframe>'+av+'</div>';
-      var ifr=$("arteIf");if(ifr)ifr.srcdoc=d.html;});}
+      var ifr=$("arteIf");if(ifr)ifr.srcdoc=d.html;
+      ARTETXT=htmlParaTexto(d.html);aplicarArteNoCorpo();});}
   function renderCat(camps){var by={};camps.forEach(function(c){(by[c.pipe]=by[c.pipe]||[]).push(c);});
     /* conta por area pra barra de cima, e monta so os pipes desta area */
     var reserv={};["logistica","cobranca"].forEach(function(a){AREAS[a].pipes.forEach(function(x){reserv[x]=a;});});
@@ -490,7 +529,7 @@
      getElementById ainda por cima devolvia o botao errado, entao o "agendando..." aparecia no
      lugar errado. Agora, existindo rascunho, o de cima tambem manda os rascunhos, e diz isso. */
   function rotuloAgendar(){var b=$("btnAgendar");if(!b)return;
-    b.textContent=DRAFTS.length?"📅 Agendar os rascunhos (o texto da tela)":"📅 Agendar na fila";}
+    b.textContent=DRAFTS.length?"📅 Criar fila e enviar (o texto da tela)":"📅 Criar fila e enviar";}
   /* A aba manda tambem no painel de mensagens: quem esta olhando representante nao precisa ver o
      texto do cliente, e vice-versa. Os dois textos continuam existindo e sendo enviados — o que muda
      e o que fica na tela, porque ler os dois juntos era o que fazia editar no campo errado. */
@@ -527,11 +566,52 @@
   function defaultSel(c){var ops=channelOpts(c),sel={};var w=ops.filter(function(o){return o.canal==="whatsapp"&&foneCel(o.valor)!==false;})[0];var e=ops.filter(function(o){return o.canal==="email";})[0];if(w)sel[ckey(w)]=w;if(e)sel[ckey(e)]=e;return sel;}
   function loadCliFlat(){var box=$("cliFlatList");if(box)box.innerHTML='<div class="note" style="padding:12px">carregando clientes…</div>';
     getJSON(SUPA+"/functions/v1/campanhas-preview?codigo="+CUR+"&flat=1",function(d){if(d.erro||!d.clientes){if(box)box.innerHTML='<div class="note" style="padding:12px;color:#c0392b">erro ao carregar</div>';return;}
-      CLIFLAT=d.clientes;CLIFLAT_LOADED=true;CLISEL={};CLICT={};CLIFLAT.forEach(function(c){CLICT[c.codparc]=defaultSel(c);});previewModelo();renderCliFlat();});}
+      CLIFLAT=d.clientes;CLIFLAT_LOADED=true;CLISEL={};CLICT={};VALFILTRO=null;CLIFLAT.forEach(function(c){CLICT[c.codparc]=defaultSel(c);});previewModelo();renderCliFlat();});}
   function cliVal(c){if(c.valtxt)return c.valtxt;if(c.ticket!=null&&c.dias!=null)return "ticket médio "+brl(c.ticket)+" · "+c.dias+"d sem comprar";return (c.saldo!=null)?brl(c.saldo):((c.pct!=null?c.pct+"%":"")+(c.validade?(" até "+c.validade):"")+(c.dias!=null?(c.dias+"d sem comprar"):""));}
   function canaisResumo(c){var sel=CLICT[c.codparc]||{},ks=Object.keys(sel);if(!ks.length)return channelOpts(c).length?'<span class="nc">nenhum canal</span>':'<span class="nc">sem contato</span>';var w=0,e=0;ks.forEach(function(k){if(sel[k].canal==="whatsapp")w++;else e++;});var p=[];if(w)p.push("📞"+w);if(e)p.push("✉"+e);return '<span style="color:#12514c;font-weight:600">'+p.join(" · ")+'</span>';}
+  /* Voucher nao tem uma validade, tem varias: cada cliente vence num dia. Sem agrupar, escolher
+     "quem vence dia 31" era caçar linha por linha numa lista de centenas. A barra abaixo e o
+     subtotal por data — clicar filtra a lista, e o "Marcar todos" respeita o filtro (assim como
+     ja respeitava a busca). A data e dd/mm/aaaa na tela, entao a ordenacao usa aaaa-mm-dd. */
+  var VALFILTRO=null;
+  function valOrd(v){var m=String(v||"").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);return m?(m[3]+m[2]+m[1]):("9999"+String(v||""));}
+  function validadesResumo(){
+    var por={};
+    CLIFLAT.forEach(function(c){var v=String(c.validade||"");if(!v)return;
+      if(!por[v])por[v]={v:v,ord:valOrd(v),n:0,sel:0,pcts:{}};
+      por[v].n++;if(CLISEL[c.codparc])por[v].sel++;if(c.pct!=null)por[v].pcts[c.pct]=1;});
+    var out=Object.keys(por).map(function(k){return por[k];});
+    out.sort(function(a,b){return a.ord<b.ord?-1:(a.ord>b.ord?1:0);});
+    return out;}
+  function renderValBar(){
+    var bar=$("cliValBar");if(!bar)return;
+    var gs=validadesResumo();
+    var semVal=CLIFLAT.filter(function(c){return !c.validade;}).length;
+    if(gs.length<2){bar.style.display="none";bar.innerHTML="";if(VALFILTRO){VALFILTRO=null;}return;}
+    var h='<div style="border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:#f7faf9">'
+      +'<div class="note" style="margin-bottom:6px">📆 <b>Validade do voucher</b> — '+gs.length+' datas nesta base. Clique numa data para filtrar; depois <b>Marcar todos</b> marca só ela.</div>'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
+    h+='<button class="btn'+(VALFILTRO===null?" ok":"")+'" style="padding:3px 9px;font-size:11.5px" onclick="setValFiltro(null)">todas · '+CLIFLAT.length+'</button>';
+    gs.forEach(function(g){
+      var pcts=Object.keys(g.pcts).sort(function(a,b){return a-b;});
+      var tit="Vencem em "+g.v+": "+g.n+" cliente(s)"+(pcts.length?(" · percentuais "+pcts.join("%, ")+"%"):"");
+      h+='<button class="btn'+(VALFILTRO===g.v?" ok":"")+'" style="padding:3px 9px;font-size:11.5px" title="'+esc(tit)+'" onclick="setValFiltro(\''+g.v.replace(/'/g,"")+'\')">'+esc(g.v)+' · <b>'+g.n+'</b>'+(g.sel?' <span style="color:#1a7f4b">✓'+g.sel+'</span>':'')+'</button>';});
+    if(semVal)h+='<span class="note" style="color:#b7791f">+'+semVal+' sem validade</span>';
+    if(VALFILTRO)h+='<button class="btn" style="padding:3px 9px;font-size:11.5px;margin-left:6px" onclick="marcarSoValidade()">✓ marcar só os de '+esc(VALFILTRO)+'</button>';
+    h+='</div></div>';
+    bar.style.display="block";bar.innerHTML=h;}
+  function setValFiltro(v){VALFILTRO=v;renderCliFlat();}
+  /* limpa o resto e marca so o grupo: e o atalho que a barra existe para dar */
+  function marcarSoValidade(){if(!VALFILTRO)return;
+    CLIFLAT.forEach(function(c){CLISEL[c.codparc]=(String(c.validade||"")===VALFILTRO);});
+    renderCliFlat();}
+  function passaFiltro(c,q){
+    if(q&&(String(c.nome||"")+" "+String(c.rep||"")).toLowerCase().indexOf(q)<0)return false;
+    if(VALFILTRO&&String(c.validade||"")!==VALFILTRO)return false;
+    return true;}
   function renderCliFlat(){var box=$("cliFlatList");if(!box)return;var q=($("cliBusca")?$("cliBusca").value:"").toLowerCase().trim();
-    var vis=CLIFLAT.filter(function(c){if(!q)return true;return (String(c.nome||"")+" "+String(c.rep||"")).toLowerCase().indexOf(q)>=0;});
+    renderValBar();
+    var vis=CLIFLAT.filter(function(c){return passaFiltro(c,q);});
     var selN=CLIFLAT.filter(function(c){return CLISEL[c.codparc];}).length;
     var cc=$("cliCount");
     if(cc){
@@ -560,7 +640,7 @@
   function expCont(cod){var b=$("clc-"+cod),x=$("clx-"+cod);if(!b)return;if(b.style.display==="none"){b.style.display="";if(x)x.textContent="▼";}else{b.style.display="none";if(x)x.textContent="▶";}}
   function toggleFlat(cod,on){CLISEL[cod]=on;var selN=CLIFLAT.filter(function(c){return CLISEL[c.codparc];}).length;var cc=$("cliCount");if(cc)cc.innerHTML='<b>'+selN+'</b> de '+CLIFLAT.length+' marcados';}
   function toggleCanal(cod,oi,on){var c=CLIFLAT.filter(function(x){return x.codparc===cod;})[0];if(!c)return;var o=channelOpts(c)[oi];if(!o)return;if(!CLICT[cod])CLICT[cod]={};if(on){CLICT[cod][ckey(o)]=o;if(!CLISEL[cod]){CLISEL[cod]=true;var cb=$("clf-"+cod);if(cb)cb.checked=true;toggleFlat(cod,true);}}else{delete CLICT[cod][ckey(o)];}var rs=$("clr-"+cod);if(rs)rs.innerHTML=canaisResumo(c);}
-  function selFlat(v){var q=($("cliBusca")?$("cliBusca").value:"").toLowerCase().trim();CLIFLAT.forEach(function(c){if(q&&(String(c.nome||"")+" "+String(c.rep||"")).toLowerCase().indexOf(q)<0)return;CLISEL[c.codparc]=v;});renderCliFlat();}
+  function selFlat(v){var q=($("cliBusca")?$("cliBusca").value:"").toLowerCase().trim();CLIFLAT.forEach(function(c){if(!passaFiltro(c,q))return;CLISEL[c.codparc]=v;});renderCliFlat();}
   function campKind(){return CUR==="clube_saldo"?"clube":(CUR==="voucher_empurrar"?"voucher":(MOTORC[CUR]?"motor":"giro"));}
   function valorInfo(c){var k=campKind();
     if(k==="clube")return {saldo:brl(c.saldo),valor:brl(c.saldo)+" de direito de compra no Clube Nitron",validade:"",dias:""};
@@ -577,7 +657,7 @@
     var rows=esp.concat(comuns).map(function(v){return '<code>'+v[0]+'</code> — '+v[1];}).join('<br>');
     var box=$("arteVarsBox");if(box)box.innerHTML='Monte a arte no <b>construtor de e-mails</b> do GHL com estas variáveis (com <code>{{ }}</code>). <b>Esta campanha</b> usa:<br><br>'+rows+'<br><br><span style="color:#b7791f">⚠ <b>Evite</b> variáveis de proposta/documento</span> (<code>{{document...}}</code>, <code>{{user.name}}</code>, botão "Verificar Proposta") — saem <b>em branco</b>.';}
   function fillMk(s,map){var o=String(s||"");for(var k in map){o=o.replace(new RegExp("\\["+k+"\\]","gi"),map[k]);}return o;}
-  function setModelo(d){if(!d)return;var r=d.modeloRep||{},c=d.modeloCliente||{};if($("mrep_wpp"))$("mrep_wpp").value=r.whatsapp||"";if($("mrep_ass"))$("mrep_ass").value=r.email_assunto||"";if($("mrep_corpo"))$("mrep_corpo").value=r.email_corpo||"";if($("mcli_wpp"))$("mcli_wpp").value=c.whatsapp||"";if($("mcli_ass"))$("mcli_ass").value=c.email_assunto||"";if($("mcli_corpo"))$("mcli_corpo").value=c.email_corpo||"";previewModelo();}
+  function setModelo(d){if(!d)return;var r=d.modeloRep||{},c=d.modeloCliente||{};if($("mrep_wpp"))$("mrep_wpp").value=r.whatsapp||"";if($("mrep_ass"))$("mrep_ass").value=r.email_assunto||"";if($("mrep_corpo"))$("mrep_corpo").value=r.email_corpo||"";if($("mcli_wpp"))$("mcli_wpp").value=c.whatsapp||"";if($("mcli_ass"))$("mcli_ass").value=c.email_assunto||"";if($("mcli_corpo")){if(arteEscolhida()&&ARTETXT)MCLI_CORPO_IA=c.email_corpo||"";else $("mcli_corpo").value=c.email_corpo||"";}previewModelo();aplicarArteNoCorpo();}
   function fetchModelos(){var st=$("modstat");if(st)st.textContent="escrevendo modelo com IA…";var cod=CUR;postJSON(SUPA+"/functions/v1/campanhas-disparar",{codigo:cod,modelo:true},function(d){if(CUR!==cod)return;if(st)st.textContent=(d&&d.modeloRep)?"✓ modelo pronto — edite à vontade":"(modelo padrão)";setModelo(d);});}
   /* O exemplo da previa sai DAQUI e de nenhum outro lugar. Antes a previa montava o [VALOR] com uma
      regra propria ("6% de voucher") e nem conhecia o [VALIDADE] — resultado: a tela mostrava
@@ -612,7 +692,7 @@
     var pr=$("prev_rep");if(pr){pr.innerHTML='<b>Prévia (exemplo):</b><br>'+esc(fillMk($("mrep_wpp")?$("mrep_wpp").value:"",{REP:repEx,LISTA:listaEx})).replace(/\n/g,"<br>");}
     var ex=exemploCli();
     var pc=$("prev_cli");if(pc){pc.innerHTML='<b>Prévia (exemplo'+(ex.cliente?" — "+esc(ex.nome):"")+'):</b><br>'+esc(fillMk($("mcli_wpp")?$("mcli_wpp").value:"",{CLIENTE:ex.merge.cliente,VALOR:(ex.bvalor!=null?ex.bvalor:ex.merge.valor),VALIDADE:ex.merge.validade,SALDO:ex.merge.saldo,DIAS:ex.merge.dias})).replace(/\n/g,"<br>");}
-    verArte();}
+    verArteTarde();}
   function agendarFila(){
     /* rascunho na tela manda: nunca regerar por cima do que a pessoa editou */
     if(DRAFTS.length)return agendarTodos();
@@ -620,11 +700,11 @@
     var reps=[];document.querySelectorAll(".repchk:checked").forEach(function(c){reps.push(parseInt(c.getAttribute("data-cod")));});
     var clientes=[];CLIFLAT.forEach(function(c){if(!CLISEL[c.codparc])return;var sel=CLICT[c.codparc]||defaultSel(c);var chans=Object.keys(sel).map(function(k){return sel[k];});if(CLISOEMAIL)chans=chans.filter(function(x){return x.canal==="email";});if(!chans.length)return;var vi=valorInfo(c);clientes.push({codparc:c.codparc,nome:c.nome,saldo:c.saldo,pct:c.pct,validade:c.validade,dias:c.dias,crosssell:c.crosssell,novidades:c.novidades,valtxt:c.valtxt,situacao:c.situacao,instancia:c.assistente||null,chans:chans,merge:{cliente:c.nome,saldo:vi.saldo,valor:vi.valor,validade:vi.validade,dias:vi.dias}});});
     var cliSelN=0;CLIFLAT.forEach(function(c){if(CLISEL[c.codparc])cliSelN++;});
-    if(!reps.length&&!clientes.length){st.textContent=(cliSelN>reps.length?"clientes marcados não têm contato cadastrado":"marque reps (aba Representantes) e/ou clientes (aba Clientes)");btn.disabled=false;btn.textContent="📅 Agendar na fila";return;}
+    if(!reps.length&&!clientes.length){st.textContent=(cliSelN>reps.length?"clientes marcados não têm contato cadastrado":"marque reps (aba Representantes) e/ou clientes (aba Clientes)");btn.disabled=false;btn.textContent="📅 Criar fila e enviar";return;}
     var repTpl={whatsapp:$("mrep_wpp").value,email_assunto:$("mrep_ass").value,email_corpo:$("mrep_corpo").value};
     var cliTpl={whatsapp:$("mcli_wpp").value,email_assunto:$("mcli_ass").value,email_corpo:$("mcli_corpo").value};
     var tid=arteSel();var itens=[];var pend=0;
-    function fin(){pend--;if(pend<=0){if(!itens.length){st.textContent="nada para enfileirar (marque contatos do rep/cliente)";btn.disabled=false;btn.textContent="📅 Agendar na fila";return;}postJSON(SUPA+"/functions/v1/fila-enfileirar",{itens:itens},function(r){btn.disabled=false;btn.textContent="📅 Agendar na fila";if(r.ok){st.innerHTML="<b>✓ "+r.enfileirados+" na fila</b>";if(FILATIMER)clearInterval(FILATIMER);statusFila();FILATIMER=setInterval(statusFila,15000);}else{st.textContent="✗ "+(r.erro||"falha");}});}}
+    function fin(){pend--;if(pend<=0){if(!itens.length){st.textContent="nada para enfileirar (marque contatos do rep/cliente)";btn.disabled=false;btn.textContent="📅 Criar fila e enviar";return;}postJSON(SUPA+"/functions/v1/fila-enfileirar",{itens:itens},function(r){btn.disabled=false;btn.textContent="📅 Criar fila e enviar";if(r.ok){st.innerHTML="<b>✓ "+r.enfileirados+" na fila</b>";if(FILATIMER)clearInterval(FILATIMER);statusFila();FILATIMER=setInterval(statusFila,15000);}else{st.textContent="✗ "+(r.erro||"falha");}});}}
     if(reps.length){pend++;postJSON(SUPA+"/functions/v1/campanhas-disparar",{codigo:CUR,publico:"rep",reps:reps,modeloRep:repTpl},function(d){(d.itens||[]).forEach(function(it){var rs=REPSEL[it.codvend]||{tel:[],email:[]};var inst=instDe(it.codvend,(REPDATA[it.codvend]||{}).assistente);(rs.tel||[]).forEach(function(f){itens.push({campanha:CUR,publico:"rep",canal:"whatsapp",fone:f,instancia:inst,corpo:it.whatsapp,nome:it.rep});});(rs.email||[]).forEach(function(e){itens.push({campanha:CUR,publico:"rep",canal:"email",email:e,assunto:it.email_assunto,corpo:it.email_corpo,template_id:tid||null,nome:it.rep,merge:{rep:it.rep}});});});fin();});}
     if(clientes.length){pend++;postJSON(SUPA+"/functions/v1/campanhas-disparar",{codigo:CUR,publico:"cliente",clientes:clientes.map(function(c){var o={codparc:c.codparc,nome:c.nome,saldo:c.saldo,pct:c.pct,validade:c.validade,dias:c.dias,crosssell:c.crosssell,novidades:c.novidades,valtxt:c.valtxt,situacao:c.situacao};var mm=String(c.valtxt||"").match(/(\d+)\s*d/);if(mm)o.clube_vig_dias=+mm[1];return o;}),modeloCliente:cliTpl},function(d){(d.itens||[]).forEach(function(it,idx){var c=clientes[idx]||{};(c.chans||[]).forEach(function(ch){if(ch.canal==="email"){itens.push({campanha:CUR,publico:"cliente",canal:"email",email:ch.valor,assunto:it.email_assunto,corpo:it.email_corpo,template_id:tid||null,nome:c.nome,codparc:c.codparc,merge:c.merge,campos:camposCrm(c)});}else{itens.push({campanha:CUR,publico:"cliente",canal:"whatsapp",fone:ch.valor,instancia:c.instancia,corpo:it.whatsapp,nome:c.nome,codparc:c.codparc,campos:camposCrm(c)});}});});fin();});}}
   function abrirKA(cod){var foco={ka_cross_sell:"Foco cross-sell — ampliar mix/ticket na conta",ka_ruptura_rede:"Foco ruptura — item de alto giro parado na rede",ka_revisao_trimestral:"Revisão trimestral — pauta estratégica"}[cod]||"Briefing";$("op-nome").textContent="Key Accounts — grandes contas";$("op-meta").textContent="Tratamento humano · dossiê do CRM · não dispara nada · "+foco;$("op-kpis").innerHTML="";var ai=$("atuInfo");if(ai)ai.textContent="";
@@ -652,7 +732,7 @@
     if(cts.length){h+='<div style="margin-bottom:7px">';cts.forEach(function(c,jj){h+='<label class="ctopt"><input type="checkbox" class="kamc-'+i+'" data-j="'+jj+'" checked><span class="cf">'+(c.canal==="whatsapp"?foneIco(c.valor):"✉")+' '+esc(c.funcao||"")+' <span style="font-size:10px;font-weight:600;color:'+(c.origem==="CRM"?"#5b3fa0":"#6a7f78")+'">'+esc(c.origem||"")+'</span></span><span>'+esc(c.valor)+'</span></label>';});h+='</div>';}
     else{h+='<div class="note" style="color:#b7791f;margin-bottom:6px">'+esc(d.aviso||"sem contato")+'. '+(publico==="gestor"?"Preencha o campo <b>Gestor</b> no GHL.":"Cadastre um contato no Sankhya/CRM.")+'</div>';}
     h+='<textarea id="kamt-'+i+'" rows="6" style="width:100%" oninput="edGuardar(\'ka\','+i+',\'mensagem\',this)">'+esc(d.mensagem||"")+'</textarea>'+edTag("ka",i)+'';
-    if(cts.length)h+='<div class="dbtns" style="margin-top:6px"><button class="btn big ok" onclick="kaAgendar('+i+')">📅 Agendar na fila</button><span class="note" id="kam-ag-'+i+'"></span></div>';
+    if(cts.length)h+='<div class="dbtns" style="margin-top:6px"><button class="btn big ok" onclick="kaAgendar('+i+')">📅 Criar fila e enviar</button><span class="note" id="kam-ag-'+i+'"></span></div>';
     h+='</div>';box.innerHTML=h;});}
   function kaAgendar(i){var m=KAMSG[i];if(!m)return;var ag=$("kam-ag-"+i);ag.textContent="agendando…";var texto=$("kamt-"+i).value;var itens=[];
     document.querySelectorAll(".kamc-"+i+":checked").forEach(function(cb){var c=m.contatos[+cb.getAttribute("data-j")];if(!c)return;if(c.canal==="email"){itens.push({campanha:"key_accounts",publico:m.publico,canal:"email",email:c.valor,assunto:"Nitron — "+(m.razao||""),corpo:texto,nome:m.razao});}else{itens.push({campanha:"key_accounts",publico:m.publico,canal:"whatsapp",fone:c.valor,instancia:m.instancia,corpo:texto,nome:m.razao});}});
@@ -773,7 +853,7 @@
       h+='<div class="note" style="margin-bottom:5px"><b>Enviar ao rep '+esc(d.rep)+'</b>'+(d.instancia?(' · 📲 '+esc(d.instancia)):'')+' · '+(d.saldos||[]).length+' saldos · marque os contatos:</div>';
       (d.contatos||[]).forEach(function(c,jj){h+='<label class="ctopt"><input type="checkbox" class="salc-'+cod+'" data-j="'+jj+'" checked><span class="cf">'+(c.canal==="whatsapp"?foneIco(c.valor):"✉")+' '+esc(c.funcao||"Rep")+'</span><span>'+esc(c.valor)+'</span></label>';});
       h+='<div class="lab">Mensagem ao rep (editável)</div><textarea id="salt-'+cod+'" rows="8" style="width:100%" oninput="edGuardar(\'sal\','+cod+',\'mensagem\',this)">'+esc(d.mensagem||"")+'</textarea>'+edTag("sal",cod)+'';
-      h+='<div class="dbtns" style="margin-top:6px"><button class="btn big ok" onclick="agendarSaldo('+cod+')">📅 Agendar na fila</button><span class="note" id="sal-ag-'+cod+'"></span></div>';
+      h+='<div class="dbtns" style="margin-top:6px"><button class="btn big ok" onclick="agendarSaldo('+cod+')">📅 Criar fila e enviar</button><span class="note" id="sal-ag-'+cod+'"></span></div>';
       h+='</div>';box.innerHTML=h;});}
   function agendarSaldo(cod){var m=SALMSG[cod];if(!m)return;var ag=$("sal-ag-"+cod);ag.textContent="agendando…";var texto=$("salt-"+cod).value;var itens=[];
     document.querySelectorAll(".salc-"+cod+":checked").forEach(function(cb){var c=m.contatos[+cb.getAttribute("data-j")];if(!c)return;if(c.canal==="email"){itens.push({campanha:CUR,publico:"rep",canal:"email",email:c.valor,assunto:"Saldos — Nitron logística",corpo:texto,nome:m.rep});}else{itens.push({campanha:CUR,publico:"rep",canal:"whatsapp",fone:c.valor,instancia:m.instancia,corpo:texto,nome:m.rep});}});
@@ -804,7 +884,7 @@
     if(cts.length){cts.forEach(function(c,jj){h+='<label class="ctopt"><input type="checkbox" class="cobc-'+i+'" data-j="'+jj+'" checked><span class="cf">'+(c.canal==="whatsapp"?foneIco(c.valor):"✉")+' '+esc(c.funcao||"")+'</span><span>'+esc(c.valor)+'</span></label>';});}
     else h+='<div class="note" style="color:#b7791f">'+esc(d.aviso||"sem contato")+'. Cadastre um contato.</div>';
     h+='<textarea id="cobt-'+i+'" rows="7" style="width:100%" oninput="edGuardar(\'cob\','+i+',\'mensagem\',this)">'+esc(d.mensagem||"")+'</textarea>'+edTag("cob",i)+'';
-    if(cts.length)h+='<div class="dbtns" style="margin-top:6px"><button class="btn big ok" onclick="cobAgendar('+i+')">📅 Agendar na fila</button><span class="note" id="cob-ag-'+i+'"></span></div>';
+    if(cts.length)h+='<div class="dbtns" style="margin-top:6px"><button class="btn big ok" onclick="cobAgendar('+i+')">📅 Criar fila e enviar</button><span class="note" id="cob-ag-'+i+'"></span></div>';
     h+='</div>';box.innerHTML=h;});}
   function cobAgendar(i){var m=COBMSG[i];if(!m)return;var ag=$("cob-ag-"+i);ag.textContent="agendando…";var texto=$("cobt-"+i).value;var itens=[];var camp=m.publico==="cliente"?"cobranca_duplicata_cliente":"cobranca_aviso_rep";
     document.querySelectorAll(".cobc-"+i+":checked").forEach(function(cb){var c=m.contatos[+cb.getAttribute("data-j")];if(!c)return;if(c.canal==="email"){itens.push({campanha:camp,publico:m.publico,canal:"email",email:c.valor,assunto:"Nitron — financeiro",corpo:texto,nome:m.nome,codparc:m.codparc});}else{itens.push({campanha:camp,publico:m.publico,canal:"whatsapp",fone:c.valor,instancia:m.instancia,corpo:texto,nome:m.nome,codparc:m.codparc});}});
@@ -829,7 +909,7 @@
     if(cts.length){cts.forEach(function(c,jj){h+='<label class="ctopt"><input type="checkbox" class="retc-'+i+'" data-j="'+jj+'" checked><span class="cf">'+(c.canal==="whatsapp"?foneIco(c.valor):"✉")+' '+esc(c.funcao||"")+'</span><span>'+esc(c.valor)+'</span></label>';});}
     else h+='<div class="note" style="color:#b7791f">'+esc(d.aviso||"sem contato")+'. Cadastre um contato.</div>';
     h+='<textarea id="rett-'+i+'" rows="7" style="width:100%" oninput="edGuardar(\'ret\','+i+',\'mensagem\',this)">'+esc(d.mensagem||"")+'</textarea>'+edTag("ret",i)+'';
-    if(cts.length)h+='<div class="dbtns" style="margin-top:6px"><button class="btn big ok" onclick="retAgendar('+i+')">📅 Agendar na fila</button><span class="note" id="ret-ag-'+i+'"></span></div>';
+    if(cts.length)h+='<div class="dbtns" style="margin-top:6px"><button class="btn big ok" onclick="retAgendar('+i+')">📅 Criar fila e enviar</button><span class="note" id="ret-ag-'+i+'"></span></div>';
     h+='</div>';box.innerHTML=h;});}
   function retAgendar(i){var m=RETMSG[i];if(!m)return;var ag=$("ret-ag-"+i);ag.textContent="agendando…";var texto=$("rett-"+i).value;var itens=[];
     document.querySelectorAll(".retc-"+i+":checked").forEach(function(cb){var c=m.contatos[+cb.getAttribute("data-j")];if(!c)return;if(c.canal==="email"){itens.push({campanha:"prep_retorno",publico:m.publico,canal:"email",email:c.valor,assunto:"Nitron — reprogramar entrega",corpo:texto,nome:m.nome,codparc:m.codparc});}else{itens.push({campanha:"prep_retorno",publico:m.publico,canal:"whatsapp",fone:c.valor,instancia:m.instancia,corpo:texto,nome:m.nome,codparc:m.codparc});}});
@@ -967,7 +1047,7 @@
     if(cts.length){cts.forEach(function(c,jj){h+='<label class="ctopt"><input type="checkbox" class="agec-'+i+'" data-j="'+jj+'" checked><span class="cf">'+(c.canal==="whatsapp"?foneIco(c.valor):"✉")+' '+esc(c.funcao||"")+'</span><span>'+esc(c.valor)+'</span></label>';});}
     else h+='<div class="note" style="color:#b7791f">'+esc(d.aviso||"sem contato")+'. Cadastre um contato.</div>';
     h+='<textarea id="aget-'+i+'" rows="6" style="width:100%" oninput="edGuardar(\'age\','+i+',\'mensagem\',this)">'+esc(d.mensagem||"")+'</textarea>'+edTag("age",i)+'';
-    if(cts.length)h+='<div class="dbtns" style="margin-top:6px"><button class="btn big ok" onclick="ageAgendar('+i+')">📅 Agendar na fila</button><span class="note" id="age-ag-'+i+'"></span></div>';
+    if(cts.length)h+='<div class="dbtns" style="margin-top:6px"><button class="btn big ok" onclick="ageAgendar('+i+')">📅 Criar fila e enviar</button><span class="note" id="age-ag-'+i+'"></span></div>';
     h+='</div>';box.innerHTML=h;});}
   function ageAgendar(i){var m=AGEMSG[i];if(!m)return;var ag=$("age-ag-"+i);ag.textContent="agendando…";var texto=$("aget-"+i).value;var itens=[];
     document.querySelectorAll(".agec-"+i+":checked").forEach(function(cb){var c=m.contatos[+cb.getAttribute("data-j")];if(!c)return;if(c.canal==="email"){itens.push({campanha:CUR,publico:m.publico,canal:"email",email:c.valor,assunto:"Nitron — agendamento de entrega",corpo:texto,nome:m.nome});}else{itens.push({campanha:CUR,publico:m.publico,canal:"whatsapp",fone:c.valor,instancia:m.instancia,corpo:texto,nome:m.nome});}});
@@ -995,7 +1075,7 @@
       if(r.ok){if(stEl)stEl.innerHTML='<b>✓ '+r.enfileirados+' na fila</b>';if(FILATIMER)clearInterval(FILATIMER);statusFila();FILATIMER=setInterval(statusFila,15000);}else{if(stEl)stEl.textContent="✗ "+(r.erro||"falha");}});}
   function statusFila(){getJSON(SUPA+"/functions/v1/fila-enfileirar?campanha="+CUR,function(c){if(c.pendente===undefined&&c.enviado===undefined)return;
     var res=$("filaResumoCom")||$("filaResumo");if(res)res.innerHTML='<b>'+(c.pendente||0)+'</b> pendente ('+(c.whatsapp_pendente||0)+' wpp · '+(c.email_pendente||0)+' email) · <b style="color:#1a7f4b">'+(c.enviado||0)+'</b> enviados'+((c.erro||0)?(' · <b style="color:#c0392b">'+c.erro+'</b> erro'):'');
-    var lista=$("filaListaCom")||$("filaLista");if(lista){var its=c.itens||[];if(!its.length){lista.innerHTML='<div class="note" style="padding:14px">Fila vazia. Marque os destinatários e clique <b>Agendar na fila</b>.</div>';}
+    var lista=$("filaListaCom")||$("filaLista");if(lista){var its=c.itens||[];if(!its.length){lista.innerHTML='<div class="note" style="padding:14px">Fila vazia. Marque os destinatários e clique <b>Criar fila e enviar</b>.</div>';}
       else{var h='<table class="ftab"><thead><tr><th>Quando</th><th>Público</th><th>Canal</th><th>Destinatário</th><th>Status</th></tr></thead><tbody>';
         its.forEach(function(r){var dest=r.canal==="email"?(r.email||""):(r.fone||"");var inst=r.instancia?(" · 📲 "+r.instancia):"";var arte=r.template_id?" 🎨arte":"";var stc=r.status==="enviado"?"#1a7f4b":(r.status==="erro"?"#c0392b":"#b7791f");var when=String(r.enviado_em||r.criado_em||"").replace("T"," ").slice(5,16);
           h+='<tr><td class="note">'+when+'</td><td>'+(r.publico==="rep"?"👔 rep":"🏢 cliente")+'</td><td>'+(r.canal==="email"?"✉ email":"📱 wpp")+arte+'</td><td><b>'+esc(r.nome||"")+'</b><div class="note">'+esc(dest)+inst+'</div></td><td style="color:'+stc+'"><b>'+r.status+'</b>'+(r.resultado?('<div class="note">'+esc(r.resultado)+'</div>'):"")+'</td></tr>';});
@@ -1139,7 +1219,7 @@
       + '<div id="comChips"></div><div class="fbig" id="comResumo" style="margin-top:4px"></div>'
       + '<div class="note" id="comCad" style="margin-top:2px"></div></div>'
       + '<div id="comLista"></div></div>';
-    h += '<div class="cbox"><div class="cfoot"><button class="btn big ok" id="comFila">📅 Agendar na fila</button>'
+    h += '<div class="cbox"><div class="cfoot"><button class="btn big ok" id="comFila">📅 Criar fila e enviar</button>'
       + '<button class="btn out" id="comTeste">Testar no meu e-mail</button>'
       + '<span class="note" id="comCadNota"></span><span class="fbig" id="comSt" style="margin-left:auto"></span></div>'
       + '<div class="cfila"><div class="oh" style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:#f6faf8;border-bottom:1px solid var(--line)">'
@@ -1375,7 +1455,7 @@
     if (!confirm("Agendar " + r.itens.length + " envio(s) na fila?\n\nTermina em " + comTempo(e.seg) + " (1 WhatsApp por instância a cada " + Math.round(e.iv / 60) + " min).")) return;
     btn.disabled = true; btn.textContent = "agendando…"; st.textContent = ""; st.style.color = "#6a7f78";
     postJSON(SUPA + "/functions/v1/fila-enfileirar", { itens: r.itens }, function (d) {
-      btn.disabled = false; btn.textContent = "📅 Agendar na fila";
+      btn.disabled = false; btn.textContent = "📅 Criar fila e enviar";
       if (d && d.ok) {
         st.innerHTML = "<b style='color:#1a7f4b'>✓ " + d.enfileirados + " na fila</b>" + (r.semInst ? (" · " + r.semInst + " sem instância, fora") : "");
         if (FILATIMER) clearInterval(FILATIMER); statusFila(); FILATIMER = setInterval(statusFila, 15000);

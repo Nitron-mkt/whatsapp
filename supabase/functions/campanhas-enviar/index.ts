@@ -61,7 +61,7 @@ const API = "https://services.leadconnectorhq.com";
 // ---- cadastro da empresa (cache de 5 min por empresa, por isolate) ----
 type Empresa = {
   painel_id: string; nome: string; marca: string; loc: string;
-  campos: Record<string, string>; teste_contact_id: string | null;
+  campos: Record<string, string>; teste_contact_id: string | null; tok: string;
 };
 const empCache: Record<string, { at: number; e: Empresa }> = {};
 async function carregarEmpresa(id: string): Promise<Empresa> {
@@ -69,7 +69,7 @@ async function carregarEmpresa(id: string): Promise<Empresa> {
   if (hit && Date.now() - hit.at < 300000) return hit.e;
   const base = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, ""); const k = srvKey();
   if (!base || !k) throw new Error("sem SUPABASE_URL/chave de servico para ler o cadastro de empresa");
-  const r = await fetch(`${base}/rest/v1/empresa?painel_id=eq.${encodeURIComponent(id)}&select=painel_id,nome,marca,ghl_location,campos,teste_contact_id`, { headers: { apikey: k, Authorization: "Bearer " + k } });
+  const r = await fetch(`${base}/rest/v1/empresa?painel_id=eq.${encodeURIComponent(id)}&select=painel_id,nome,marca,ghl_location,campos,teste_contact_id,ghl_token_env`, { headers: { apikey: k, Authorization: "Bearer " + k } });
   if (!r.ok) throw new Error("cadastro de empresa: HTTP " + r.status);
   const rows = await r.json().catch(() => []);
   const row = Array.isArray(rows) ? rows[0] : null;
@@ -77,11 +77,19 @@ async function carregarEmpresa(id: string): Promise<Empresa> {
   // Sem locationId nao ha para onde mandar. Recusar alto: chutar location e criar contato na
   // subconta errada, que e irreversivel na pratica.
   if (!row.ghl_location) throw new Error(`empresa "${id}" sem ghl_location no cadastro — envio recusado`);
+  // O token do GHL e escopado POR LOCATION. Conferido em 26/08: o token da Nitron responde
+  // 403 "The token does not have access to this location" na location da Teak. Sem token desta
+  // empresa nao ha envio — recusar e melhor do que tentar com o token da outra e receber 403 no
+  // meio de um lote.
+  const tokEnv = String(row.ghl_token_env || "GHL_TOKEN");
+  const tok = Deno.env.get(tokEnv) || Deno.env.get("GHL_TOKEN") || "";
+  if (!tok) throw new Error(`sem token do GHL para "${id}": o secret ${tokEnv} nao existe nas Edge Functions`);
   const e: Empresa = {
     painel_id: String(row.painel_id), nome: String(row.nome || id),
     marca: String(row.marca || row.nome || id), loc: String(row.ghl_location),
     campos: (row.campos && typeof row.campos === "object") ? row.campos : {},
     teste_contact_id: row.teste_contact_id ? String(row.teste_contact_id) : null,
+    tok,
   };
   empCache[id] = { at: Date.now(), e };
   return e;
@@ -111,7 +119,7 @@ async function gravarCampos(emp: Empresa, contactId: string, campos: any): Promi
     .map((k) => ({ id: emp.campos[k], value: String(campos[k]) }));
   if (!cf.length) return null;
   try {
-    const r = await ghl("PUT", `/contacts/${contactId}`, { customFields: cf });
+    const r = await ghl(emp.tok, "PUT", `/contacts/${contactId}`, { customFields: cf });
     if (!r.ok) return null;
     return cf.map((x) => x.id);
   } catch { return null; }
@@ -123,8 +131,8 @@ const numEnv = (nome: string, padrao: number) => { const v = Number(Deno.env.get
 const BIND_ESPERA_MS = numEnv("BIND_ESPERA_MS", 25000);
 const BIND_POLL_MS = numEnv("BIND_POLL_MS", 1500);
 const BIND_MARGEM_MS = numEnv("BIND_MARGEM_MS", 20000);
-function ghl(method: string, path: string, body: any, version = "2021-07-28") {
-  return fetch(API + path, { method, headers: { "Authorization": "Bearer " + Deno.env.get("GHL_TOKEN"), "Version": version, "Content-Type": "application/json", "Accept": "application/json", "User-Agent": UA }, body: body ? JSON.stringify(body) : undefined });
+function ghl(tok: string, method: string, path: string, body: any, version = "2021-07-28") {
+  return fetch(API + path, { method, headers: { "Authorization": "Bearer " + tok, "Version": version, "Content-Type": "application/json", "Accept": "application/json", "User-Agent": UA }, body: body ? JSON.stringify(body) : undefined });
 }
 // ---- cadastro de instancias (cache de 5 min por isolate) ----
 type Cadastro = { set: Set<string>; porUsuario: Record<string, string>; idDe: Record<string, string> };
@@ -155,7 +163,7 @@ async function instanciasValidas(emp: Empresa): Promise<Set<string> | null> { co
 async function donoDoContato(emp: Empresa, contactId: string): Promise<string | null> {
   const c = await cadastro(emp); if (!c) return null;
   try {
-    const r = await ghl("GET", `/contacts/${contactId}`, null);
+    const r = await ghl(emp.tok, "GET", `/contacts/${contactId}`, null);
     if (!r.ok) return null;
     const d = await r.json().catch(() => ({}));
     const uid = String(d?.contact?.assignedTo || d?.assignedTo || "");
@@ -210,10 +218,10 @@ function preencher(emp: Empresa, str: string, nome?: string, texto?: string, mer
   return str.replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (_full, key) => { const k = String(key).trim().toLowerCase(); return (k in map) ? map[k] : ""; });
 }
 async function buscarUm(emp: Empresa, q: string): Promise<any> {
-  try { const r = await ghl("GET", `/contacts/?locationId=${emp.loc}&query=${encodeURIComponent(q)}&limit=1`, null); const d = await r.json(); return (d?.contacts || [])[0] || null; } catch { return null; }
+  try { const r = await ghl(emp.tok, "GET", `/contacts/?locationId=${emp.loc}&query=${encodeURIComponent(q)}&limit=1`, null); const d = await r.json(); return (d?.contacts || [])[0] || null; } catch { return null; }
 }
 async function upsertContato(emp: Empresa, fields: any): Promise<string | null> {
-  try { const r = await ghl("POST", "/contacts/upsert", { locationId: emp.loc, ...fields }); const d = await r.json().catch(() => ({})); return d?.contact?.id || null; } catch { return null; }
+  try { const r = await ghl(emp.tok, "POST", "/contacts/upsert", { locationId: emp.loc, ...fields }); const d = await r.json().catch(() => ({})); return d?.contact?.id || null; } catch { return null; }
 }
 // O campo de CODPARC tambem e por location: `campos.codparc` do cadastro. Empresa sem esse campo
 // cadastrado grava o contato sem CODPARC em vez de mandar um id de campo de outra subconta, que o
@@ -234,22 +242,22 @@ async function garantirPorEmail(emp: Empresa, email: string, nome?: string, codp
 }
 async function arteHtml(emp: Empresa, templateId: string): Promise<string | null> {
   try {
-    const r = await ghl("GET", `/emails/builder?locationId=${emp.loc}&limit=100`, null);
+    const r = await ghl(emp.tok, "GET", `/emails/builder?locationId=${emp.loc}&limit=100`, null);
     const d = await r.json(); const lista = d?.builders || d?.data?.builders || [];
     const tpl = lista.find((t: any) => t.id === templateId); if (!tpl?.previewUrl) return null;
     const h = await fetch(tpl.previewUrl, { headers: { "User-Agent": UA } }); if (!h.ok) return null;
     const html = await h.text(); return html && html.length > 50 ? html : null;
   } catch { return null; }
 }
-async function sms(contactId: string, message: string, toNumber?: string) {
+async function sms(emp: Empresa, contactId: string, message: string, toNumber?: string) {
   const payload: any = { type: "SMS", contactId, message }; if (toNumber) payload.toNumber = toNumber;
-  const r = await ghl("POST", "/conversations/messages", payload, "2021-04-15");
+  const r = await ghl(emp.tok, "POST", "/conversations/messages", payload, "2021-04-15");
   return { status: r.status, body: (await r.text()).slice(0, 400) };
 }
 // ---- confirmacao da troca de instancia ----
 const ehAck = (m: any) => /contact\s+instance\s+updated/i.test(String(m?.body || ""));
-async function lerConversa(cid: string): Promise<{ http: number; msgs: any[] }> {
-  const r = await ghl("GET", `/conversations/${cid}/messages?limit=20`, null, "2021-04-15");
+async function lerConversa(emp: Empresa, cid: string): Promise<{ http: number; msgs: any[] }> {
+  const r = await ghl(emp.tok, "GET", `/conversations/${cid}/messages?limit=20`, null, "2021-04-15");
   if (!r.ok) return { http: r.status, msgs: [] };
   const d = await r.json().catch(() => ({}));
   const arr = d?.messages?.messages || d?.messages || [];
@@ -257,10 +265,10 @@ async function lerConversa(cid: string): Promise<{ http: number; msgs: any[] }> 
 }
 // Espera o ZaptosWPP gravar a confirmacao na conversa, com dateAdded >= o dateAdded do proprio bind.
 // Os dois horarios vem do GHL, entao nao ha risco de desencontro de relogio com o isolate.
-async function esperarTroca(cid: string, bindId: string, janelaMs: number) {
+async function esperarTroca(emp: Empresa, cid: string, bindId: string, janelaMs: number) {
   const t0 = Date.now(); let bindAt = 0; let http = 200;
   while (Date.now() - t0 < janelaMs) {
-    const lida = await lerConversa(cid);
+    const lida = await lerConversa(emp, cid);
     http = lida.http;
     if (http !== 200) return { confirmado: null as boolean | null, ms: Date.now() - t0, http, motivo: "nao consegui ler a conversa (HTTP " + http + ")" };
     if (!bindAt) { const bm = lida.msgs.find((m: any) => m?.id === bindId); if (bm?.dateAdded) bindAt = new Date(bm.dateAdded).getTime(); }
@@ -278,7 +286,7 @@ async function enviarMsg(emp: Empresa, contactId: string, canal: string, texto: 
     if (templateId) { const raw = await arteHtml(emp, templateId); if (raw) { html = preencher(emp, raw, nome, texto, merge, opts?.campos); arte_ok = true; } }
     if (!html) html = "<div>" + String(texto).replace(/\n/g, "<br>") + "</div>";
     const subj = preencher(emp, assunto || emp.marca, nome, texto, merge, opts?.campos);
-    const r = await ghl("POST", "/conversations/messages", { type: "Email", contactId, subject: subj, html }, "2021-04-15");
+    const r = await ghl(emp.tok, "POST", "/conversations/messages", { type: "Email", contactId, subject: subj, html }, "2021-04-15");
     return { status: r.status, body: (await r.text()).slice(0, 400), bind: null as any, arte_ok };
   }
   const to = fone ? e164(fone) : undefined;
@@ -286,19 +294,19 @@ async function enviarMsg(emp: Empresa, contactId: string, canal: string, texto: 
   const margem = opts?.margem_ms !== undefined && Number(opts?.margem_ms) >= 0 ? Number(opts.margem_ms) : BIND_MARGEM_MS;
   const exigir = opts?.exigir_confirmacao === false ? false : true;
   // 1) amarra o contato na instancia certa
-  const bind = await sms(contactId, `#contact_instance:${instancia}`, to);
+  const bind = await sms(emp, contactId, `#contact_instance:${instancia}`, to);
   if (!(bind.status >= 200 && bind.status < 300)) return { status: 0, body: "", bind, troca: { confirmado: false, motivo: "o GHL recusou o proprio bind" }, recusado: "bind nao aceito — texto nao enviado" };
   let cid = ""; let bindId = "";
   try { const d = JSON.parse(bind.body); cid = String(d?.conversationId || ""); bindId = String(d?.messageId || ""); } catch { /* corpo inesperado */ }
   // 2) espera o app confirmar a troca na conversa
   let troca: any;
-  if (cid && bindId) troca = await esperarTroca(cid, bindId, janela);
+  if (cid && bindId) troca = await esperarTroca(emp, cid, bindId, janela);
   else troca = { confirmado: null, motivo: "o bind nao devolveu conversationId/messageId" };
   if (troca.confirmado === false && exigir) return { status: 0, body: "", bind, troca, recusado: "troca de instancia nao confirmada — texto nao enviado para nao sair pela instancia antiga" };
   // 3) margem de acomodacao: a confirmacao diz que o app processou, nao que a sessao de envio ja pegou a troca
   const esperaTotal = troca.confirmado === true ? margem : Math.max(margem, janela - (troca.ms || 0));
   await sleep(esperaTotal);
-  const res = await sms(contactId, texto, to);
+  const res = await sms(emp, contactId, texto, to);
   return { ...res, bind, troca: { ...troca, margem_ms: esperaTotal } };
 }
 Deno.serve(async (req) => {
@@ -310,7 +318,7 @@ Deno.serve(async (req) => {
     // chama sem o campo (a fila e o painel antigos).
     const emp = await carregarEmpresa(String(b.empresa || "nitron"));
     if (b.diag) {
-      const r = await ghl("GET", `/contacts/?locationId=${emp.loc}&query=milton&limit=1`, null);
+      const r = await ghl(emp.tok, "GET", `/contacts/?locationId=${emp.loc}&query=milton&limit=1`, null);
       const hdr: Record<string, string> = {};
       for (const kk of ["x-ratelimit-limit-daily", "x-ratelimit-daily-remaining", "x-ratelimit-interval-milliseconds", "x-ratelimit-max", "x-ratelimit-remaining", "retry-after"]) { const v = r.headers.get(kk); if (v != null) hdr[kk] = v; }
       const body = (await r.text()).slice(0, 200);

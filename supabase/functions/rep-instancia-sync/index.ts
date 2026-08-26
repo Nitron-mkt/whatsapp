@@ -36,38 +36,46 @@ function variantes(fone: any): string[] {
 }
 
 const API = "https://services.leadconnectorhq.com";
-// v: locationId sai do fonte e vem do cadastro `empresa`. Cada empresa do grupo e uma SUBCONTA
-// (location) diferente do mesmo GHL — mandar para a subconta errada cria contato no CRM errado.
-// A location e passada como ARGUMENTO, nunca guardada em variavel de modulo: estado de modulo e
+// v: locationId E TOKEN saem do fonte e vem do cadastro `empresa`. Cada empresa do grupo e uma
+// SUBCONTA (location) diferente do mesmo GHL, e o token do GHL e escopado por location:
+// conferido em 26/08, o token da Nitron responde 403 "The token does not have access to this
+// location" na location da Teak. Mandar para a subconta errada cria contato no CRM errado.
+// Os dois sao passados como ARGUMENTO, nunca guardados em variavel de modulo: estado de modulo e
 // compartilhado pelo isolate, e duas requisicoes de empresas diferentes ao mesmo tempo poderiam
 // trocar o valor no meio da operacao.
 // O loader esta repetido nas funcoes que precisam dele de proposito: cada Edge Function e um
 // deploy independente, e um import compartilhado significaria redeployar todas juntas.
-const locCache: Record<string, { at: number; loc: string }> = {};
-async function locDaEmpresa(id: string): Promise<string> {
-  const hit = locCache[id];
-  if (hit && Date.now() - hit.at < 300000) return hit.loc;
+type EmpGhl = { loc: string; tok: string };
+const empGhlCache: Record<string, { at: number; v: EmpGhl }> = {};
+async function empresaGhl(id: string): Promise<EmpGhl> {
+  const hit = empGhlCache[id];
+  if (hit && Date.now() - hit.at < 300000) return hit.v;
   const base = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, ""); const k = srvKey();
   if (!base || !k) throw new Error("sem SUPABASE_URL/chave de servico para ler o cadastro de empresa");
-  const r = await fetch(`${base}/rest/v1/empresa?painel_id=eq.${encodeURIComponent(id)}&select=ghl_location`, { headers: { apikey: k, Authorization: "Bearer " + k } });
+  const r = await fetch(`${base}/rest/v1/empresa?painel_id=eq.${encodeURIComponent(id)}&select=ghl_location,ghl_token_env`, { headers: { apikey: k, Authorization: "Bearer " + k } });
   if (!r.ok) throw new Error("cadastro de empresa: HTTP " + r.status);
   const rows = await r.json().catch(() => []);
-  const loc = Array.isArray(rows) && rows[0]?.ghl_location ? String(rows[0].ghl_location) : "";
+  const row = Array.isArray(rows) ? rows[0] : null;
+  const loc = row?.ghl_location ? String(row.ghl_location) : "";
   if (!loc) throw new Error(`empresa "${id}" sem ghl_location no cadastro — operacao recusada`);
-  locCache[id] = { at: Date.now(), loc };
-  return loc;
+  const tokEnv = String(row?.ghl_token_env || "GHL_TOKEN");
+  const tok = Deno.env.get(tokEnv) || Deno.env.get("GHL_TOKEN") || "";
+  if (!tok) throw new Error(`sem token do GHL para "${id}": o secret ${tokEnv} nao existe nas Edge Functions`);
+  const v: EmpGhl = { loc, tok };
+  empGhlCache[id] = { at: Date.now(), v };
+  return v;
 }
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146.0 Safari/537.36";
 // Uma busca no GHL por lote de telefones; devolve fone normalizado -> TODOS os assignedTo achados.
-async function donosPorFone(loc: string, fones: string[]): Promise<Record<string, string[]> | null> {
-  const tok = Deno.env.get("GHL_TOKEN"); if (!tok || !fones.length) return null;
+async function donosPorFone(g: EmpGhl, fones: string[]): Promise<Record<string, string[]> | null> {
+  const tok = g.tok; if (!tok || !fones.length) return null;
   const out: Record<string, string[]> = {};
   try {
     for (let i = 0; i < fones.length; i += 90) {
       const r = await fetch(API + "/contacts/search", {
         method: "POST",
         headers: { "Authorization": "Bearer " + tok, "Version": "2021-07-28", "Content-Type": "application/json", "Accept": "application/json", "User-Agent": UA },
-        body: JSON.stringify({ locationId: loc, pageLimit: 100, filters: [{ field: "phone", operator: "contains_set", value: fones.slice(i, i + 90) }] }),
+        body: JSON.stringify({ locationId: g.loc, pageLimit: 100, filters: [{ field: "phone", operator: "contains_set", value: fones.slice(i, i + 90) }] }),
       });
       if (!r.ok) return null;
       const d = await r.json().catch(() => ({}));
@@ -77,15 +85,15 @@ async function donosPorFone(loc: string, fones: string[]): Promise<Record<string
   } catch { return null; }
 }
 // Mesma ideia, por e-mail: ha rep cujo telefone no Sankhya nao casa com nenhum do CRM.
-async function donosPorEmail(loc: string, mails: string[]): Promise<Record<string, string[]>> {
-  const tok = Deno.env.get("GHL_TOKEN"); if (!tok || !mails.length) return {};
+async function donosPorEmail(g: EmpGhl, mails: string[]): Promise<Record<string, string[]>> {
+  const tok = g.tok; if (!tok || !mails.length) return {};
   const out: Record<string, string[]> = {};
   try {
     for (let i = 0; i < mails.length; i += 90) {
       const r = await fetch(API + "/contacts/search", {
         method: "POST",
         headers: { "Authorization": "Bearer " + tok, "Version": "2021-07-28", "Content-Type": "application/json", "Accept": "application/json", "User-Agent": UA },
-        body: JSON.stringify({ locationId: loc, pageLimit: 100, filters: [{ field: "email", operator: "contains_set", value: mails.slice(i, i + 90) }] }),
+        body: JSON.stringify({ locationId: g.loc, pageLimit: 100, filters: [{ field: "email", operator: "contains_set", value: mails.slice(i, i + 90) }] }),
       });
       if (!r.ok) return out;
       const d = await r.json().catch(() => ({}));
@@ -100,7 +108,7 @@ Deno.serve(async (req) => {
     const b: any = req.method === "POST" ? await req.json().catch(() => ({})) : {};
     // empresa primeiro: sem location resolvida esta funcao nao fala com o GHL.
     const empId = String(b.empresa || "nitron");
-    const loc = await locDaEmpresa(empId);
+    const g = await empresaGhl(empId);
     const sb = createClient(Deno.env.get("SUPABASE_URL")!, srvKey());
 
     const { data: rcs, error: eR } = await sb.from("rep_carteira").select("codvend,apelido,codparc,celular,email,assist_idcrm"); if (eR) throw eR;
@@ -135,9 +143,9 @@ Deno.serve(async (req) => {
     });
 
     const fones = Array.from(new Set(reps.flatMap((r) => r.tels.flatMap((t) => variantes(t)).map((t) => e164(t)).filter(Boolean))));
-    const donos = await donosPorFone(loc, fones);
+    const donos = await donosPorFone(g, fones);
     if (!donos) return j({ ok: false, erro: "nao consegui ler o CRM — nada foi gravado (melhor manter o valor antigo do que apagar)" }, 502);
-    const donosMail = await donosPorEmail(loc, Array.from(new Set(reps.flatMap((r) => r.mails))));
+    const donosMail = await donosPorEmail(g, Array.from(new Set(reps.flatMap((r) => r.mails))));
 
     let com = 0, sem = 0, fora = 0, div = 0;
     const porInst: Record<string, number> = {};

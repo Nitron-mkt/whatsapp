@@ -48,17 +48,37 @@ function variantes(fone: any): string[] {
   return [...out];
 }
 const API = "https://services.leadconnectorhq.com";
-const LOC = "rZ8y7lzqV7fzxsartaX2";
+// v: locationId sai do fonte e vem do cadastro `empresa`. Cada empresa do grupo e uma SUBCONTA
+// (location) diferente do mesmo GHL — mandar para a subconta errada cria contato no CRM errado.
+// A location e passada como ARGUMENTO, nunca guardada em variavel de modulo: estado de modulo e
+// compartilhado pelo isolate, e duas requisicoes de empresas diferentes ao mesmo tempo poderiam
+// trocar o valor no meio da operacao.
+// O loader esta repetido nas funcoes que precisam dele de proposito: cada Edge Function e um
+// deploy independente, e um import compartilhado significaria redeployar todas juntas.
+const locCache: Record<string, { at: number; loc: string }> = {};
+async function locDaEmpresa(id: string): Promise<string> {
+  const hit = locCache[id];
+  if (hit && Date.now() - hit.at < 300000) return hit.loc;
+  const base = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, ""); const k = srvKey();
+  if (!base || !k) throw new Error("sem SUPABASE_URL/chave de servico para ler o cadastro de empresa");
+  const r = await fetch(`${base}/rest/v1/empresa?painel_id=eq.${encodeURIComponent(id)}&select=ghl_location`, { headers: { apikey: k, Authorization: "Bearer " + k } });
+  if (!r.ok) throw new Error("cadastro de empresa: HTTP " + r.status);
+  const rows = await r.json().catch(() => []);
+  const loc = Array.isArray(rows) && rows[0]?.ghl_location ? String(rows[0].ghl_location) : "";
+  if (!loc) throw new Error(`empresa "${id}" sem ghl_location no cadastro — operacao recusada`);
+  locCache[id] = { at: Date.now(), loc };
+  return loc;
+}
 const FID_CODPARC = "HaDWHgnJSjDDdPF7XFDH";
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146.0 Safari/537.36";
 function ghl(method: string, path: string, body?: any) {
   return fetch(API + path, { method, headers: { "Authorization": "Bearer " + Deno.env.get("GHL_TOKEN"), "Version": "2021-07-28", "Content-Type": "application/json", "Accept": "application/json", "User-Agent": UA }, body: body ? JSON.stringify(body) : undefined });
 }
-async function acharPorFone(fone: string): Promise<any> {
+async function acharPorFone(loc: string, fone: string): Promise<any> {
   for (const v of variantes(fone)) {
     for (const q of [e164(v), v]) {
       try {
-        const r = await ghl("GET", `/contacts/?locationId=${LOC}&query=${encodeURIComponent(q)}&limit=1`);
+        const r = await ghl("GET", `/contacts/?locationId=${loc}&query=${encodeURIComponent(q)}&limit=1`);
         if (!r.ok) continue;
         const d = await r.json();
         const c = (d?.contacts || [])[0];
@@ -75,6 +95,9 @@ Deno.serve(async (req) => {
     const acao = String(b.acao || "").trim();
     const seco = b.seco === true;
     const campanha = b.campanha ? String(b.campanha) : null;
+    // empresa primeiro: sem location resolvida esta funcao nao fala com o GHL.
+    const empId = String(b.empresa || "nitron");
+    const loc = await locDaEmpresa(empId);
     const sb = createClient(Deno.env.get("SUPABASE_URL")!, srvKey());
 
     // a instancia de campanha e a de escopo cliente, ativa
@@ -92,11 +115,11 @@ Deno.serve(async (req) => {
       const out: any[] = [];
       for (const it of itens) {
         const f = it.fone;
-        const c = await acharPorFone(f);
+        const c = await acharPorFone(loc, f);
         if (!c?.id) {
           if (!criar) { out.push({ fone: f, acao: "nao_achei_no_crm" }); continue; }
           if (seco) { out.push({ fone: f, acao: "criaria", nome: it.nome || null }); continue; }
-          const campos: any = { locationId: LOC, phone: e164(f), firstName: it.nome || ("Cliente " + e164(f)), assignedTo: alvo };
+          const campos: any = { locationId: loc, phone: e164(f), firstName: it.nome || ("Cliente " + e164(f)), assignedTo: alvo };
           if (it.codparc) campos.customFields = [{ id: FID_CODPARC, value: String(it.codparc) }];
           const rc = await ghl("POST", "/contacts/upsert", campos);
           const dc = await rc.json().catch(() => ({}));
@@ -154,7 +177,7 @@ Deno.serve(async (req) => {
 
     if (acao === "varrer") {
       // conversas da instancia de campanha cuja ULTIMA mensagem e de ENTRADA = cliente respondeu
-      const r = await ghl("GET", `/conversations/search?locationId=${LOC}&assignedTo=${alvo}&lastMessageDirection=inbound&limit=100`);
+      const r = await ghl("GET", `/conversations/search?locationId=${loc}&assignedTo=${alvo}&lastMessageDirection=inbound&limit=100`);
       if (!r.ok) return j({ ok: false, erro: "conversations/search " + r.status + ": " + (await r.text()).slice(0, 200) }, 502);
       const d = await r.json().catch(() => ({}));
       const convs = d?.conversations || [];

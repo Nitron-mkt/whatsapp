@@ -30,10 +30,30 @@ const nf = (s: any) => digits(s).replace(/^0+/, "").replace(/^55/, "");
 function e164(fone: any): string { const d = digits(fone); if (!d) return ""; if (d.length <= 11) return "+55" + d; return "+" + d; }
 
 const API = "https://services.leadconnectorhq.com";
-const LOC = "rZ8y7lzqV7fzxsartaX2";
+// v: locationId sai do fonte e vem do cadastro `empresa`. Cada empresa do grupo e uma SUBCONTA
+// (location) diferente do mesmo GHL — mandar para a subconta errada cria contato no CRM errado.
+// A location e passada como ARGUMENTO, nunca guardada em variavel de modulo: estado de modulo e
+// compartilhado pelo isolate, e duas requisicoes de empresas diferentes ao mesmo tempo poderiam
+// trocar o valor no meio da operacao.
+// O loader esta repetido nas funcoes que precisam dele de proposito: cada Edge Function e um
+// deploy independente, e um import compartilhado significaria redeployar todas juntas.
+const locCache: Record<string, { at: number; loc: string }> = {};
+async function locDaEmpresa(id: string): Promise<string> {
+  const hit = locCache[id];
+  if (hit && Date.now() - hit.at < 300000) return hit.loc;
+  const base = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, ""); const k = srvKey();
+  if (!base || !k) throw new Error("sem SUPABASE_URL/chave de servico para ler o cadastro de empresa");
+  const r = await fetch(`${base}/rest/v1/empresa?painel_id=eq.${encodeURIComponent(id)}&select=ghl_location`, { headers: { apikey: k, Authorization: "Bearer " + k } });
+  if (!r.ok) throw new Error("cadastro de empresa: HTTP " + r.status);
+  const rows = await r.json().catch(() => []);
+  const loc = Array.isArray(rows) && rows[0]?.ghl_location ? String(rows[0].ghl_location) : "";
+  if (!loc) throw new Error(`empresa "${id}" sem ghl_location no cadastro — operacao recusada`);
+  locCache[id] = { at: Date.now(), loc };
+  return loc;
+}
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146.0 Safari/537.36";
 // Uma unica busca no GHL com todos os telefones dos reps; devolve fone normalizado -> assignedTo.
-async function donosNoCRM(fones: string[]): Promise<Record<string, string> | null> {
+async function donosNoCRM(loc: string, fones: string[]): Promise<Record<string, string> | null> {
   const tok = Deno.env.get("GHL_TOKEN"); if (!tok || !fones.length) return null;
   const out: Record<string, string> = {};
   try {
@@ -41,7 +61,7 @@ async function donosNoCRM(fones: string[]): Promise<Record<string, string> | nul
       const r = await fetch(API + "/contacts/search", {
         method: "POST",
         headers: { Authorization: "Bearer " + tok, Version: "2021-07-28", "Content-Type": "application/json", Accept: "application/json", "User-Agent": UA },
-        body: JSON.stringify({ locationId: LOC, pageLimit: 100, filters: [{ field: "phone", operator: "contains_set", value: fones.slice(i, i + 90) }] }),
+        body: JSON.stringify({ locationId: loc, pageLimit: 100, filters: [{ field: "phone", operator: "contains_set", value: fones.slice(i, i + 90) }] }),
       });
       if (!r.ok) return null;
       const d = await r.json().catch(() => ({}));
@@ -136,7 +156,11 @@ Deno.serve(async (req) => {
     // instancia de verdade: a assistente proprietaria do contato no CRM
     const fones: string[] = [];
     reps.forEach((r: any) => (r.telefones || []).forEach((t: any) => { const v = e164(t.valor); if (v) fones.push(v); }));
-    const donos = await donosNoCRM(Array.from(new Set(fones)));
+    // "nitron" explicito, nao esquecido: comunicado aos representantes so existe na Nitron (rede
+    // de 80 reps). A Teak e uma pessoa so e nao tem rede de representantes — quando tiver, esta
+    // funcao passa a receber a empresa como as outras. O importante e que o valor agora sai do
+    // cadastro e nao de um id chumbado no fonte.
+    const donos = await donosNoCRM(await locDaEmpresa("nitron"), Array.from(new Set(fones)));
     if (donos) {
       reps = reps.map((r: any) => {
         let inst: string | null = null;

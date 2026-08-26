@@ -85,6 +85,29 @@
   .erro{color:var(--alerta-b)}
   .ok{color:var(--verde2)}
   .aviso{background:#fff8e6;border:1px solid #e8d9a8;border-radius:8px;padding:9px 12px;font-size:12px;margin-bottom:12px;color:#6b5312}
+  .note2{font-size:12px;color:var(--tinta2);margin:4px 0 9px;max-width:900px}
+  .tv{background:var(--papel);border:1px solid var(--linha);border-left-width:4px;border-radius:9px;padding:10px 12px;margin-bottom:9px}
+  .tv.g1{border-left-color:#9c2b2b}
+  .tv.g2{border-left-color:#b7791f}
+  .tv.g3{border-left-color:#b7791f}
+  .tv.g4{border-left-color:#5c6b66}
+  .tv.g5{border-left-color:#5c6b66}
+  .tv.g9{border-left-color:#1a7f4b}
+  .tv .th{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;cursor:pointer}
+  .tv .tn{font-weight:bold;font-size:13.5px}
+  .tv .tq{font-size:19px;font-weight:bold;margin-left:auto}
+  .tv .tx{font-size:12.5px;color:var(--tinta2);margin-top:3px}
+  .tv .ta{font-size:12.5px;margin-top:6px;background:#f4f8f6;border-radius:7px;padding:6px 9px}
+  .tag{font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;padding:2px 6px;border-radius:5px;font-weight:bold}
+  .tag.nossa{background:#fbe3e3;color:#9c2b2b}
+  .tag.contato{background:#eef1f0;color:#5c6b66}
+  .tag.ghl{background:#e8eff9;color:#2c5fa8}
+  .tag.re{background:#e6f4ea;color:#1a7f4b}
+  .tvlist{margin-top:8px;max-height:280px;overflow:auto;border-top:1px solid var(--linha)}
+  .tvlist table{font-size:12px}
+  .swi{background:var(--papel);border:1px solid var(--linha);border-radius:9px;padding:10px 13px;margin-bottom:12px;display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+  .swi .on{color:#1a7f4b;font-weight:bold}
+  .swi .off{color:#9c2b2b;font-weight:bold}
   .card{cursor:pointer}
   .card:hover{filter:brightness(.985)}
   .esp{display:block;margin-top:3px;font-size:11px;font-weight:bold;color:#0f5c34}
@@ -131,6 +154,7 @@
 <div class="abas">
   <div class="aba on" id="abaSem" onclick="verAba('semana')">Semana</div>
   <div class="aba" id="abaHist" onclick="verAba('historico')">Histórico</div>
+  <div class="aba" id="abaTrav" onclick="verAba('travas')">🚧 Travas <span id="travBadge"></span></div>
 </div>
 
 <div class="wrap">
@@ -151,6 +175,24 @@
       <span><i style="background:var(--sug-b)"></i>Sugestão — pela cadência da campanha</span>
       <span><i style="background:var(--alerta-b)"></i>Cadência que passou sem rodar</span>
       <span>Clique em qualquer campanha para ver <b>por que aquele dia</b>, o gatilho cadastrado e como medir</span>
+    </div>
+  </div>
+
+  <div id="painelTrav" style="display:none">
+    <div class="barra">
+      <b style="font-size:15px">O que não saiu — e o que resolve</b>
+      <button class="btn" onclick="carregaTravas()">↻ atualizar</button>
+      <span class="msg" id="msgTrav"></span>
+    </div>
+    <div id="travFila"></div>
+    <div class="kpis" id="kpisTrav"></div>
+    <div id="travBlocos"></div>
+    <div style="margin-top:22px">
+      <b style="font-size:14px">🧾 Conferência de contagem</b>
+      <div class="note2">Por que “120 selecionados” aparece como “280 na fila”: a fila trabalha em
+      <b>linhas</b> — uma por contato <b>e</b> por canal. Um cliente com comprador e financeiro, nos dois
+      canais, são 4 linhas. As três colunas abaixo são os três números que pareciam se contradizer.</div>
+      <div id="travConf"></div>
     </div>
   </div>
 
@@ -638,12 +680,135 @@ function expande(d){ ABERTO[d] = !ABERTO[d]; pinta(); }
 function mudaSemana(n){ SEG = mais(SEG, n*7); ABERTO = {}; fecharDet(); carrega(); }
 function irHoje(){ SEG = segDa(HOJE); carrega(); }
 function verAba(q){
-  var s = q==="semana";
-  $("painelSemana").style.display = s?"":"none";
-  $("painelHist").style.display = s?"none":"";
-  $("abaSem").className = "aba" + (s?" on":"");
-  $("abaHist").className = "aba" + (s?"":" on");
-  if (!s && !$("tabHist").innerHTML){ $("hAte").value = HOJE; $("hDe").value = mais(HOJE,-29); carregaHist(); }
+  $("painelSemana").style.display = q==="semana"?"":"none";
+  $("painelHist").style.display   = q==="historico"?"":"none";
+  $("painelTrav").style.display   = q==="travas"?"":"none";
+  $("abaSem").className  = "aba" + (q==="semana"?" on":"");
+  $("abaHist").className = "aba" + (q==="historico"?" on":"");
+  $("abaTrav").className = "aba" + (q==="travas"?" on":"");
+  if (q==="historico" && !$("tabHist").innerHTML){ $("hAte").value = HOJE; $("hDe").value = mais(HOJE,-29); carregaHist(); }
+  if (q==="travas") carregaTravas();
+}
+
+/* ---------------------------------------------------------------- TRAVAS
+   "8 erros" nao e informacao: nao diz o que fazer. O banco agora classifica cada linha nao
+   entregue (view fila_trava) com motivo em portugues, de quem e a bola e o que resolve. Aqui a
+   tela so desenha, em ordem de gravidade — o que trava a campanha inteira primeiro, o que e
+   escolha do contato por ultimo.                                                              */
+var TRAVAB = {};
+function carregaTravas(){
+  $("msgTrav").textContent = "carregando…"; $("msgTrav").className = "msg";
+  Promise.all([
+    api("fila_trava_resumo?select=*&order=gravidade.asc,linhas.desc"),
+    api("fila_config?select=*"),
+    api("fila_conferencia?select=*&order=dia.desc,campanha.asc,publico.asc,canal.asc&limit=60")
+  ]).then(function(r){
+    $("msgTrav").textContent = "";
+    pintaFila(r[1] && r[1][0]);
+    pintaTravas(r[0] || []);
+    pintaConf(r[2] || []);
+  }).catch(function(e){
+    $("msgTrav").textContent = "✗ " + e.message; $("msgTrav").className = "msg erro";
+  });
+}
+/* O estado das chaves vem primeiro porque hoje e a causa numero 1: fila desligada nao gera erro
+   nenhum, as linhas so ficam paradas — e parado sem aviso e pior do que erro. */
+function pintaFila(cfg){
+  if (!cfg){ $("travFila").innerHTML = ""; return; }
+  var seg = cfg.wpp_intervalo_seg, b = cfg.wpp_burst||1;
+  var cad = b>1 ? (b + " por rodada, " + cfg.wpp_burst_min_seg + "–" + cfg.wpp_burst_max_seg + "s entre elas, a cada " + seg + "s")
+                : ("1 por instância a cada " + seg + "s");
+  $("travFila").innerHTML = '<div class="swi">'
+    + '<span>📱 WhatsApp <b class="' + (cfg.wpp_ativo?"on":"off") + '">' + (cfg.wpp_ativo?"LIGADO":"DESLIGADO") + '</b></span>'
+    + '<span>✉️ E-mail <b class="' + (cfg.email_ativo?"on":"off") + '">' + (cfg.email_ativo?"LIGADO":"DESLIGADO") + '</b></span>'
+    + '<span class="mt" style="font-size:12px;color:var(--tinta2)">cadência: ' + esc(cad) + ' · e-mail em lotes de ' + cfg.email_lote + '</span>'
+    + (cfg.wpp_ativo ? "" : '<span style="font-size:12px;color:#9c2b2b;font-weight:bold">⚠ com o WhatsApp desligado, nenhuma linha de WhatsApp sai — nem as que já estão na fila</span>')
+    + '</div>';
+}
+function pintaTravas(rs){
+  var tot=0, rec=0, dado=0, fila=0;
+  var por = {};
+  rs.forEach(function(r){
+    var n = +r.linhas || 0;   /* o PostgREST pode devolver bigint como texto; somar texto vira concatenacao */
+    tot += n;
+    if (r.trava==="na_fila" || r.trava==="enviando") fila += n;
+    else if (r.recupera) rec += n;
+    else dado += n;
+    var k = r.trava;
+    if (!por[k]) por[k] = { trava:k, txt:r.trava_txt, acao:r.acao, quem:r.quem, recupera:r.recupera, grav:r.gravidade, linhas:0, dest:0, camps:{} };
+    por[k].linhas += n; por[k].dest += (+r.destinatarios || 0);
+    var cn = porCod(r.campanha);
+    var nome = (cn?cn.nome:r.campanha) + " · " + (r.publico==="rep"?"rep":r.publico) + " · " + r.canal;
+    por[k].camps[nome] = (por[k].camps[nome]||0) + n;
+  });
+  var bd = $("travBadge");
+  if (bd) bd.innerHTML = (tot-fila) ? ' <b style="background:#9c2b2b;color:#fff;border-radius:9px;padding:0 6px;font-size:11px">'+(tot-fila)+'</b>' : "";
+  $("kpisTrav").innerHTML = kpi(tot,"não entregues") + kpi(rec,"dá pra reenviar") +
+    kpi(dado,"precisa corrigir dado") + kpi(fila,"aguardando a vez");
+  var gs = Object.keys(por).map(function(k){return por[k];});
+  gs.sort(function(a,b){ return (a.grav-b.grav) || (b.linhas-a.linhas); });
+  if (!gs.length){ $("travBlocos").innerHTML = '<div class="aviso">Nada parado nem com erro. Tudo que entrou na fila foi entregue.</div>'; return; }
+  var h = "";
+  gs.forEach(function(g){
+    var camps = Object.keys(g.camps).sort(function(a,b){return g.camps[b]-g.camps[a];})
+      .map(function(n){ return esc(n) + " <b>" + g.camps[n] + "</b>"; }).join(" · ");
+    h += '<div class="tv g' + g.grav + '">'
+      +  '<div class="th" onclick="travExp(\'' + g.trava + '\')">'
+      +    '<span id="tvx-' + g.trava + '">▶</span>'
+      +    '<span class="tn">' + esc(g.txt) + '</span>'
+      +    '<span class="tag ' + g.quem + '">' + (g.quem==="nossa"?"nosso lado":(g.quem==="contato"?"dado do contato":"lado do GHL")) + '</span>'
+      +    (g.recupera ? '<span class="tag re">reenviar resolve</span>' : "")
+      +    '<span class="tq">' + g.linhas + '</span>'
+      +  '</div>'
+      +  '<div class="tx">' + camps + '</div>'
+      +  '<div class="ta">✔ <b>O que resolve:</b> ' + esc(g.acao) + '</div>'
+      +  '<div class="tvlist" id="tvl-' + g.trava + '" style="display:none"></div>'
+      + '</div>';
+  });
+  $("travBlocos").innerHTML = h;
+}
+function travExp(t){
+  var box = $("tvl-"+t), x = $("tvx-"+t);
+  if (!box) return;
+  if (box.style.display !== "none"){ box.style.display = "none"; if(x)x.textContent="▶"; return; }
+  box.style.display = ""; if(x)x.textContent="▼";
+  if (TRAVAB[t]){ box.innerHTML = TRAVAB[t]; return; }
+  box.innerHTML = '<div class="note2" style="padding:8px">carregando…</div>';
+  api("fila_trava?select=nome,campanha,publico,canal,fone,email,codparc,criado_em,resultado&trava=eq."+encodeURIComponent(t)+"&order=criado_em.desc&limit=300")
+    .then(function(rs){
+      rs = rs || [];
+      var h = '<table><thead><tr><th>Quando</th><th>Destinatário</th><th>Destino</th><th>Campanha</th><th>Resposta crua</th></tr></thead><tbody>';
+      rs.forEach(function(r){
+        var c = porCod(r.campanha);
+        h += '<tr><td>' + esc(String(r.criado_em||"").slice(5,16).replace("T"," ")) + '</td>'
+          +  '<td>' + esc(r.nome||"—") + (r.codparc?(' <span style="color:var(--tinta2)">#'+r.codparc+'</span>'):"") + '</td>'
+          +  '<td>' + esc(r.fone || r.email || "—") + '</td>'
+          +  '<td>' + esc(c?c.nome:r.campanha) + ' · ' + esc(r.publico||"") + '</td>'
+          +  '<td style="color:var(--tinta2);max-width:380px;word-break:break-word">' + esc(String(r.resultado||"—").slice(0,220)) + '</td></tr>';
+      });
+      h += '</tbody></table>';
+      if (rs.length >= 300) h += '<div class="note2" style="padding:6px 8px">mostrando as 300 mais recentes</div>';
+      TRAVAB[t] = h; box.innerHTML = h;
+    })
+    .catch(function(e){ box.innerHTML = '<div class="aviso">✗ ' + esc(e.message) + '</div>'; });
+}
+function pintaConf(rs){
+  if (!rs.length){ $("travConf").innerHTML = '<div class="aviso">Sem disparos registrados.</div>'; return; }
+  var h = '<table><thead><tr><th>Dia</th><th>Campanha</th><th>Público</th><th>Canal</th>'
+        + '<th title="parceiros distintos">Clientes</th><th title="contatos distintos">Destinos</th>'
+        + '<th title="uma por contato e por canal — e o que a fila processa">Linhas</th>'
+        + '<th>Enviados</th><th>Erros</th><th>Parados</th></tr></thead><tbody>';
+  rs.forEach(function(r){
+    var c = porCod(r.campanha);
+    h += '<tr><td>' + curto(r.dia) + '</td><td>' + esc(c?c.nome:r.campanha) + '</td>'
+      +  '<td>' + esc(r.publico) + '</td><td>' + esc(r.canal) + '</td>'
+      +  '<td>' + (r.clientes||"—") + '</td><td>' + r.destinos + '</td>'
+      +  '<td><b>' + r.linhas + '</b></td>'
+      +  '<td style="color:#1a7f4b">' + r.enviado + '</td>'
+      +  '<td>' + (r.erro?'<b style="color:#9c2b2b">'+r.erro+'</b>':0) + '</td>'
+      +  '<td>' + (r.parado?'<b style="color:#b7791f">'+r.parado+'</b>':0) + '</td></tr>';
+  });
+  $("travConf").innerHTML = h + '</tbody></table>';
 }
 
 function opcoes(sel){

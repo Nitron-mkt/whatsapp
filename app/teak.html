@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+<title>Máquina de Vendas — Teak Brazil</title>
+<!--
+  PAINEL DA TEAK. Nao e o gestor.html com outra cor.
+
+  A Nitron vende carteira: 17 mil clientes, Clube, saldo, voucher, giro, 80 representantes. A tela
+  dela e "escolher campanha -> montar fila -> disparar".
+
+  A Teak e outra empresa. 12 clientes reais no ERP e 2931 contatos no CRM, quase todos leads de
+  feira (Formobile) e WhatsApp de entrada. Uma pessoa atende tudo. O que move a Teak nao e o
+  cliente recomprar, e o LEAD ANDAR NO PIPELINE — e ela ja tinha 4 pipelines desenhados no CRM.
+
+  Entao esta tela e um FUNIL + CAIXA DE ENTRADA, organizada nos pipelines dela, e a primeira coisa
+  que aparece e a divida: quem esta esperando a nossa resposta.
+
+  Duas regras herdadas que NAO vao ser reintroduzidas aqui (secao 5.2 do doc): destinatario nunca
+  nasce marcado, e a tela diz o que vai sair antes do clique.
+-->
+<style>
+  /* Paleta da Teak: madeira. A da Nitron e verde industrial — sao empresas diferentes e as telas
+     tem de ser reconheciveis de longe, para ninguem operar uma pensando que e a outra. */
+  .tk{--brand:#4a2c17;--brand2:#6b4423;--accent:#c8862a;--ink:#241a12;--soft:#5c4a3a;--faint:#8a7663;
+      --line:#e2d7c9;--bg:#faf7f2;--panel:#fff;--ok:#1a7a44;--okbg:#dbeee1;--warn:#b7791f;
+      --warnbg:#fbf0da;--crit:#c0392b;--critbg:#fbe4e1;--chip:#f2ebe1;--info:#0b6f86;
+      font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);
+      background:var(--bg);padding:16px;max-width:1060px;margin:0 auto}
+  body{margin:0;background:#faf7f2}
+  .tk *{box-sizing:border-box}
+  .tk h1{font-size:19px;margin:0}
+  .tk .sub{font-size:12.5px;color:var(--soft)}
+  .tk .top{display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+  .tk .logo{width:34px;height:34px;border-radius:9px;background:var(--brand);color:#f6e7cf;display:grid;place-items:center;font-weight:800;font-size:15px}
+  .tk .stat{font-size:11.5px;font-weight:600;padding:3px 10px;border-radius:999px;background:var(--chip);color:var(--soft)}
+  .tk .stat.ok{background:var(--okbg);color:var(--ok)}
+  .tk .stat.bad{background:var(--critbg);color:var(--crit)}
+  .tk .aviso{margin-top:14px;border-radius:11px;padding:12px 15px;font-size:12.5px;line-height:1.65;border:1px solid}
+  .tk .aviso.w{background:var(--warnbg);border-color:#e8cf9a;color:#6b4b12}
+  .tk .aviso.c{background:var(--critbg);border-color:#f0c5bf;color:#8d2b20}
+  .tk .aviso b{font-weight:700}
+  .tk .aviso code{background:rgba(0,0,0,.06);padding:1px 5px;border-radius:4px;font-size:11.5px}
+  .tk .sec{margin-top:18px}
+  .tk .sec h2{margin:0 0 7px;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--soft);border-bottom:1px solid var(--line);padding-bottom:5px}
+  /* funil: os estagios do pipeline Novos Clientes, na ordem que a Teak desenhou */
+  .tk .funil{display:flex;gap:6px;flex-wrap:wrap}
+  .tk .fs{flex:1;min-width:118px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 11px}
+  .tk .fs .n{font-size:21px;font-weight:750;line-height:1.1}
+  .tk .fs .l{font-size:11px;color:var(--soft);margin-top:2px}
+  .tk .fs.dest{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .tk .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(238px,1fr));gap:8px}
+  .tk .cc{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer}
+  .tk .cc:hover{border-color:var(--accent)}
+  .tk .cc.sel{box-shadow:0 0 0 2px var(--accent);border-color:var(--accent)}
+  .tk .cc.off{opacity:.55;cursor:default}
+  .tk .cc .nm{font-weight:650;font-size:13px}
+  .tk .cc .ob{font-size:10.5px;color:var(--faint);margin-top:3px;line-height:1.45}
+  .tk .cc .qt{float:right;font-size:16px;font-weight:750;color:var(--accent)}
+  .tk .cc .qt.zero{color:var(--faint);font-weight:600}
+  .tk .tg{font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:999px;margin-top:6px;display:inline-block}
+  .tk .t-int{background:#e6eef2;color:var(--info)}
+  .tk .t-off{background:var(--chip);color:var(--faint)}
+  .tk .t-div{background:var(--critbg);color:var(--crit)}
+  .tk .op{margin-top:16px;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:none}
+  .tk .op.show{display:block}
+  .tk .oh{background:linear-gradient(100deg,#4a2c17,#6b4423);color:#f6e7cf;padding:13px 18px}
+  .tk .oh h3{margin:2px 0;font-size:17px;color:#fff}
+  .tk .oh p{margin:0;font-size:12px;opacity:.92}
+  .tk .bd{padding:13px 18px}
+  .tk table{width:100%;border-collapse:collapse;font-size:12.5px}
+  .tk th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--soft);border-bottom:1px solid var(--line);padding:6px 8px;font-weight:700}
+  .tk td{padding:7px 8px;border-bottom:1px solid var(--chip);vertical-align:top}
+  .tk tr:last-child td{border-bottom:none}
+  .tk .wrap{border:1px solid var(--line);border-radius:11px;max-height:460px;overflow:auto}
+  .tk .dias{font-weight:700}
+  .tk .dias.q{color:var(--crit)}
+  .tk .dias.m{color:var(--warn)}
+  .tk .ia{font-size:11px;color:var(--faint);line-height:1.5;margin-top:3px;max-width:520px}
+  .tk .et{font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:999px;background:var(--chip);color:var(--soft);margin-right:5px}
+  .tk .nofone{color:var(--crit);font-size:11.5px;font-weight:600}
+  .tk .foot{margin-top:22px;font-size:11.5px;color:var(--faint);line-height:1.7;border-top:1px solid var(--line);padding-top:12px}
+  .tk .foot code{background:var(--chip);padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="tk">
+  <div class="top">
+    <div class="logo">TK</div>
+    <div style="flex:1">
+      <h1>Máquina de Vendas — Teak Brazil</h1>
+      <div class="sub" id="sub">CODEMP 8, 21 · subconta própria do GHL · carregando…</div>
+    </div>
+    <span class="stat" id="stat">conectando…</span>
+  </div>
+
+  <div id="avisos"></div>
+
+  <div class="sec" id="secFunil" style="display:none">
+    <h2>Funil — Novos Clientes</h2>
+    <div class="funil" id="funil"></div>
+  </div>
+
+  <div class="sec">
+    <h2>O que está esperando</h2>
+    <div class="cards" id="cards"></div>
+  </div>
+
+  <div class="op" id="op"></div>
+
+  <div class="foot" id="foot"></div>
+</div>
+<script>
+(function(){
+  var SUPA="https://bwbeieumxcuomtrvlqxs.supabase.co";
+  var ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ3YmVpZXVteGN1b210cnZscXhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYwMzU2NjEsImV4cCI6MjEwMTYxMTY2MX0.r7zk6EdIxpDYkzjKNCUlzvipVFi-CZPYfoMZXXA9q0g";
+  var H={"Authorization":"Bearer "+ANON,"apikey":ANON,"Content-Type":"application/json"};
+  var EMP="teak";
+
+  function $(i){return document.getElementById(i);}
+  function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];});}
+  function getJSON(u,cb){var x=new XMLHttpRequest();x.open("GET",u,true);for(var k in H)x.setRequestHeader(k,H[k]);
+    x.onreadystatechange=function(){if(x.readyState===4){try{cb(x.status>=200&&x.status<300?JSON.parse(x.responseText):{erro:"status "+x.status});}catch(e){cb({erro:String(e)});}}};x.send();}
+  function tempoDesde(iso){if(!iso)return "nunca";var s=Math.floor((Date.now()-new Date(iso).getTime())/1000);
+    if(s<90)return "agora";if(s<5400)return "há "+Math.round(s/60)+" min";if(s<172800)return "há "+Math.round(s/3600)+"h";return "há "+Math.round(s/86400)+"d";}
+  function brl(v){var n=Number(v||0);return "R$ "+n.toLocaleString("pt-BR",{maximumFractionDigits:0});}
+  function fone(v){return v?esc(v):'<span class="nofone">sem telefone</span>';}
+  function clsDias(d){d=Number(d);return d>=30?"q":(d>=14?"m":"");}
+
+  /* As campanhas da Teak e de onde sai o publico de cada uma. A view e a FONTE UNICA da regra:
+     a tela nao reimplementa filtro nenhum, so lista o que a view devolve. Previa com regra propria
+     mente — foi um dos erros que custaram caro (secao 8 do doc). */
+  var FONTE={
+    teak_lead_aguardando:          {view:"teak_lead_aguardando",          tipo:"lead"},
+    teak_lead_qualificado_proposta:{view:"teak_lead_qualificado",         tipo:"lead"},
+    teak_proposta_sem_retorno:     {view:"teak_lead_proposta",            tipo:"lead"},
+    teak_lead_feira_retomar:       {view:"teak_lead_feira",               tipo:"lead"},
+    teak_recompra_giro:            {view:"teak_cliente_recompra",         tipo:"cliente"},
+    teak_primeiro_pedido:          {view:"teak_cliente_ativar",           tipo:"cliente", filtro:"&no_giro=is.false&inadimp=is.false"},
+    teak_dado_telefone:            {view:"teak_lead_dado",                tipo:"dado"},
+    teak_rep_recrutar:             {view:"teak_rep_candidato",            tipo:"lead"},
+    teak_ka_revisao:               {view:null,                            tipo:"lead"}
+  };
+  var ESPERA={}, CAMPS=[], CUR=null, ESTAGIOS=[], METAS={};
+
+  function init(){
+    getJSON(SUPA+"/rest/v1/empresa?painel_id=eq."+EMP+"&select=nome,codemp,ghl_location,pronto,fonte_publico,universo",function(d){
+      if(d && d.length){var e=d[0];
+        $("sub").textContent="CODEMP "+(e.codemp||"?")+" · subconta "+(e.ghl_location||"—")+" · público: "+((e.fonte_publico||[]).join(" + ")||"—");
+      }
+    });
+    getJSON(SUPA+"/rest/v1/cache_meta?chave=in.(snapshot:teak,leads:teak)&select=chave,atualizado,detalhe",function(d){
+      if(Array.isArray(d))d.forEach(function(r){METAS[r.chave]=r;});
+      pintarAvisos(); pintarFoot();
+    });
+    getJSON(SUPA+"/rest/v1/snap_pipeline?empresa=eq."+EMP+"&pipeline=eq.Novos%20Clientes&select=stage,posicao&order=posicao",function(d){
+      if(Array.isArray(d)&&d.length){ESTAGIOS=d;carregarFunil();}
+    });
+    getJSON(SUPA+"/rest/v1/teak_espera?select=campanha_codigo,esperando,regra",function(d){
+      if(Array.isArray(d))d.forEach(function(r){ESPERA[r.campanha_codigo]=r;});
+      getJSON(SUPA+"/functions/v1/campanhas-listar?empresa="+EMP,function(c){
+        if(c.erro){$("stat").textContent="erro: "+c.erro;$("stat").className="stat bad";return;}
+        $("stat").textContent="conectado ✓";$("stat").className="stat ok";
+        CAMPS=c.campanhas||[];renderCards();
+      });
+    });
+  }
+
+  /* Funil por estagio. Conta no banco, uma consulta por estagio com count exact — nao conta as
+     primeiras N linhas e chama de total (secao 5.7 do doc). */
+  function carregarFunil(){
+    $("secFunil").style.display="";
+    var html="";ESTAGIOS.forEach(function(s){html+='<div class="fs" id="fs_'+s.posicao+'"><div class="n">…</div><div class="l">'+esc(s.stage)+'</div></div>';});
+    $("funil").innerHTML=html;
+    ESTAGIOS.forEach(function(s){
+      var x=new XMLHttpRequest();
+      x.open("GET",SUPA+"/rest/v1/teak_lead?stage=eq."+encodeURIComponent(s.stage)+"&select=ghl_id",true);
+      for(var k in H)x.setRequestHeader(k,H[k]);
+      x.setRequestHeader("Prefer","count=exact");x.setRequestHeader("Range","0-0");
+      x.onreadystatechange=function(){if(x.readyState===4){
+        var cr=x.getResponseHeader("Content-Range")||"";var n=cr.split("/")[1];
+        var el=$("fs_"+s.posicao);if(el)el.querySelector(".n").textContent=(n==null||n==="*")?"—":n;
+      }};
+      x.send();
+    });
+  }
+
+  function pintarAvisos(){
+    var box=$("avisos");var h="";
+    var leads=METAS["leads:teak"];
+    var det={};try{det=leads?JSON.parse(leads.detalhe||"{}"):{};}catch(e){}
+    if(!leads){
+      h+='<div class="aviso c"><b>Os 2.931 leads do CRM ainda não estão no snapshot.</b><br>'+
+         'A ingestão (<code>ghl-leads-refresh</code>) está pronta e recusou por credencial: o token do GHL é '+
+         '<b>escopado por location</b> e o do projeto responde <code>403 The token does not have access to this location</code> '+
+         'na subconta da Teak. Falta criar o secret <code>GHL_TOKEN_TEAK</code> nas Edge Functions com um token desta subconta.<br>'+
+         'Enquanto isso, as listas de <b>lead</b> aparecem vazias — e vazio aqui significa "não carregado", não "não existe".</div>';
+    } else if(det.paginacao_incompleta){
+      h+='<div class="aviso w"><b>Paginação incompleta.</b> Gravei '+esc(det.leads)+' leads mas o GHL informa '+
+         esc(det.total_informado_pelo_ghl)+'. O número desta tela está menor que a base real — rode a ingestão de novo.</div>';
+    }
+    // trava de envio: sem instancia cadastrada, WhatsApp e recusado de proposito
+    getJSON(SUPA+"/rest/v1/instancia_ghl?empresa=eq."+EMP+"&select=instancia,ativa,escopo",function(d){
+      var n=Array.isArray(d)?d.filter(function(x){return x.ativa;}).length:0;
+      if(!n){
+        box.innerHTML=h+'<div class="aviso w"><b>Nenhuma instância de WhatsApp cadastrada para a Teak.</b> '+
+          'Enquanto <code>instancia_ghl</code> não tiver uma linha desta empresa, o envio de WhatsApp é '+
+          '<b>recusado</b> pelo <code>campanhas-enviar</code>. Isso é proposital: mensagem pelo número errado é '+
+          'pior do que mensagem não enviada.</div>';
+      } else { box.innerHTML=h; }
+    });
+  }
+
+  function renderCards(){
+    var PIPES=[
+      {id:"novos_clientes",nome:"Novos Clientes"},
+      {id:"recompra",      nome:"Ciclo de Recompra"},
+      {id:"recrutamento",  nome:"Recrutamento de Força de Vendas"},
+      {id:"key_accounts",  nome:"Key Accounts"}
+    ];
+    var html="";
+    PIPES.forEach(function(p){
+      var lista=CAMPS.filter(function(c){return c.pipe===p.id;});
+      if(!lista.length)return;
+      html+='<div style="grid-column:1/-1;margin-top:4px;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--faint)">'+esc(p.nome)+'</div>';
+      lista.forEach(function(c){
+        var e=ESPERA[c.codigo]||{};
+        var n=(e.esperando==null)?"—":e.esperando;
+        var interno=(c.publico||[]).indexOf("interno")>=0;
+        var off=!c.ativa;
+        html+='<div class="cc'+(off?" off":"")+'" data-cod="'+esc(c.codigo)+'">'+
+              '<span class="qt'+(Number(n)?"":" zero")+'">'+esc(n)+'</span>'+
+              '<div class="nm">'+esc(c.nome)+'</div>'+
+              '<div class="ob">'+esc(c.objetivo||"")+'</div>'+
+              (interno?'<span class="tg t-int">interno · não envia</span>':"")+
+              (off?'<span class="tg t-off">desligada</span>':"")+
+              '</div>';
+      });
+    });
+    $("cards").innerHTML=html;
+    Array.prototype.forEach.call(document.querySelectorAll(".tk .cc"),function(el){
+      if(el.className.indexOf("off")>=0)return;
+      el.onclick=function(){abrir(el.getAttribute("data-cod"));};
+    });
+  }
+
+  function abrir(cod){
+    CUR=cod;
+    Array.prototype.forEach.call(document.querySelectorAll(".tk .cc"),function(el){
+      el.className=el.className.replace(/ sel/g,"")+(el.getAttribute("data-cod")===cod?" sel":"");
+    });
+    var c=null;CAMPS.forEach(function(x){if(x.codigo===cod)c=x;});
+    var f=FONTE[cod]||{};var e=ESPERA[cod]||{};
+    var op=$("op");op.className="op show";
+    op.innerHTML='<div class="oh"><h3>'+esc(c?c.nome:cod)+'</h3><p>'+esc(c?c.objetivo:"")+'</p></div>'+
+      '<div class="bd"><div style="font-size:12px;color:var(--soft);margin-bottom:10px">'+
+      'Público: <b>'+esc(e.esperando==null?"—":e.esperando)+'</b> · regra: '+esc(e.regra||"—")+
+      (f.view?' · fonte: <code>'+esc(f.view)+'</code>':"")+'</div>'+
+      '<div id="lista">carregando…</div></div>';
+    if(!f.view){$("lista").innerHTML='<div class="aviso w">Esta campanha ainda não tem público definido no banco.</div>';return;}
+    var sel=f.tipo==="cliente"
+      ? "codparc,nomeparc,rep,fone,email,inadimp"+(f.view==="teak_cliente_recompra"?",dias,fat12m,bucket":"")
+      : "ghl_id,nome,fone,email,tags,stage,dias_parado,etiqueta_ia,resumo_ia,ramo,fonte"+(f.tipo==="dado"?",problema":"");
+    getJSON(SUPA+"/rest/v1/"+f.view+"?select="+sel+(f.filtro||"")+"&limit=300",function(d){
+      if(!Array.isArray(d)){$("lista").innerHTML='<div class="aviso c">Não consegui carregar: '+esc(d&&d.erro)+'</div>';return;}
+      if(!d.length){
+        $("lista").innerHTML='<div class="aviso w">Nenhuma linha. '+
+          (f.tipo!=="cliente"&&!METAS["leads:teak"]
+            ? 'Os leads do CRM ainda não foram carregados (falta o secret <code>GHL_TOKEN_TEAK</code>) — <b>vazio aqui é "não carregado"</b>.'
+            : 'A regra desta campanha não encontrou ninguém agora.')+'</div>';
+        return;
+      }
+      $("lista").innerHTML=(f.tipo==="cliente")?tabCliente(d,f):tabLead(d,f);
+    });
+  }
+
+  function tabLead(d,f){
+    var h='<div class="wrap"><table><thead><tr><th>Contato</th><th>Telefone</th><th>Estágio</th>'+
+          (f.tipo==="dado"?'<th>Problema</th>':'<th>Parado</th>')+'</tr></thead><tbody>';
+    d.forEach(function(r){
+      h+='<tr><td><b>'+esc(r.nome||"(sem nome)")+'</b>'+
+         (r.etiqueta_ia?'<span class="et" style="margin-left:6px">'+esc(r.etiqueta_ia)+'</span>':"")+
+         (r.ramo?'<div class="ia">'+esc(r.ramo)+(r.fonte?" · "+esc(r.fonte):"")+'</div>':(r.fonte?'<div class="ia">'+esc(r.fonte)+'</div>':""))+
+         (r.resumo_ia?'<div class="ia">'+esc(String(r.resumo_ia).slice(0,220))+'</div>':"")+
+         '</td><td>'+fone(r.fone)+'</td><td>'+esc(r.stage||"—")+'</td>'+
+         (f.tipo==="dado"
+           ? '<td>'+esc(r.problema||"")+'</td>'
+           : '<td class="dias '+clsDias(r.dias_parado)+'">'+esc(r.dias_parado==null?"—":r.dias_parado+"d")+'</td>')+
+         '</tr>';
+    });
+    return h+'</tbody></table></div>';
+  }
+  function tabCliente(d,f){
+    var giro=(f.view==="teak_cliente_recompra");
+    var h='<div class="wrap"><table><thead><tr><th>Cliente</th><th>Telefone</th><th>Rep</th>'+
+          (giro?'<th>Faturou 12m</th><th>Parado</th>':'<th>Situação</th>')+'</tr></thead><tbody>';
+    d.forEach(function(r){
+      h+='<tr><td><b>'+esc(r.nomeparc||"")+'</b><div class="ia">CODPARC '+esc(r.codparc)+
+         (r.inadimp?' · <span style="color:var(--crit);font-weight:700">inadimplente</span>':"")+'</div></td>'+
+         '<td>'+fone(r.fone)+'</td><td>'+esc(r.rep||"—")+'</td>'+
+         (giro
+           ? '<td>'+brl(r.fat12m)+'</td><td class="dias '+clsDias(r.dias)+'">'+esc(r.dias)+'d · '+esc(r.bucket||"")+'</td>'
+           : '<td>fora do ciclo de recompra</td>')+
+         '</tr>';
+    });
+    return h+'</tbody></table></div>';
+  }
+
+  function pintarFoot(){
+    var s=METAS["snapshot:teak"], l=METAS["leads:teak"];
+    $("foot").innerHTML=
+      "<b>De onde vem cada número.</b> Clientes e recompra saem do <code>snap_*</code> do Sankhya "+
+      "(CODEMP 8 e 21) — atualizado "+esc(s?tempoDesde(s.atualizado):"nunca")+". "+
+      "Leads saem do <code>snap_lead</code>, espelho dos contatos da subconta do GHL — atualizado "+
+      esc(l?tempoDesde(l.atualizado):"nunca")+".<br>"+
+      "Nenhuma contagem desta tela é calculada aqui: toda regra mora numa view "+
+      "(<code>teak_espera</code>, <code>teak_lead_*</code>, <code>teak_cliente_*</code>), que é a mesma fonte "+
+      "que o envio usa. Tela com regra própria mente.<br>"+
+      "O número de saída do WhatsApp é o do <b>dono do contato</b> no CRM, não um <code>fromNumber</code>. "+
+      "Sem instância cadastrada em <code>instancia_ghl</code> para a Teak, o envio é recusado de propósito.";
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

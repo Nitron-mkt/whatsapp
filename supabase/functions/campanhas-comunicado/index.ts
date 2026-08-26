@@ -1,4 +1,4 @@
-// campanhas-comunicado (v4) — apoio a campanha rep_comunicado: recado livre da gestao para a rede
+// campanhas-comunicado (v5) — apoio a campanha rep_comunicado: recado livre da gestao para a rede
 // de representantes. NAO tem gatilho de dado e NAO usa IA: o texto e escrito na tela e muda a cada
 // envio, entao aqui so devolvemos a rede com os contatos de cada rep e guardamos os comunicados
 // anteriores para reuso.
@@ -30,7 +30,7 @@ const nf = (s: any) => digits(s).replace(/^0+/, "").replace(/^55/, "");
 function e164(fone: any): string { const d = digits(fone); if (!d) return ""; if (d.length <= 11) return "+55" + d; return "+" + d; }
 
 const API = "https://services.leadconnectorhq.com";
-// v: locationId E TOKEN saem do fonte e vem do cadastro `empresa`. Cada empresa do grupo e uma
+// v5: locationId E TOKEN saem do fonte e vem do cadastro `empresa`. Cada empresa do grupo e uma
 // SUBCONTA (location) diferente do mesmo GHL, e o token do GHL e escopado por location:
 // conferido em 26/08, o token da Nitron responde 403 "The token does not have access to this
 // location" na location da Teak. Mandar para a subconta errada cria contato no CRM errado.
@@ -114,7 +114,10 @@ Deno.serve(async (req) => {
     const { data: rcs, error: eRc } = await sb.from("rep_carteira").select("codvend,apelido,codparc,assist_idcrm,celular,email,clientes,carteira"); if (eRc) throw eRc;
     if (!rcs || !rcs.length) return j({ erro: "rep_carteira vazia — rode o rep-refresh antes" }, 500);
 
-    const { data: instRows, error: eI } = await sb.from("instancia_ghl").select("instancia,usuario_ghl_id").eq("ativa", true); if (eI) throw eI;
+    // Esta funcao e da Nitron (ver a nota no donosNoCRM abaixo). O filtro e explicito porque
+    // instancia_ghl passou a ter dono: sem ele, uma instancia de outra empresa apareceria como
+    // assistente valida de um representante daqui.
+    const { data: instRows, error: eI } = await sb.from("instancia_ghl").select("instancia,usuario_ghl_id").eq("ativa", true).eq("empresa", "nitron"); if (eI) throw eI;
     const porUsuario: Record<string, string> = {};
     (instRows || []).forEach((x: any) => { if (x.usuario_ghl_id) porUsuario[String(x.usuario_ghl_id)] = String(x.instancia); });
 
@@ -126,7 +129,10 @@ Deno.serve(async (req) => {
     const baseCp: Record<string, Ct[]> = {}; const baseCpMail: Record<string, Ct[]> = {};
     for (let i = 0; i < cps.length; i += 300) {
       const ch = cps.slice(i, i + 300);
-      const { data: sc, error: e1 } = await sb.from("snap_contato").select("codparc,fone,email").in("codparc", ch); if (e1) throw e1;
+      // .eq(empresa): CODPARC e GLOBAL no Sankhya e snap_contato agora tem mais de uma empresa.
+      // O CODPARC 1 e o 78701, por exemplo, existem na Nitron E na Teak — sem o filtro, o contato
+      // da outra empresa entraria na lista de quem recebe o comunicado.
+      const { data: sc, error: e1 } = await sb.from("snap_contato").select("codparc,fone,email").eq("empresa", "nitron").in("codparc", ch); if (e1) throw e1;
       (sc || []).forEach((c: any) => {
         if (c.fone) (baseCp[c.codparc] = baseCp[c.codparc] || []).push({ valor: c.fone, rotulo: "Sankhya" });
         if (c.email) (baseCpMail[c.codparc] = baseCpMail[c.codparc] || []).push({ valor: c.email, rotulo: "Sankhya" });

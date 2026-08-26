@@ -48,7 +48,7 @@ function variantes(fone: any): string[] {
   return [...out];
 }
 const API = "https://services.leadconnectorhq.com";
-// v: locationId E TOKEN saem do fonte e vem do cadastro `empresa`. Cada empresa do grupo e uma
+// v2: locationId E TOKEN saem do fonte e vem do cadastro `empresa`. Cada empresa do grupo e uma
 // SUBCONTA (location) diferente do mesmo GHL, e o token do GHL e escopado por location:
 // conferido em 26/08, o token da Nitron responde 403 "The token does not have access to this
 // location" na location da Teak. Mandar para a subconta errada cria contato no CRM errado.
@@ -77,10 +77,21 @@ async function empresaGhl(id: string): Promise<EmpGhl> {
   empGhlCache[id] = { at: Date.now(), v };
   return v;
 }
-const FID_CODPARC = "HaDWHgnJSjDDdPF7XFDH";
+// O id do campo personalizado tambem e POR LOCATION — o "Codigo Parceiro" da Teak, por exemplo,
+// e 5ZfLRhefBnUyAys0BOGU, outro id. Mandar o id da Nitron para outra subconta faria o GHL aceitar
+// calado e gravar no campo errado. Vem do cadastro, junto com location e token.
+async function campoCodparc(id: string): Promise<string | null> {
+  const base = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, ""); const k = srvKey();
+  if (!base || !k) return null;
+  const r = await fetch(`${base}/rest/v1/empresa?painel_id=eq.${encodeURIComponent(id)}&select=campos`, { headers: { apikey: k, Authorization: "Bearer " + k } });
+  if (!r.ok) return null;
+  const rows = await r.json().catch(() => []);
+  const c = Array.isArray(rows) && rows[0]?.campos ? rows[0].campos : null;
+  return (c && typeof c === "object" && c.codparc) ? String(c.codparc) : null;
+}
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146.0 Safari/537.36";
 function ghl(tok: string, method: string, path: string, body?: any) {
-  return fetch(API + path, { method, headers: { "Authorization": "Bearer " + Deno.env.get("GHL_TOKEN"), "Version": "2021-07-28", "Content-Type": "application/json", "Accept": "application/json", "User-Agent": UA }, body: body ? JSON.stringify(body) : undefined });
+  return fetch(API + path, { method, headers: { "Authorization": "Bearer " + tok, "Version": "2021-07-28", "Content-Type": "application/json", "Accept": "application/json", "User-Agent": UA }, body: body ? JSON.stringify(body) : undefined });
 }
 async function acharPorFone(g: EmpGhl, fone: string): Promise<any> {
   for (const v of variantes(fone)) {
@@ -109,7 +120,9 @@ Deno.serve(async (req) => {
     const sb = createClient(Deno.env.get("SUPABASE_URL")!, srvKey());
 
     // a instancia de campanha e a de escopo cliente, ativa
-    const { data: instCli } = await sb.from("instancia_ghl").select("instancia,usuario_ghl_id").eq("ativa", true).eq("escopo", "cliente").order("instancia").limit(1).maybeSingle();
+    // .eq(empresa): instancia_ghl passou a ter dono. Sem o filtro, a instancia de campanha de OUTRA
+    // empresa poderia virar a dona dos contatos desta — e o numero de saida seria o da outra.
+    const { data: instCli } = await sb.from("instancia_ghl").select("instancia,usuario_ghl_id").eq("ativa", true).eq("escopo", "cliente").eq("empresa", empId).order("instancia").limit(1).maybeSingle();
     if (!instCli?.usuario_ghl_id) return j({ ok: false, erro: "nenhuma instancia de escopo 'cliente' ativa com usuario_ghl_id no cadastro" }, 400);
     const alvo = String(instCli.usuario_ghl_id);
 
@@ -128,7 +141,8 @@ Deno.serve(async (req) => {
           if (!criar) { out.push({ fone: f, acao: "nao_achei_no_crm" }); continue; }
           if (seco) { out.push({ fone: f, acao: "criaria", nome: it.nome || null }); continue; }
           const campos: any = { locationId: g.loc, phone: e164(f), firstName: it.nome || ("Cliente " + e164(f)), assignedTo: alvo };
-          if (it.codparc) campos.customFields = [{ id: FID_CODPARC, value: String(it.codparc) }];
+          const fidCodparc = await campoCodparc(empId);
+          if (it.codparc && fidCodparc) campos.customFields = [{ id: fidCodparc, value: String(it.codparc) }];
           const rc = await ghl(g.tok, "POST", "/contacts/upsert", campos);
           const dc = await rc.json().catch(() => ({}));
           const id = dc?.contact?.id || null;

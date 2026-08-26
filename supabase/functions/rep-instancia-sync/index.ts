@@ -1,4 +1,4 @@
-// rep-instancia-sync (v3) — grava em rep_carteira quem e o proprietario do contato de cada
+// rep-instancia-sync (v4) — grava em rep_carteira quem e o proprietario do contato de cada
 // representante no CRM, para TODAS as campanhas lerem a mesma verdade pela view rep_instancia.
 //
 // Por que isso existe: o numero de WhatsApp que o cliente ve e o do usuario remetente, e numa
@@ -36,7 +36,7 @@ function variantes(fone: any): string[] {
 }
 
 const API = "https://services.leadconnectorhq.com";
-// v: locationId E TOKEN saem do fonte e vem do cadastro `empresa`. Cada empresa do grupo e uma
+// v4: locationId E TOKEN saem do fonte e vem do cadastro `empresa`. Cada empresa do grupo e uma
 // SUBCONTA (location) diferente do mesmo GHL, e o token do GHL e escopado por location:
 // conferido em 26/08, o token da Nitron responde 403 "The token does not have access to this
 // location" na location da Teak. Mandar para a subconta errada cria contato no CRM errado.
@@ -126,7 +126,10 @@ Deno.serve(async (req) => {
     const baseCp: Record<string, string[]> = {};
     for (let i = 0; i < cps.length; i += 300) {
       const ch = cps.slice(i, i + 300);
-      const { data: sc, error: e1 } = await sb.from("snap_contato").select("codparc,fone").in("codparc", ch); if (e1) throw e1;
+      // .eq(empresa): CODPARC e GLOBAL no Sankhya e snap_contato agora tem mais de uma empresa.
+      // O CODPARC 1 e o 78701, por exemplo, existem na Nitron E na Teak — sem o filtro, o telefone
+      // do contato da outra empresa entraria na base deste rep.
+      const { data: sc, error: e1 } = await sb.from("snap_contato").select("codparc,fone").eq("empresa", empId).in("codparc", ch); if (e1) throw e1;
       (sc || []).forEach((c: any) => { if (c.fone) (baseCp[c.codparc] = baseCp[c.codparc] || []).push(c.fone); });
       const { data: gc, error: e2 } = await sb.from("ghl_contato").select("codparc,fone").in("codparc", ch); if (e2) throw e2;
       (gc || []).forEach((c: any) => { if (c.fone) (baseCp[c.codparc] = baseCp[c.codparc] || []).push(c.fone); });

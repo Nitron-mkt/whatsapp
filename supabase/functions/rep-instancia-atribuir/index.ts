@@ -1,4 +1,4 @@
-// rep-instancia-atribuir (v1) — poe a assistente do organograma como PROPRIETARIA, no CRM, do
+// rep-instancia-atribuir (v2) — poe a assistente do organograma como PROPRIETARIA, no CRM, do
 // contato de todo representante que hoje nao tem instancia nenhuma.
 //
 // Por que: o WhatsApp sai pelo numero do usuario remetente, e numa mensagem de API o remetente e o
@@ -36,7 +36,7 @@ function variantes(fone: any): string[] {
   return [...out];
 }
 const API = "https://services.leadconnectorhq.com";
-// v: locationId E TOKEN saem do fonte e vem do cadastro `empresa`. Cada empresa do grupo e uma
+// v2: locationId E TOKEN saem do fonte e vem do cadastro `empresa`. Cada empresa do grupo e uma
 // SUBCONTA (location) diferente do mesmo GHL, e o token do GHL e escopado por location:
 // conferido em 26/08, o token da Nitron responde 403 "The token does not have access to this
 // location" na location da Teak. Mandar para a subconta errada cria contato no CRM errado.
@@ -67,7 +67,7 @@ async function empresaGhl(id: string): Promise<EmpGhl> {
 }
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146.0 Safari/537.36";
 function ghl(tok: string, method: string, path: string, body?: any) {
-  return fetch(API + path, { method, headers: { "Authorization": "Bearer " + Deno.env.get("GHL_TOKEN"), "Version": "2021-07-28", "Content-Type": "application/json", "Accept": "application/json", "User-Agent": UA }, body: body ? JSON.stringify(body) : undefined });
+  return fetch(API + path, { method, headers: { "Authorization": "Bearer " + tok, "Version": "2021-07-28", "Content-Type": "application/json", "Accept": "application/json", "User-Agent": UA }, body: body ? JSON.stringify(body) : undefined });
 }
 async function buscarUm(g: EmpGhl, q: string): Promise<any> {
   try { const r = await ghl(g.tok, "GET", `/contacts/?locationId=${g.loc}&query=${encodeURIComponent(q)}&limit=1`); if (!r.ok) return null; const d = await r.json(); return (d?.contacts || [])[0] || null; } catch { return null; }

@@ -416,3 +416,54 @@ O roteiro da §4 assume Sankhya → GHL. Para a Roga a ordem é outra:
 4. **Criar a instância de WhatsApp** da Roga no ZaptosWPP com usuário próprio no GHL, e só então
    cadastrar em `instancia_ghl` (já com a coluna do passo 1).
 5. Só depois: `pronto:true` e o teste com **um** destinatário, conferindo entrega no GHL (§5.1).
+
+### 9.7 O mapa do CRM da Roga (medido em 26/08/2026)
+
+Levantado com a decisão já tomada de trabalhar em duas fases: **GHL agora, PMS quando existir.**
+Isto é o retrato da fase 1 — o que dá para acionar hoje.
+
+**A base inteira: 10.069 contatos.**
+
+| corte | contatos | % | leitura |
+|---|---|---|---|
+| com telefone | 8.391 | 83% | **o canal da Roga é WhatsApp** |
+| com e-mail | 1.098 | 11% | e-mail não sustenta campanha aqui |
+| em DND | 0 | 0% | ninguém pediu para sair — e também **não há higiene de opt-out ainda** |
+| com alguma tag | 1.080 | 11% | **89% da base não está segmentada** |
+
+O número que importa não é 10.069, é **1.080**: o resto é massa sem qualificação nenhuma. Vale a
+regra da §5.7 — se o número vai virar público de campanha, conte no destino, não no total da tela.
+
+**Os segmentos que existem hoje:**
+
+| tag | contatos | o que é |
+|---|---|---|
+| `contato-empresas` | 585 | importação CSV B2B, com Razao Social, Segmento, Departamento e CEP preenchidos |
+| `agencias` | 165 | importação CSV de agências (Segmento = "Agência") |
+| `mailling_paulinho` | 82 | mailing importado |
+| `reserva-roga` | 33 | lead de reserva vindo do site |
+| `cubo` | 19 | tipo de unidade habitacional |
+| `proposta-roga` | 14 | proposta enviada |
+| `business-clube` / `treinamentos` | 1 cada | praticamente vazias |
+| `network` / `listafrianitron` | 0 | tag criada e nunca usada |
+
+**Os pipelines:**
+
+| pipeline | criado | oportunidades | ganhas |
+|---|---|---|---|
+| Hospedagem Lazer | 03/2026 | 61 | 3 |
+| Eventos Corporativos | 11/2025 | 35 | — |
+| Eventos Sociais | 19/08/2026 | 0 | — |
+| Business Club | 19/08/2026 | 0 | — |
+| Retorno do Hospede | 19/08/2026 | 0 | — |
+
+Os três de 19/08 são do mesmo preparo da §9.3 e nunca foram usados. E note o tamanho do funil: **96
+oportunidades e 3 ganhas** para um hotel que opera todo dia. A reserva de verdade (balcão, telefone,
+OTA) **não está passando pelo CRM** — o que reforça que a fase 2 (PMS) é o que fecha o ciclo, e que
+a fase 1 trabalha demanda nova, não recompra de hóspede.
+
+> **Higienizar antes de disparar.** Há contatos de teste com tag de produção: `teste@teste.com.br`
+> (tag `proposta-roga`), `contato.teste@rogavillage.com.br` (tag `treinamentos`), e telefones
+> claramente falsos (`+5511789456123`, `+5511988887777`). Existe até uma tag `reserva-teste`. Numa
+> base de 33 leads de reserva, um teste é 3% do disparo. Filtrar isso é pré-requisito do primeiro
+> envio, não capricho.

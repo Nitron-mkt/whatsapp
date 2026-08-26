@@ -181,9 +181,13 @@
           <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:#f4f8f6;border-bottom:1px solid var(--line);flex-wrap:wrap">
             <b style="font-size:13px">📬 Fila de envios</b>
             <span class="note" id="filaResumo">—</span>
-            <button class="btn" style="margin-left:auto" onclick="abrirCfg()">⚙ Cadência</button>
+            <button class="btn" style="margin-left:auto;border-color:#c0392b;color:#c0392b;font-weight:700" onclick="filaParar()" title="Desliga as chaves da fila. Não cancela nada: só para de puxar linha nova.">⛔ Parar agora</button>
+            <button class="btn" onclick="filaCancelarPend()" title="Marca como cancelada toda linha ainda não enviada DESTA campanha.">✖ Cancelar pendentes</button>
+            <button class="btn" onclick="abrirCfg()">⚙ Cadência</button>
             <button class="btn" onclick="statusFila()">↻ atualizar</button>
           </div>
+          <div class="note" id="filaAcaoStat" style="padding:0 12px"></div>
+          <div id="filaPend"></div>
           <div id="filaLista" style="max-height:300px;overflow:auto"></div>
         </div>
         <span class="note" id="note"></span>
@@ -1115,13 +1119,83 @@
     var btn=btnEl;if(btn){btn.disabled=true;btn.textContent="agendando…";}
     postJSON(SUPA+"/functions/v1/fila-enfileirar",{itens:itens},function(r){if(btn){btn.disabled=false;btn.textContent="📅 Agendar todos na fila";}
       if(r.ok){if(stEl)stEl.innerHTML='<b>✓ '+r.enfileirados+' na fila</b>';if(FILATIMER)clearInterval(FILATIMER);statusFila();FILATIMER=setInterval(statusFila,15000);}else{if(stEl)stEl.textContent="✗ "+(r.erro||"falha");}});}
-  function statusFila(){getJSON(SUPA+"/functions/v1/fila-enfileirar?campanha="+CUR,function(c){if(c.pendente===undefined&&c.enviado===undefined)return;
-    var res=$("filaResumoCom")||$("filaResumo");if(res)res.innerHTML='<b>'+(c.pendente||0)+'</b> pendente ('+(c.whatsapp_pendente||0)+' wpp · '+(c.email_pendente||0)+' email) · <b style="color:#1a7f4b">'+(c.enviado||0)+'</b> enviados'+((c.erro||0)?(' · <b style="color:#c0392b">'+c.erro+'</b> erro'):'');
+  /* ===== FREIO DE MAO E RESOLUCAO DE PENDENCIA =====
+     Ver que um disparo saiu errado e nao poder fazer nada foi o pior momento de hoje: os 71
+     WhatsApp ao representante ficaram na fila e so nao sairam porque a fila estava desligada por
+     outro motivo. Estes botoes existem para isso nao depender de sorte.
+       Parar agora        — desliga as chaves. NAO cancela nada: so para de puxar linha nova.
+       Cancelar pendentes — marca como cancelada toda linha desta campanha que ainda nao saiu.
+     Quem executa e a funcao fila-acao, nao a tela: escrever em fila_envio pelo painel exigiria dar
+     UPDATE ao anon, que esta embutido neste HTML. La as unicas transicoes possiveis sao quatro, e
+     'enviado' nunca e mexido — mensagem entregue nao se desfaz.                                  */
+  function filaAcao(corpo,cb){
+    var st=$("filaAcaoStat");if(st){st.textContent="…";st.style.color="#6a7f78";}
+    postJSON(SUPA+"/functions/v1/fila-acao",corpo,function(r){
+      if(st){
+        if(r&&r.ok){st.style.color="#1a7a44";
+          st.textContent=(corpo.acao==="parar")?"⛔ fila parada — nada novo sai até você retomar"
+            :(corpo.acao==="retomar")?"▶ fila retomada"
+            :("✓ "+(r.mexidas||0)+" linha(s) "+(corpo.acao==="cancelar"?"cancelada(s)":"de volta na fila")
+              +((r.fora||0)?(" · "+r.fora+" fora do alvo (já enviadas ou em outro estado)"):""));
+        } else { st.style.color="#c0392b"; st.textContent="✗ "+((r&&(r.erro||r.motivo))||"falha"); }
+      }
+      statusFila();if(cb)cb(r);});}
+  function linhaAcao(a,id){
+    if(a==="cancelar"&&!confirm("Cancelar esta linha? Ela não sai mais."))return;
+    if(a==="reenviar"&&!confirm("Reenviar esta linha? Ela volta para a fila."))return;
+    filaAcao({acao:a,ids:[id],quem:"painel"});}
+  function filaParar(){
+    if(!confirm("Desligar a fila agora?\n\nNada de novo sai (WhatsApp e e-mail) até você retomar em Cadência. As linhas ficam guardadas, nada é perdido."))return;
+    filaAcao({acao:"parar",canal:"ambos",quem:"painel"});}
+  function filaRetomar(){filaAcao({acao:"retomar",canal:"ambos",quem:"painel"});}
+  function filaCancelarPend(){
+    if(!confirm("Cancelar TODAS as linhas desta campanha que ainda não saíram?\n\nCampanha: "+CUR+"\n\nO que já foi enviado não é afetado. Cancelada não sai mais, mas você pode reenviar depois."))return;
+    filaAcao({acao:"cancelar",filtro:{campanha:CUR},quem:"painel",motivo:"cancelamento em massa no painel"});}
+  /* Bloco de pendencias por motivo, com os dois botoes que faltavam. Le a mesma classificacao da
+     agenda (fila_trava_resumo), entao os dois lugares contam a mesma coisa. */
+  function pendencias(){
+    var box=$("filaPend");if(!box)return;
+    getJSON(SUPA+"/rest/v1/fila_trava_resumo?select=trava,trava_txt,acao,quem,recupera,gravidade,linhas&campanha=eq."+encodeURIComponent(CUR)+"&order=gravidade.asc",function(rs){
+      if(!Array.isArray(rs)||!rs.length){box.innerHTML="";return;}
+      var por={};rs.forEach(function(r){var k=r.trava;if(!por[k])por[k]={t:k,txt:r.trava_txt,ac:r.acao,quem:r.quem,rec:r.recupera,g:r.gravidade,n:0};por[k].n+=(+r.linhas||0);});
+      var gs=Object.keys(por).map(function(k){return por[k];});
+      gs.sort(function(a,b){return (a.g-b.g)||(b.n-a.n);});
+      var h='<div style="border-bottom:1px solid var(--line);padding:9px 12px;background:#fffdf7">'
+        +'<div class="note" style="margin-bottom:6px"><b>🚧 Pendências desta campanha</b> — resolva cada motivo: reenviar (se fizer sentido) ou cancelar para sair da lista.</div>';
+      gs.forEach(function(g){
+        h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:5px 0;border-top:1px solid #f0eee6">'
+          +'<b style="min-width:34px;font-size:15px">'+g.n+'</b>'
+          +'<span style="font-size:12.5px;flex:1;min-width:220px">'+esc(g.txt)+'<div class="note">✔ '+esc(g.ac)+'</div></span>'
+          +(g.rec?('<button class="btn ok" style="padding:3px 9px;font-size:11.5px" onclick="pendReenviar(\''+g.t+'\','+g.n+')">↻ reenviar os '+g.n+'</button>')
+                 :('<span class="note" style="color:#b7791f;font-size:11px">reenviar não resolve</span>'))
+          +'<button class="btn" style="padding:3px 9px;font-size:11.5px" onclick="pendCancelar(\''+g.t+'\','+g.n+')">✖ cancelar os '+g.n+'</button>'
+          +'</div>';});
+      box.innerHTML=h+'</div>';});}
+  function pendReenviar(t,n){
+    if(!confirm("Reenviar "+n+" linha(s) deste motivo?\n\nElas voltam para pendente e saem na cadência. Se a causa não foi corrigida, vão falhar igual."))return;
+    filaAcao({acao:"reenviar",trava:t,filtro:{campanha:CUR},quem:"painel",motivo:"reenvio da pendencia "+t});}
+  function pendCancelar(t,n){
+    if(!confirm("Cancelar "+n+" linha(s) deste motivo?\n\nSaem da fila e da lista de pendências. O que já foi enviado não é afetado."))return;
+    filaAcao({acao:"cancelar",trava:t,filtro:{campanha:CUR},quem:"painel",motivo:"cancelamento da pendencia "+t});}
+  function statusFila(){pendencias();getJSON(SUPA+"/functions/v1/fila-enfileirar?campanha="+CUR,function(c){if(c.pendente===undefined&&c.enviado===undefined)return;
+    /* estes numeros sao da CAMPANHA INTEIRA (contagem exata no banco), nao das linhas mostradas
+       abaixo — a lista e so um recorte das 80 ultimas. Confundir os dois foi o que fez cada tela
+       mostrar um total diferente. */
+    var res=$("filaResumoCom")||$("filaResumo");if(res)res.innerHTML='<b>'+(c.pendente||0)+'</b> a sair ('+(c.whatsapp_pendente||0)+' wpp · '+(c.email_pendente||0)+' email) · <b style="color:#1a7f4b">'+(c.enviado||0)+'</b> enviados'+((c.erro||0)?(' · <b style="color:#c0392b">'+c.erro+'</b> erro'):'')+((c.cancelado||0)?(' · <b style="color:#6a7f78">'+c.cancelado+'</b> cancelado'):'')+' <span class="note">— total '+(c.total||0)+' nesta campanha</span>';
     var lista=$("filaListaCom")||$("filaLista");if(lista){var its=c.itens||[];if(!its.length){lista.innerHTML='<div class="note" style="padding:14px">Fila vazia. Marque os destinatários e clique <b>Criar fila e enviar</b>.</div>';}
-      else{var h='<table class="ftab"><thead><tr><th>Quando</th><th>Público</th><th>Canal</th><th>Destinatário</th><th>Status</th></tr></thead><tbody>';
+      else{var h='<table class="ftab"><thead><tr><th>Quando</th><th>Público</th><th>Canal</th><th>Destinatário</th><th>Status</th><th></th></tr></thead><tbody>';
         its.forEach(function(r){var dest=r.canal==="email"?(r.email||""):(r.fone||"");var inst=r.instancia?(" · 📲 "+r.instancia):"";var arte=r.template_id?" 🎨arte":"";var stc=r.status==="enviado"?"#1a7f4b":(r.status==="erro"?"#c0392b":"#b7791f");var when=String(r.enviado_em||r.criado_em||"").replace("T"," ").slice(5,16);
-          h+='<tr><td class="note">'+when+'</td><td>'+(r.publico==="rep"?"👔 rep":"🏢 cliente")+'</td><td>'+(r.canal==="email"?"✉ email":"📱 wpp")+arte+'</td><td><b>'+esc(r.nome||"")+'</b><div class="note">'+esc(dest)+inst+'</div></td><td style="color:'+stc+'"><b>'+r.status+'</b>'+(r.resultado?('<div class="note">'+esc(r.resultado)+'</div>'):"")+'</td></tr>';});
-        h+='</tbody></table>';lista.innerHTML=h;}}
+          /* uma linha por vez: cancelar o que ainda nao saiu, reenviar o que falhou. 'enviado' nao
+             ganha botao nenhum — nao ha o que desfazer. */
+          var ac=(r.status==="pendente"||r.status==="agendado"||r.status==="enviando")
+            ? '<button class="btn" style="padding:1px 7px;font-size:11px" title="cancelar esta linha" onclick="linhaAcao(\'cancelar\','+r.id+')">✖</button>'
+            : ((r.status==="erro"||r.status==="cancelado")
+              ? '<button class="btn" style="padding:1px 7px;font-size:11px" title="reenviar esta linha" onclick="linhaAcao(\'reenviar\','+r.id+')">↻</button>'
+              : "");
+          h+='<tr><td class="note">'+when+'</td><td>'+(r.publico==="rep"?"👔 rep":"🏢 cliente")+'</td><td>'+(r.canal==="email"?"✉ email":"📱 wpp")+arte+'</td><td><b>'+esc(r.nome||"")+'</b><div class="note">'+esc(dest)+inst+'</div></td><td style="color:'+stc+'"><b>'+r.status+'</b>'+(r.resultado?('<div class="note">'+esc(r.resultado)+'</div>'):"")+'</td><td>'+ac+'</td></tr>';});
+        h+='</tbody></table>';
+        if((c.total||0)>its.length)h+='<div class="note" style="padding:7px 12px">mostrando as '+its.length+' linhas mais recentes de <b>'+c.total+'</b> nesta campanha — a contagem do topo é do total, não desta lista</div>';
+        lista.innerHTML=h;}}
     if((c.pendente||0)===0&&FILATIMER){clearInterval(FILATIMER);FILATIMER=null;}});}
   function enviarRep(i){var d=DRAFTS[i],st=$("s-"+i);var sel=REPSEL[d.codvend]||{tel:[],email:[]};var tel=sel.tel||[],em=sel.email||[];
     if(!tel.length&&!em.length){st.textContent="marque ao menos 1 contato do rep (abra o ▶)";st.style.color="#b7791f";return;}

@@ -1,4 +1,4 @@
-// fila-enfileirar (v16) — POST grava itens na fila_envio. GET devolve contagem + lista recente (p/ o painel da tela).
+// fila-enfileirar (v17) — POST grava itens na fila_envio. GET devolve contagem + lista recente (p/ o painel da tela).
 // v16: aceita `campos` — campos personalizados do CRM a gravar no contato ANTES do envio. Tem de ser
 // antes: o template do GHL e renderizado no momento em que a mensagem sai, entao campo gravado depois
 // aparece vazio na arte.
@@ -22,14 +22,36 @@ Deno.serve(async (req) => {
     const sb = createClient(Deno.env.get("SUPABASE_URL")!, key);
     if (req.method === "GET") {
       const u = new URL(req.url); const camp = u.searchParams.get("campanha");
-      let q = sb.from("fila_envio").select("id,campanha,publico,canal,instancia,fone,email,nome,template_id,status,resultado,criado_em,enviado_em").order("id", { ascending: false }).limit(200);
+      // A CONTAGEM E DA CAMPANHA INTEIRA, A LISTA E DAS ULTIMAS. Antes as duas vinham das mesmas
+      // 200 ultimas linhas, entao o cabecalho dizia "124 pendente" quando a campanha tinha outro
+      // numero — e cada tela mostrava um total diferente da outra. Contar e listar sao perguntas
+      // diferentes: o resumo usa count exato no banco (head, sem trazer linha), a lista traz 80.
+      const cont = async (f: (q: any) => any) => {
+        let q = sb.from("fila_envio").select("id", { count: "exact", head: true });
+        if (camp) q = q.eq("campanha", camp);
+        const { count, error } = await f(q);
+        if (error) throw error;
+        return count || 0;
+      };
+      const [total, enviado, erro, cancelado, pend, pendW, pendE] = await Promise.all([
+        cont((q: any) => q),
+        cont((q: any) => q.eq("status", "enviado")),
+        cont((q: any) => q.eq("status", "erro")),
+        cont((q: any) => q.eq("status", "cancelado")),
+        cont((q: any) => q.in("status", ["pendente", "agendado", "enviando"])),
+        cont((q: any) => q.in("status", ["pendente", "agendado", "enviando"]).eq("canal", "whatsapp")),
+        cont((q: any) => q.in("status", ["pendente", "agendado", "enviando"]).eq("canal", "email")),
+      ]);
+      let q = sb.from("fila_envio").select("id,campanha,publico,canal,instancia,fone,email,nome,template_id,status,resultado,criado_em,enviado_em").order("id", { ascending: false }).limit(80);
       if (camp) q = q.eq("campanha", camp);
       const { data, error } = await q;
       if (error) throw error;
       const rows = data || [];
-      const c: any = { pendente: 0, enviado: 0, erro: 0, whatsapp_pendente: 0, email_pendente: 0, total: rows.length };
-      rows.forEach((r: any) => { c[r.status] = (c[r.status] || 0) + 1; if (r.status === "pendente") c[(r.canal === "email" ? "email" : "whatsapp") + "_pendente"]++; });
-      return j({ ...c, itens: rows.slice(0, 80) });
+      return j({
+        pendente: pend, enviado, erro, cancelado, total,
+        whatsapp_pendente: pendW, email_pendente: pendE,
+        itens: rows, itens_de: total,   // itens_de: a lista e um recorte; o total e o de cima
+      });
     }
     const b = await req.json().catch(() => ({}));
     const itens: any[] = Array.isArray(b.itens) ? b.itens : [];

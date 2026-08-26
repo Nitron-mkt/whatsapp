@@ -361,7 +361,7 @@ ler o arquivo inteiro antes do deploy.
 | 11 | 3 clientes com **dois e-mails colados** num campo do Sankhya |
 | 12 | Ticket no Supabase sobre `SUPABASE_SERVICE_ROLE_KEY` vir como `sb_secret_` |
 | 13 | `gestor.html` publicado **diverge** do repo. Resolver antes de publicar o painel da Nitron |
-| 14 | Não há cron de `cache-refresh` nem de `ghl-leads-refresh` para a Teak — hoje é manual |
+| ~~14~~ | ~~Sem cron de refresh para a Teak~~ — **fechada em 26/08**: `cache-refresh-teak-3h` (5 */3) e `ghl-leads-refresh-teak-2h` (38 */2), em `supabase/cron/teak.sql` |
 | 15 | `crm-resposta-roteia` ainda usa `GHL_TOKEN` direto (é da Nitron; parametrizar quando outra empresa precisar) |
 | 16 | Teak: 8 contatos **sem dono** no CRM e 498 com problema de telefone — lista em `teak_lead_dado` |
 

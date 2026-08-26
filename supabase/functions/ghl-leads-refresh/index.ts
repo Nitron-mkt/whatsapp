@@ -1,4 +1,4 @@
-// ghl-leads-refresh (v1) — espelha os contatos do CRM em snap_lead. ?empresa=<painel_id>
+// ghl-leads-refresh (v2) — espelha os contatos do CRM em snap_lead. ?empresa=<painel_id>
 //
 // POR QUE ESTA FUNCAO EXISTE: na Nitron o publico das campanhas sempre veio do ERP (contrato,
 // saldo do Clube, voucher, giro). Na Teak esse caminho entrega 13 clientes. O volume real dela
@@ -11,6 +11,8 @@
 // Le o snapshot. Aqui tambem: troca por empresa (delete .eq(empresa) + insert), e aborta ANTES
 // de apagar se a API nao devolver nada — sem isso um 401 do GHL zeraria o publico da empresa e a
 // tela mostraria "0 leads" como se fosse verdade.
+//
+// v2: token por empresa (empresa.ghl_token_env).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type, apikey", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };

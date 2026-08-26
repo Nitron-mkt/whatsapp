@@ -1,4 +1,4 @@
-// campanhas-enviar (v29) — email com ARTE + {{...}}. Garante contato. WhatsApp via SMS+#contact_instance. Recusa WhatsApp para telefone FIXO (10 digitos). ?diag mostra rate-limit.
+// campanhas-enviar (v30) — email com ARTE + {{...}}. Garante contato. WhatsApp por ZaptosWPP (SMS+#contact_instance) OU nativo do GHL, conforme empresa.canal_wpp. Recusa WhatsApp para telefone FIXO (10 digitos). ?diag mostra rate-limit.
 // v22: TRAVA DE INSTANCIA. Antes, sem instancia ele mandava o texto SEM amarrar — a mensagem saia pela ultima instancia
 //      a que aquele contato ficou preso (de outro assunto, de outro mes), e o cliente recebia algo desconexo.
 //      Agora WhatsApp sem instancia e RECUSADO, e o token e conferido contra o cadastro instancia_ghl (cache de 5 min).
@@ -42,9 +42,6 @@
 //      MESMA tabela (CAMPO), e o valor vem do mesmo `campos` que e gravado no contato.
 //      Junto vem `previa: true`: devolve a arte preenchida pelo mesmo caminho do envio, sem mandar
 //      nada, e lista as tags que ficaram sem valor. A tela mostra o resultado real antes do disparo.
-const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type, apikey", "Access-Control-Allow-Methods": "POST, OPTIONS" };
-const j = (o: unknown, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // v29: MULTI-EMPRESA. locationId, ids de campo personalizado, contato de teste e marca sairam do
 //      fonte e vao para o cadastro `empresa`. Cada empresa do grupo e uma SUBCONTA (location)
 //      diferente do mesmo GHL, e mandar para a subconta errada cria contato no CRM errado.
@@ -56,12 +53,29 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 //      (b) as MERGE TAGS ficam no codigo e so os IDS vem do cadastro. A tag e contrato do template
 //          ({{contact.voucher_positivacao}}); o id do campo e por location. Sao coisas diferentes
 //          com ciclos de vida diferentes.
+// v30: CANAL DE WHATSAPP POR EMPRESA. Conferido em 26/08 lendo a conversa cCJkM5EoHxj36OSFr7Ps
+//      da Teak: as mensagens dela sao messageType TYPE_WHATSAPP (tipo 19) com altId "wamid.HBg...",
+//      que e id da Meta. Ou seja, a Teak NAO usa ZaptosWPP — usa o WhatsApp nativo do GHL (Meta
+//      WhatsApp Business Cloud API), com UM numero por location (+55 11 95150-9821) que nao
+//      depende do dono do contato. Todo o aparato desta funcao — type "SMS" com
+//      `#contact_instance:<inst>`, espera da confirmacao na conversa, trava de instancia, trava do
+//      proprietario — existe por causa do ZaptosWPP e NAO se aplica ali. Aplicado a Teak, recusaria
+//      todo envio por falta de instancia: uma trava correta disparando pelo motivo errado.
+//      Agora empresa.canal_wpp escolhe o caminho, e no nativo a mensagem sai direta. Em compensacao
+//      entra um limite novo: a Meta so aceita texto livre dentro da janela de 24h desde a ultima
+//      mensagem do cliente; fora dela exige template aprovado. Quando o GHL recusa por isso, o
+//      motivo vai no `recusado` em vez de virar "enviado" — e o mesmo erro da secao 5.1 do doc
+//      ("aceito" nao e "entregue"), so que do outro lado do balcao.
+const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type, apikey", "Access-Control-Allow-Methods": "POST, OPTIONS" };
+const j = (o: unknown, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const API = "https://services.leadconnectorhq.com";
 
 // ---- cadastro da empresa (cache de 5 min por empresa, por isolate) ----
 type Empresa = {
   painel_id: string; nome: string; marca: string; loc: string;
   campos: Record<string, string>; teste_contact_id: string | null; tok: string;
+  canal_wpp: string;
 };
 const empCache: Record<string, { at: number; e: Empresa }> = {};
 async function carregarEmpresa(id: string): Promise<Empresa> {
@@ -69,7 +83,7 @@ async function carregarEmpresa(id: string): Promise<Empresa> {
   if (hit && Date.now() - hit.at < 300000) return hit.e;
   const base = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, ""); const k = srvKey();
   if (!base || !k) throw new Error("sem SUPABASE_URL/chave de servico para ler o cadastro de empresa");
-  const r = await fetch(`${base}/rest/v1/empresa?painel_id=eq.${encodeURIComponent(id)}&select=painel_id,nome,marca,ghl_location,campos,teste_contact_id,ghl_token_env`, { headers: { apikey: k, Authorization: "Bearer " + k } });
+  const r = await fetch(`${base}/rest/v1/empresa?painel_id=eq.${encodeURIComponent(id)}&select=painel_id,nome,marca,ghl_location,campos,teste_contact_id,ghl_token_env,canal_wpp`, { headers: { apikey: k, Authorization: "Bearer " + k } });
   if (!r.ok) throw new Error("cadastro de empresa: HTTP " + r.status);
   const rows = await r.json().catch(() => []);
   const row = Array.isArray(rows) ? rows[0] : null;
@@ -90,6 +104,7 @@ async function carregarEmpresa(id: string): Promise<Empresa> {
     campos: (row.campos && typeof row.campos === "object") ? row.campos : {},
     teste_contact_id: row.teste_contact_id ? String(row.teste_contact_id) : null,
     tok,
+    canal_wpp: String(row.canal_wpp || "zaptos"),
   };
   empCache[id] = { at: Date.now(), e };
   return e;
@@ -254,6 +269,14 @@ async function sms(emp: Empresa, contactId: string, message: string, toNumber?: 
   const r = await ghl(emp.tok, "POST", "/conversations/messages", payload, "2021-04-15");
   return { status: r.status, body: (await r.text()).slice(0, 400) };
 }
+// WhatsApp NATIVO do GHL (Meta Cloud API). Nao ha instancia nem bind: a location tem um numero e
+// e por ele que sai. Todo o aparato de #contact_instance e de confirmacao existe por causa do
+// ZaptosWPP e nao se aplica aqui.
+async function whatsappNativo(emp: Empresa, contactId: string, message: string, toNumber?: string) {
+  const payload: any = { type: "WhatsApp", contactId, message }; if (toNumber) payload.toNumber = toNumber;
+  const r = await ghl(emp.tok, "POST", "/conversations/messages", payload, "2021-04-15");
+  return { status: r.status, body: (await r.text()).slice(0, 400) };
+}
 // ---- confirmacao da troca de instancia ----
 const ehAck = (m: any) => /contact\s+instance\s+updated/i.test(String(m?.body || ""));
 async function lerConversa(emp: Empresa, cid: string): Promise<{ http: number; msgs: any[] }> {
@@ -290,6 +313,24 @@ async function enviarMsg(emp: Empresa, contactId: string, canal: string, texto: 
     return { status: r.status, body: (await r.text()).slice(0, 400), bind: null as any, arte_ok };
   }
   const to = fone ? e164(fone) : undefined;
+
+  // --- WhatsApp nativo do GHL: manda e pronto. Sem bind, sem espera, sem instancia. ---
+  if (emp.canal_wpp === "ghl_nativo") {
+    const res = await whatsappNativo(emp, contactId, texto, to);
+    const ok = res.status >= 200 && res.status < 300;
+    // A API da Meta so aceita texto livre dentro da janela de 24h desde a ULTIMA mensagem do
+    // cliente. Fora dela e preciso template aprovado, e o GHL recusa. Isso tem de aparecer como
+    // erro legivel, e nao virar "enviado" — foi o defeito de 26/08 (secao 5.1 do doc: aceito nao
+    // e entregue), agora do outro lado do balcao.
+    const fora24h = !ok && /24|template|window|session/i.test(res.body || "");
+    return {
+      ...res, bind: null as any, canal_wpp: "ghl_nativo",
+      recusado: ok ? undefined : (fora24h
+        ? "o GHL recusou: provavelmente fora da janela de 24h da Meta, que exige template aprovado para texto livre — " + res.body
+        : undefined),
+    };
+  }
+
   const janela = Number(opts?.espera_ms) > 0 ? Number(opts.espera_ms) : BIND_ESPERA_MS;
   const margem = opts?.margem_ms !== undefined && Number(opts?.margem_ms) >= 0 ? Number(opts.margem_ms) : BIND_MARGEM_MS;
   const exigir = opts?.exigir_confirmacao === false ? false : true;
@@ -322,8 +363,8 @@ Deno.serve(async (req) => {
       const hdr: Record<string, string> = {};
       for (const kk of ["x-ratelimit-limit-daily", "x-ratelimit-daily-remaining", "x-ratelimit-interval-milliseconds", "x-ratelimit-max", "x-ratelimit-remaining", "retry-after"]) { const v = r.headers.get(kk); if (v != null) hdr[kk] = v; }
       const body = (await r.text()).slice(0, 200);
-      const set = await instanciasValidas(emp);
-      return j({ diag: true, status: r.status, headers: hdr, body, empresa: emp.painel_id, location: emp.loc, campos_cadastrados: Object.keys(emp.campos), instancias_cadastradas: set ? [...set] : null, bind: { espera_ms: BIND_ESPERA_MS, poll_ms: BIND_POLL_MS, margem_ms: BIND_MARGEM_MS } });
+      const set = emp.canal_wpp === "ghl_nativo" ? null : await instanciasValidas(emp);
+      return j({ diag: true, status: r.status, headers: hdr, body, empresa: emp.painel_id, location: emp.loc, canal_wpp: emp.canal_wpp, campos_cadastrados: Object.keys(emp.campos), instancias_cadastradas: set ? [...set] : null, bind: { espera_ms: BIND_ESPERA_MS, poll_ms: BIND_POLL_MS, margem_ms: BIND_MARGEM_MS } });
     }
     const canal = b.canal || "whatsapp";
     const texto = b.texto || "";
@@ -344,8 +385,10 @@ Deno.serve(async (req) => {
       return j({ ok: true, previa: true, empresa: emp.painel_id, arte: !!raw, template_id: b.templateId || null, assunto: preencher(emp, b.assunto || "", b.nome, texto, b.merge, b.campos), html, tags, tags_vazias: vazias });
     }
 
-    // ---- TRAVA DE INSTANCIA (so WhatsApp; email nao usa instancia) ----
-    if (canal !== "email") {
+    // ---- TRAVA DE INSTANCIA (so WhatsApp por ZaptosWPP; email nao usa instancia) ----
+    // No WhatsApp nativo do GHL nao existe instancia: a location tem um numero so e o GHL manda
+    // por ele. Exigir instancia ali seria recusar por um motivo que nao existe naquele canal.
+    if (canal !== "email" && emp.canal_wpp !== "ghl_nativo") {
       if (!instancia) return j({ ok: false, motivo: "sem instancia — WhatsApp nao enviado (a mensagem sairia pela instancia errada)", sem_instancia: true });
       if (!formaOk(instancia)) return j({ ok: false, motivo: "instancia com formato invalido: " + instancia, instancia_invalida: true });
       const validas = await instanciasValidas(emp);
@@ -375,7 +418,10 @@ Deno.serve(async (req) => {
     // ali ela significa que o CRM esta desalinhado do organograma e a gestao precisa ver.
     let dono: string | null = null;
     let instUsada = instancia;
-    if (contactId && canal !== "email" && b.ignorar_dono !== true) dono = await donoDoContato(emp, contactId);
+    // A trava do proprietario existe porque no ZaptosWPP o numero de saida E o do dono do contato.
+    // No WhatsApp nativo o numero e da location, entao o dono nao muda por onde a mensagem sai —
+    // conferir ali recusaria envio por um risco que nao existe.
+    if (contactId && canal !== "email" && emp.canal_wpp !== "ghl_nativo" && b.ignorar_dono !== true) dono = await donoDoContato(emp, contactId);
     if (b.lookup) return j({ ok: !!contactId, contactId, via, criado, instancia: instancia || null, dono_crm: dono, dono_divergente: !!(dono && dono !== instancia) });
     if (!texto && !b.templateId && b.so_campos !== true) return j({ ok: false, motivo: "sem texto nem arte" }, 400);
     if (!contactId) return j({ ok: false, motivo: "nao foi possivel achar/criar contato no CRM", email: b.email, fone: b.fone });
@@ -403,6 +449,6 @@ Deno.serve(async (req) => {
     const mergeUsado = (instUsada !== instancia && b.merge && typeof b.merge === "object") ? { ...b.merge, instancia: instUsada, assistente: instUsada } : b.merge;
     const res: any = await enviarMsg(emp, contactId, canal, textoUsado, b.assunto, b.templateId, instUsada || undefined, b.fone, b.nome, mergeUsado, { espera_ms: b.espera_ms, margem_ms: b.margem_ms, exigir_confirmacao: b.exigir_confirmacao, campos: b.campos });
     const ok = res.status >= 200 && res.status < 300;
-    return j({ ok, empresa: emp.painel_id, contactId, via, criado, canal, instancia: instUsada || null, instancia_pedida: instUsada !== instancia ? instancia : undefined, texto_ajustado: textoAjustado || undefined, campos_gravados: camposGravados || undefined, dono_crm: dono, arte: !!b.templateId, arte_ok: res.arte_ok, motivo: ok ? undefined : (res.recusado || ("GHL " + res.status + ": " + res.body)), bind_nao_confirmado: res.recusado ? true : undefined, resultado: res, teste: !!b.test });
+    return j({ ok, empresa: emp.painel_id, canal_wpp: emp.canal_wpp, contactId, via, criado, canal, instancia: instUsada || null, instancia_pedida: instUsada !== instancia ? instancia : undefined, texto_ajustado: textoAjustado || undefined, campos_gravados: camposGravados || undefined, dono_crm: dono, arte: !!b.templateId, arte_ok: res.arte_ok, motivo: ok ? undefined : (res.recusado || ("GHL " + res.status + ": " + res.body)), bind_nao_confirmado: res.recusado ? true : undefined, resultado: res, teste: !!b.test });
   } catch (e) { return j({ ok: false, erro: String(e) }, 500); }
 });

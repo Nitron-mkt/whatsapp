@@ -1,4 +1,4 @@
-// campanhas-enviar (v27) — email com ARTE + {{...}}. Garante contato. WhatsApp via SMS+#contact_instance. Recusa WhatsApp para telefone FIXO (10 digitos). ?diag mostra rate-limit.
+// campanhas-enviar (v28) — email com ARTE + {{...}}. Garante contato. WhatsApp via SMS+#contact_instance. Recusa WhatsApp para telefone FIXO (10 digitos). ?diag mostra rate-limit.
 // v22: TRAVA DE INSTANCIA. Antes, sem instancia ele mandava o texto SEM amarrar — a mensagem saia pela ultima instancia
 //      a que aquele contato ficou preso (de outro assunto, de outro mes), e o cliente recebia algo desconexo.
 //      Agora WhatsApp sem instancia e RECUSADO, e o token e conferido contra o cadastro instancia_ghl (cache de 5 min).
@@ -34,6 +34,14 @@
 //      CODPARC ja era gravado. Escrever no contato do DESTINATARIO e o ponto: o percentual do voucher
 //      existia no CRM so no contato da EMPRESA (tag sankhya-cliente), e a campanha manda para os
 //      contatos das PESSOAS (comprador, financeiro), onde o campo vinha vazio.
+// v28: A ARTE DO VOUCHER SAIA COM OS NUMEROS EM BRANCO. Quem troca as {{...}} do template somos nos
+//      (a gente baixa o HTML e renderiza aqui), e o mapa do preencher() nao conhecia
+//      contact.voucher_positivacao / adicional_positivacao / total_pontos / voucher_validade — as
+//      quatro tags que o template "Campanha de Positivacao" usa. Tag desconhecida sai VAZIA, entao o
+//      e-mail iria com "desconto total de  %" e "valido ate ". Agora id do campo e merge tag moram na
+//      MESMA tabela (CAMPO), e o valor vem do mesmo `campos` que e gravado no contato.
+//      Junto vem `previa: true`: devolve a arte preenchida pelo mesmo caminho do envio, sem mandar
+//      nada, e lista as tags que ficaram sem valor. A tela mostra o resultado real antes do disparo.
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type, apikey", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const j = (o: unknown, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -41,15 +49,19 @@ const API = "https://services.leadconnectorhq.com";
 const LOC = "rZ8y7lzqV7fzxsartaX2";
 const RENATO = "bnKA8BWCRaTeiBC2rjRs";
 const FID_CODPARC = "HaDWHgnJSjDDdPF7XFDH";
-// de-para das chaves semanticas para o id do campo personalizado no GHL. Os tres primeiros ja
-// existiam (da positivacao) e sao alimentados tambem por outro processo, no contato da empresa; aqui
-// a gente preenche no contato que recebe. O de validade foi criado em 26/08 (contact.voucher_validade).
-const FID_CAMPO: Record<string, string> = {
-  voucher_pct: "II773kLNc7R4Pw278zcf",       // contact.voucher_positivacao  = PERC_VOUCHER
-  voucher_adic: "h6yFBPOnoe4af0BDWNIB",      // contact.adicional_positivacao = PERC_ADIC
-  voucher_total: "8YX7LVJcbwiqD8dHwUSe",     // contact.total_pontos          = a soma
-  voucher_validade: "sQsGU460EXuId97hpKEi",  // contact.voucher_validade      = texto "31/08/2026"
+// De-para das chaves semanticas para o campo personalizado do GHL. Uma tabela so, com o id (para
+// gravar no contato) E a merge tag (para preencher na arte). Eram duas listas separadas e isso e
+// pedir para divergirem: bastava o template usar {{contact.voucher_validade}} e o preencher() nao
+// conhecer a tag para o e-mail sair com o percentual em branco — que era exatamente o caso.
+// Os tres primeiros ja existiam (da positivacao) e sao alimentados tambem por outro processo, no
+// contato da empresa; aqui a gente preenche no contato que recebe. O de validade foi criado em 26/08.
+const CAMPO: Record<string, { fid: string; tag: string }> = {
+  voucher_pct: { fid: "II773kLNc7R4Pw278zcf", tag: "contact.voucher_positivacao" },   // PERC_VOUCHER
+  voucher_adic: { fid: "h6yFBPOnoe4af0BDWNIB", tag: "contact.adicional_positivacao" }, // PERC_ADIC
+  voucher_total: { fid: "8YX7LVJcbwiqD8dHwUSe", tag: "contact.total_pontos" },         // a soma
+  voucher_validade: { fid: "sQsGU460EXuId97hpKEi", tag: "contact.voucher_validade" },  // "31/08/2026"
 };
+const FID_CAMPO: Record<string, string> = Object.fromEntries(Object.entries(CAMPO).map(([k, v]) => [k, v.fid]));
 // Grava no contato os campos pedidos. Devolve o que foi gravado, ou null quando nao havia nada.
 async function gravarCampos(contactId: string, campos: any): Promise<string[] | null> {
   if (!campos || typeof campos !== "object") return null;
@@ -116,7 +128,7 @@ function foneVariants(fone: string): string[] {
 }
 function e164(fone: string): string { const d = String(fone || "").replace(/\D/g, ""); if (!d) return ""; if (d.length <= 11) return "+55" + d; return "+" + d; }
 function foneFixo(fone: string): boolean { let d = String(fone || "").replace(/\D/g, "").replace(/^0+/, ""); if (d.slice(0, 2) === "55") d = d.slice(2); d = d.replace(/^0+/, ""); return d.length === 10; }
-function preencher(str: string, nome?: string, texto?: string, merge?: any): string {
+function preencher(str: string, nome?: string, texto?: string, merge?: any, campos?: any): string {
   if (!str) return str;
   const full = String(nome || "").trim(); const first = full.split(/\s+/)[0] || ""; const last = full.split(/\s+/).slice(1).join(" ");
   const msg = String(texto || "").replace(/\n/g, "<br>"); const m = merge || {};
@@ -131,6 +143,22 @@ function preencher(str: string, nome?: string, texto?: string, merge?: any): str
     "saldo": String(m.saldo || ""), "validade": String(m.validade || ""), "valor": String(m.valor || m.saldo || ""), "dias": String(m.dias || ""), "lista": String(m.lista || ""),
     "rep": String(m.rep || ""), "representante": String(m.rep || ""), "assistente": String(m.instancia || m.assistente || ""),
   };
+  // As tags dos campos personalizados. Quem renderiza a arte aqui somos nos, nao o GHL: a gente baixa
+  // o HTML do template e troca as {{...}} — entao tag que o mapa nao conhece sai VAZIA. Sem estas
+  // quatro linhas o e-mail do voucher saia com percentual e validade em branco, mesmo com o campo
+  // gravado no contato. O valor vem de `campos` (o mesmo que foi escrito no CRM), com o merge como
+  // reserva, para prévia, e-mail e campo do contato dizerem sempre a mesma coisa.
+  const cp = campos && typeof campos === "object" ? campos : {};
+  const reserva: Record<string, unknown> = { voucher_total: m.saldo, voucher_validade: m.validade };
+  // o template imprime o "%" ele mesmo ({{contact.total_pontos}} %), entao o valor vai sem sinal —
+  // senao sai "6% %". Na validade nao se mexe: e texto ("31/08/2026").
+  const so = (v: string, chave: string) => chave === "voucher_validade" ? v : v.replace(/\s*%\s*$/, "").trim();
+  for (const [chave, def] of Object.entries(CAMPO)) {
+    const v = cp[chave] !== undefined && cp[chave] !== null && String(cp[chave]) !== "" ? cp[chave] : reserva[chave];
+    const txt = v === undefined || v === null ? "" : so(String(v), chave);
+    map[def.tag.toLowerCase()] = txt;
+    map[def.tag.replace(/^contact\./, "").toLowerCase()] = txt;   // aceita a tag sem o prefixo
+  }
   return str.replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (_full, key) => { const k = String(key).trim().toLowerCase(); return (k in map) ? map[k] : ""; });
 }
 async function buscarUm(q: string): Promise<any> {
@@ -196,9 +224,9 @@ async function esperarTroca(cid: string, bindId: string, janelaMs: number) {
 async function enviarMsg(contactId: string, canal: string, texto: string, assunto?: string, templateId?: string, instancia?: string, fone?: string, nome?: string, merge?: any, opts?: any) {
   if (canal === "email") {
     let html: string | null = null; let arte_ok = false;
-    if (templateId) { const raw = await arteHtml(templateId); if (raw) { html = preencher(raw, nome, texto, merge); arte_ok = true; } }
+    if (templateId) { const raw = await arteHtml(templateId); if (raw) { html = preencher(raw, nome, texto, merge, opts?.campos); arte_ok = true; } }
     if (!html) html = "<div>" + String(texto).replace(/\n/g, "<br>") + "</div>";
-    const subj = preencher(assunto || "Nitron", nome, texto, merge);
+    const subj = preencher(assunto || "Nitron", nome, texto, merge, opts?.campos);
     const r = await ghl("POST", "/conversations/messages", { type: "Email", contactId, subject: subj, html }, "2021-04-15");
     return { status: r.status, body: (await r.text()).slice(0, 400), bind: null as any, arte_ok };
   }
@@ -237,6 +265,21 @@ Deno.serve(async (req) => {
     const canal = b.canal || "whatsapp";
     const texto = b.texto || "";
     const instancia = String(b.instancia || "").trim();
+
+    // ---- PREVIA: devolve a arte JA preenchida, sem tocar em contato nem mandar nada ----
+    // Passa pelo mesmo arteHtml() + preencher() do envio de verdade, de proposito: previa que usa
+    // outro caminho mente. Se a tag do template nao estiver no de-para, ela sai vazia aqui tambem —
+    // e e isso que a tela precisa mostrar, para a pessoa ver o buraco ANTES de disparar.
+    if (b.previa === true) {
+      const raw = b.templateId ? await arteHtml(b.templateId) : null;
+      if (b.templateId && !raw) return j({ ok: false, previa: true, motivo: "nao consegui baixar o HTML desta arte no GHL", template_id: b.templateId });
+      const base = raw || ("<div style=\"font:15px/1.5 system-ui,sans-serif;padding:18px\">" + String(texto).replace(/\n/g, "<br>") + "</div>");
+      const html = preencher(base, b.nome, texto, b.merge, b.campos);
+      // que tags o template pede e quais delas ficaram sem valor — o aviso mais util da tela
+      const tags = [...new Set([...String(base).matchAll(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g)].map((x) => String(x[1])))];
+      const vazias = tags.filter((t) => !String(preencher("{{" + t + "}}", b.nome, texto, b.merge, b.campos)).trim());
+      return j({ ok: true, previa: true, arte: !!raw, template_id: b.templateId || null, assunto: preencher(b.assunto || "", b.nome, texto, b.merge, b.campos), html, tags, tags_vazias: vazias });
+    }
 
     // ---- TRAVA DE INSTANCIA (so WhatsApp; email nao usa instancia) ----
     if (canal !== "email") {
@@ -290,7 +333,7 @@ Deno.serve(async (req) => {
       if (re.test(texto)) { textoUsado = texto.replace(re, instUsada); textoAjustado = true; }
     }
     const mergeUsado = (instUsada !== instancia && b.merge && typeof b.merge === "object") ? { ...b.merge, instancia: instUsada, assistente: instUsada } : b.merge;
-    const res: any = await enviarMsg(contactId, canal, textoUsado, b.assunto, b.templateId, instUsada || undefined, b.fone, b.nome, mergeUsado, { espera_ms: b.espera_ms, margem_ms: b.margem_ms, exigir_confirmacao: b.exigir_confirmacao });
+    const res: any = await enviarMsg(contactId, canal, textoUsado, b.assunto, b.templateId, instUsada || undefined, b.fone, b.nome, mergeUsado, { espera_ms: b.espera_ms, margem_ms: b.margem_ms, exigir_confirmacao: b.exigir_confirmacao, campos: b.campos });
     const ok = res.status >= 200 && res.status < 300;
     return j({ ok, contactId, via, criado, canal, instancia: instUsada || null, instancia_pedida: instUsada !== instancia ? instancia : undefined, texto_ajustado: textoAjustado || undefined, campos_gravados: camposGravados || undefined, dono_crm: dono, arte: !!b.templateId, arte_ok: res.arte_ok, motivo: ok ? undefined : (res.recusado || ("GHL " + res.status + ": " + res.body)), bind_nao_confirmado: res.recusado ? true : undefined, resultado: res, teste: !!b.test });
   } catch (e) { return j({ ok: false, erro: String(e) }, 500); }

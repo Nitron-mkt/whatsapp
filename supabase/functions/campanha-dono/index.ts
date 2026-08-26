@@ -1,4 +1,4 @@
-// campanha-dono (v2) — empresta e devolve a propriedade dos contatos de uma campanha de cliente.
+// campanha-dono (v3) — empresta e devolve a propriedade dos contatos de uma campanha de cliente.
 //
 // Por que existe: o numero de WhatsApp que o cliente ve e o do usuario remetente, e numa mensagem de
 // API o remetente e o assignedTo do contato. Testamos `fromNumber` em 26/08 com o numero novo: o GHL
@@ -20,6 +20,12 @@
 // o contato ja pertencendo a instancia de campanha, com nome e codparc, antes de qualquer envio.
 // (O campanhas-enviar v26 tambem passou a criar contato ja com dono, entao este caminho e para quando
 // se quer o contato pronto ANTES do disparo.)
+//
+// v3: o registro do emprestimo virou obrigatorio. Na primeira corrida de verdade (26/08) o upsert
+// falhou calado — o indice unico era PARCIAL e ON CONFLICT nao o aceita como alvo — e 9 contatos
+// trocaram de dono SEM registro do dono anterior, exatamente o caso que a tabela existe para evitar.
+// Agora o conflito e por (contact_id, campanha), com constraint de verdade, e o erro do registro FAZ
+// a linha falhar: se nao da para anotar de quem era, e melhor nao tomar emprestado.
 //
 // `varrer` cobre o periodo em que ainda nao existe o workflow no CRM: pergunta ao GHL quais conversas
 // da instancia de campanha tem a ULTIMA mensagem de entrada e reparte esses contatos entre os
@@ -96,22 +102,32 @@ Deno.serve(async (req) => {
           const dc = await rc.json().catch(() => ({}));
           const id = dc?.contact?.id || null;
           if (!id) { out.push({ fone: f, acao: "erro", motivo: "upsert " + rc.status }); continue; }
-          await sb.from("campanha_dono_emprestado").upsert(
+          const { error: eReg } = await sb.from("campanha_dono_emprestado").upsert(
             { contact_id: id, fone: f, dono_antes: null, dono_depois: alvo, campanha },
-            { onConflict: "contact_id", ignoreDuplicates: false },
+            { onConflict: "contact_id,campanha", ignoreDuplicates: false },
           );
+          if (eReg) { out.push({ fone: f, contato: id, acao: "erro", motivo: "criado, mas o registro falhou: " + (eReg.message || eReg) }); continue; }
           out.push({ fone: f, contato: id, acao: "criado_na_campanha" });
           continue;
         }
         const antes = String(c.assignedTo || "") || null;
         if (antes === alvo) { out.push({ fone: f, contato: c.id, acao: "ja_era_da_campanha" }); continue; }
         if (seco) { out.push({ fone: f, contato: c.id, acao: "assumiria", dono_antes: antes }); continue; }
-        const r = await ghl("PUT", `/contacts/${c.id}`, { assignedTo: alvo });
-        if (!r.ok) { out.push({ fone: f, contato: c.id, acao: "erro", motivo: "PUT " + r.status }); continue; }
-        await sb.from("campanha_dono_emprestado").upsert(
+        // ANOTA ANTES DE TROCAR. Trocar primeiro e anotar depois deixa a porta aberta para o caso de
+        // 26/08: a troca vale e o registro nao, e nao se sabe mais para quem devolver.
+        const { error: eReg2 } = await sb.from("campanha_dono_emprestado").upsert(
           { contact_id: c.id, fone: f, dono_antes: antes, dono_depois: alvo, campanha },
-          { onConflict: "contact_id", ignoreDuplicates: false },
+          { onConflict: "contact_id,campanha", ignoreDuplicates: false },
         );
+        if (eReg2) { out.push({ fone: f, contato: c.id, acao: "erro", motivo: "nao consegui registrar o dono anterior, nada foi trocado: " + (eReg2.message || eReg2) }); continue; }
+        const r = await ghl("PUT", `/contacts/${c.id}`, { assignedTo: alvo });
+        if (!r.ok) {
+          // desfaz o registro, senao fica dizendo que tomou emprestado algo que nao tomou
+          // campanha pode ser nula; eq(null) nao filtra o que se espera, entao usa is()
+          const desfaz = sb.from("campanha_dono_emprestado").delete().eq("contact_id", c.id);
+          await (campanha ? desfaz.eq("campanha", campanha) : desfaz.is("campanha", null));
+          out.push({ fone: f, contato: c.id, acao: "erro", motivo: "PUT " + r.status }); continue;
+        }
         out.push({ fone: f, contato: c.id, acao: "assumido", dono_antes: antes });
       }
       const cont: Record<string, number> = {}; out.forEach((o) => cont[o.acao] = (cont[o.acao] || 0) + 1);

@@ -323,6 +323,56 @@ A tela do gestor mostra isso em cada linha de representante: a instância que va
 quando as duas discordam e `→ atribuir a … no CRM` quando ninguém do cadastro é dono — e nesse caso
 a linha já avisa que o WhatsApp não sai.
 
+## Resposta de cliente cai na assistente certa (26/08)
+
+Campanha de cliente disparada por um usuário de campanha resolve o envio, mas cria a pergunta
+seguinte: quem atende quem responder? Um workflow do GHL sabe atribuir a um usuário fixo ou fazer
+round-robin — ele **não** sabe qual assistente atende aquele cliente. Isso está no ERP: o cliente tem
+um representante (`codvend`), o representante tem uma assistente (`rep_instancia`, vinda do `CODGER`
+por ID). Então o workflow só avisa, e a decisão fica onde o dado existe.
+
+`crm-resposta-roteia` (nova) resolve `telefone → codparc → codvend → instância → usuario_ghl_id` e
+grava o `assignedTo`. Sem dono conhecido ela **não mexe** — melhor a resposta ficar onde está do que
+ir para a pessoa errada. Cada decisão fica registrada em `resposta_roteada`, com o motivo.
+
+Não é o workflow que a gestão tirou do CRM: aquele trocava o dono a **cada mensagem**, conforme a
+instância, e por isso o contato sumia da vista da outra assistente. Aqui o dono muda uma vez, no
+momento em que o cliente responde, e muda para quem de fato atende aquele cliente.
+
+No CRM existem `(Zaptos) Voltar contato para a <Assistente>` em draft — são a versão estática disso,
+uma por pessoa. Ficam obsoletas quando este caminho entrar.
+
+### O que montar no GHL
+
+1. Workflow novo, gatilho **Customer Replied** — canal **SMS**, que é por onde o ZaptosWPP trafega
+   (os workflows "Cliente Respondeu WhatsApp" existentes cobrem o outro caso).
+2. Ação **Webhook**: `POST https://bwbeieumxcuomtrvlqxs.supabase.co/functions/v1/crm-resposta-roteia`
+   - header `Authorization: Bearer <a mesma chave anon que o painel usa>`
+   - corpo `{"contact_id":"{{contact.id}}","phone":"{{contact.phone}}"}`
+3. Para conferir antes de valer: acrescentar `"seco": true` ao corpo. Ela responde para quem *iria*
+   atribuir e registra em `resposta_roteada` sem tocar no CRM.
+
+## A cadência é configuração, não código (26/08)
+
+A fila soltava 1 WhatsApp por instância por rodada, e a rodada é o cron de 1×/min: o piso real era
+1 mensagem por minuto por instância, por limite do cron e não por política.
+
+`fila_config` agora tem `wpp_burst` (quantas a rodada pode soltar da mesma instância) e
+`wpp_burst_min_seg`/`wpp_burst_max_seg` (a espera entre elas, **sorteada**). Sorteada de propósito:
+cadência de metrônomo é um dos sinais que derruba número. Em `wpp_burst = 1` nada muda.
+
+Duas travas que a rajada exigiu:
+
+- **Orçamento de tempo** (`BURST_JANELA_MS`, 50s). A função tem limite de execução; a rodada para e o
+  próximo tick continua de onde parou.
+- **Reserva da linha.** Com rajada duas rodadas do cron se sobrepõem e as duas leriam a mesma linha
+  pendente — o cliente receberia a mensagem duas vezes. A linha passa a `enviando` (com `enviado_em`
+  estampado) antes do envio, e só quem reservou envia; reserva presa há mais de 10 min volta para a
+  fila. O e-mail em lote ganhou a mesma reserva.
+
+Vale lembrar o efeito de quantização: com o cron de 1×/min, o espaçamento real é múltiplo de 60s
+acima do intervalo. `wpp_intervalo_seg = 120` dá 120s exatos; 140 daria 180s.
+
 ## Pendente
 
 - [ ] **Instância própria para comunicação direta ao cliente.** Quando existir,

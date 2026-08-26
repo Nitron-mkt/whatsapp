@@ -1,7 +1,7 @@
 # Máquina de Vendas — como começar numa conta nova
 
 > **Para que serve este arquivo:** abrir um chat novo do Claude Code para **outra empresa do grupo**
-> (Mundo UD, Teak, Mood Fruits, Hyak) sem ter de recontar tudo. Abra o chat no mesmo repositório e
+> (Mundo UD, Teak, Mood Fruits, Hyak, Roga Village) sem ter de recontar tudo. Abra o chat no mesmo repositório e
 > mande:
 >
 > ```
@@ -16,7 +16,7 @@
 ## 1. O que existe hoje
 
 Uma máquina de campanhas que roda **uma empresa só**: o Grupo Nitron (Plásticos).
-As outras quatro estão cadastradas na tela, marcadas `(a configurar)`, e não têm dado.
+As outras cinco estão cadastradas na tela, marcadas `(a configurar)`, e não têm dado.
 
 ```
 Sankhya (Oracle, ERP)  ──►  Supabase (Postgres + Edge Functions)  ──►  GHL (CRM)  ──►  ZaptosWPP  ──►  WhatsApp
@@ -29,15 +29,21 @@ Sankhya (Oracle, ERP)  ──►  Supabase (Postgres + Edge Functions)  ──�
 **Painel:** <https://gestordecampanhas.marketing-da5.workers.dev/> · agenda em `/agenda`
 **Repositório:** `Nitron-mkt/whatsapp`, branch de trabalho `claude/supabase-access-8190et`
 
-### As cinco empresas (em `app/gestor.html`, `var EMPRESAS`)
+### As seis empresas (em `app/gestor.html`, `var EMPRESAS`)
 
-| id | nome | CODEMP (Sankhya) | pronto |
-|---|---|---|---|
-| `nitron` | Grupo Nitron (Plásticos) | 1, 2, 14 | ✅ **sim** |
-| `mundo_ud` | Mundo UD | 4 | ❌ |
-| `teak` | Teak Brazil | 8, 21 | ❌ |
-| `mood` | Mood Fruits | 16, 9 | ❌ |
-| `hyak` | Hyak Internacional | 5, 7 | ❌ |
+| id | nome | CODEMP (Sankhya) | location do GHL | pronto |
+|---|---|---|---|---|
+| `nitron` | Grupo Nitron (Plásticos) | 1, 2, 14 | `rZ8y7lzqV7fzxsartaX2` | ✅ **sim** |
+| `mundo_ud` | Mundo UD | 4 | `b461C1a4cou5XvykmQ1l` | ❌ |
+| `teak` | Teak Brazil | 8, 21 | `DRhJc78pTfF9dlaH5NK9` | ❌ |
+| `mood` | Mood Fruits | 16, 9 | `uhiDA222WYxSm5q0eUuj` | ❌ |
+| `hyak` | Hyak Internacional | 5, 7 | `NBJY3ZnA7qSrYyEi0wl7` | ❌ |
+| `roga` | Roga Village | 12 | `uqZMP3rxrdHqMHPQYRAp` | ❌ (ver §9) |
+
+As locations foram conferidas uma a uma na API do GHL em 26/08/2026. **A versão anterior deste
+documento trocava duas:** dizia que `Mundo UD` era `uhiDA222WYxSm5q0eUuj`, que na verdade é a
+`MOOD FRUITS BRASIL COMERCIO EXPORTACAO LTDA`. Mandar por esse id criaria contato na subconta errada
+— exatamente o que a §3.1 manda evitar.
 
 ---
 
@@ -115,13 +121,15 @@ const LOC = "rZ8y7lzqV7fzxsartaX2";   // Nitron
 Está em: `campanhas-enviar`, `campanha-dono`, `campanhas-comunicado`, `rep-instancia-sync`,
 `rep-instancia-atribuir`.
 
-Cada empresa é uma **subconta (location) diferente** do mesmo GHL. Já mapeadas na agência:
-`Mundo UD` = `uhiDA222WYxSm5q0eUuj` (MOOD FRUITS aparece nesse nome — confirmar), `NTR` =
-`rsXZamdWnve5YumHetsU`, e outras. **Confirmar location por empresa antes de qualquer envio** —
-mandar para a subconta errada cria contato no CRM errado.
+Cada empresa é uma **subconta (location) diferente** do mesmo GHL. A tabela da §1 tem o id de cada
+uma, conferido na API. **Confirmar location por empresa antes de qualquer envio** — mandar para a
+subconta errada cria contato no CRM errado.
 
-> **Decisão a tomar (não tomada):** transformar `LOC` em cadastro (`empresa_ghl`) ou duplicar as
-> funções por empresa. Cadastro é melhor; duplicar é mais rápido e piora a manutenção.
+> **Decisão a tomar (parcialmente resolvida):** a tabela de cadastro que esta seção propunha criar
+> **já existe** — é a `public.empresa` no Supabase, com `codigo`, `codemp`, `ghl_location`,
+> `linha_negocio`, `descricao_ia` e `ativa`, e já traz as seis empresas. O que falta não é criar o
+> cadastro: é fazer as 5 funções **lerem** dele em vez do `const LOC`. Enquanto isso não acontecer,
+> `LOC` continua sendo a Nitron em toda chamada, venha de onde vier o pedido.
 
 ### 3.2 IDs de campo personalizado do GHL — são por location
 
@@ -287,3 +295,124 @@ Ao fazer tela nova: **se o número é um total, conte no banco.**
   Mensagem pelo número errado é pior do que mensagem não enviada.
 - **Antes de mexer no painel publicado, confira o md5.**
 - Comentário no código explica **por que**, com o caso real que motivou. É o que evitou refazer erro.
+
+---
+
+## 9. Roga Village — o levantamento de 26/08/2026
+
+Esta empresa **não segue o roteiro da §4**, e é importante entender por quê antes de tentar ligá-la.
+Tudo abaixo foi medido no Sankhya e na API do GHL na data, não é suposição.
+
+**Identificação (confirmada em três fontes independentes):** `CODEMP 12` no Sankhya (ROGA VILLAGE
+HOTEIS E EVENTOS LTDA, CNPJ 43.647.356/0001-24), location `uqZMP3rxrdHqMHPQYRAp` no GHL, e a linha
+`ROGA` da tabela `public.empresa`, que já trazia exatamente esses dois valores.
+
+### 9.1 O ERP dela não tem venda — tem contas a pagar
+
+A Roga tem 976 notas nos últimos 12 meses, o que à primeira vista parece uma base pronta. Não é.
+Abrindo por tipo de operação, **nenhuma é de venda**:
+
+| TOP | operação | TIPMOV | notas |
+|---|---|---|---|
+| 2106 | Compra Servicos (Red) | C | 580 |
+| 2001 | Pedido Compra Consumo | O | 160 |
+| 2101 | Compra Consumo | C | 152 |
+| 2102 | Compra Serviço | C | 62 |
+| 2104 | Compra Energia Eletrica | C | 9 |
+| 3132 | Pedido de Venda B2B | P | 8 (R$ 114 no total) |
+
+Os 298 "parceiros" com movimento são **fornecedores do hotel** — quem vende energia, serviço e
+consumo *para* a Roga. A qualidade de contato deles é ótima (296 com telefone, 297 com e-mail), e é
+justamente isso que torna o erro fácil de cometer: é uma lista limpa, grande e **completamente
+errada** para campanha. Disparar para ela é mandar oferta de hospedagem para a distribuidora de
+energia.
+
+Consequência prática: `cache-refresh` filtra `TIPMOV='V'` e o universo dele é `AD_PARCEIRO` com
+contrato de clube ou percentual de campanha. Rodar com `CODEMP 12` devolve **zero linha** — e o
+`trocar()` aborta antes de apagar o snapshot (a trava da v5 funcionando como projetado). Trocar o
+CODEMP, que é o passo 2 da §4, **não resolve nada aqui**.
+
+### 9.2 Onde o dado realmente está: no CRM, não no ERP
+
+Na Nitron o público nasce no Sankhya e é empurrado para o GHL. **Na Roga é o contrário.** A location
+tem **10.069 contatos** e está viva: no dia do levantamento entraram leads às 12h54, 14h35, 16h38,
+20h02 e 20h27, vindos do site `rogavillage.com.br`, do formulário "Solicitacao de proposta" e do
+Instagram, com tags (`reserva-roga`) e oportunidade aberta em pipeline.
+
+Cinco pipelines em uso: **Eventos Corporativos** (11/2025), **Hospedagem Lazer** (03/2026), e
+**Eventos Sociais**, **Business Club** e **Retorno do Hospede** (todos 19/08/2026).
+
+O PMS existe no Sankhya como um módulo `AD_HOT*` (`AD_HOTUH` tem as 18 unidades habitacionais), mas
+está **vazio de operação**: 4 reservas, 0 hóspedes em `AD_HOTRESHOSP`, 0 eventos, 0 web check-in.
+Cuidado com `AD_HOTPERM`, que tem 391 linhas e parece movimento: é tabela de **permissão de tela**
+(`NUPERM, CODUSU, TELA, TIPO`), não de hospedagem.
+
+### 9.3 O passo 3 da §4 já foi feito — e está vazio
+
+Em 19/08/2026, na mesma hora em que a linha `ROGA` da tabela `empresa` foi atualizada, alguém criou
+na location a estrutura de campos da Máquina de Vendas:
+
+| campo | fieldKey | id |
+|---|---|---|
+| CODPARC (Sankhya) | `contact.codparc_sankhya` | `2YDgTx29anFercto5VRu` |
+| Ultima Estadia | `contact.ultima_estadia` | `YfH5514OxuVPeBOloOlV` |
+| Estadias (total) | `contact.estadias_total` | `n7HGqjaGRnjNdxR5FdC1` |
+| Estado do Ciclo | `contact.estado_do_ciclo` | `RnRQa6dlqOLTJAx7wkE5` |
+| Canal Preferido | `contact.canal_preferido` | `JcNu14is9AQR9UztegY9` |
+| Valor Vencido | `contact.valor_vencido` | `jA3zKeCbo2GLOUcVRHs1` |
+| Ficha Roga (IA) | `contact.ficha_roga_ia` | `kZEoIWNYUvy1Tbd4vABr` |
+
+Quem fez conhecia a pegadinha da §3.2: nenhum nome tem `%` ou acento, e os `fieldKey` saíram todos
+limpos. O pipeline **Retorno do Hospede** espelha estágio a estágio o placeholder do Estado do Ciclo
+(`HOSPEDE_ATIVO / A_VOLTAR / DORMENTE / PERDIDO / SO_EVENTO`).
+
+**Só que os campos estão 100% vazios:** zero contatos com CODPARC preenchido, zero com Estado do
+Ciclo. E não é descuido — os placeholders (`codigo do parceiro no ERP`, `resumo do ERP para a IA`)
+mostram que foram desenhados para receber estadia e consumo **do Sankhya**, que é exatamente o dado
+que a §9.1 mostra não existir lá. O preparo parou onde tinha de parar.
+
+### 9.4 Não há instância de WhatsApp, e o cadastro não sabe separar empresa
+
+A location tem 10 usuários, todos pessoas (equipe da Roga, dois da agência, um da Nitron). **Não
+existe usuário de campanhas** equivalente ao "Nitron Campanhas" da §3.4, então o passo 4 da §4 não
+tem o que cadastrar hoje.
+
+E há uma trava a respeitar antes de cadastrar: **`instancia_ghl` não tem coluna de empresa.** O
+painel escolhe a instância de cliente com
+
+```
+instancia_ghl?ativa=eq.true&escopo=eq.cliente&select=instancia&order=instancia&limit=1
+```
+
+— a **primeira em ordem alfabética**, sem filtrar empresa. Cadastrar hoje uma instância de cliente da
+Roga com nome que venha antes de "Campanhas Nitron" faria **a Nitron passar a disparar pelo número da
+Roga**, silenciosamente. Antes de cadastrar instância da Roga, `instancia_ghl` precisa de coluna de
+empresa e a consulta precisa filtrar por ela.
+
+### 9.5 Por que `pronto` continua `false`
+
+O seletor de empresa do painel é, hoje, uma casca: `trocarEmpresa()` só mostra ou esconde o catálogo.
+As consultas (`campanhas-listar`, `rep_instancia`, `instancia_ghl`) **não recebem empresa nenhuma**, e
+as tabelas que elas leem — `campanhas`, `fila_envio`, `snap_parceiro`, `instancia_ghl` — **não têm
+coluna de empresa**. Só a `public.empresa` tem o cadastro; o resto do banco é mono-empresa.
+
+Marcar `pronto:true` na Roga sem isso não mostraria a Roga: mostraria **os dados da Nitron sob o nome
+Roga Village**, com envio saindo pelo `LOC` da Nitron (§3.1). Por isso ela entrou na `var EMPRESAS`
+com `pronto:false`, como as outras quatro.
+
+### 9.6 O que fazer para ligar a Roga, na ordem
+
+O roteiro da §4 assume Sankhya → GHL. Para a Roga a ordem é outra:
+
+1. **Isolar empresa no banco** antes de qualquer envio: coluna de empresa em `instancia_ghl`,
+   `campanhas` e `fila_envio`, e filtro por empresa nas consultas do painel. É pré-requisito das
+   duas travas acima, não melhoria.
+2. **Trocar o `const LOC` por leitura da `public.empresa`** nas 5 funções (§3.1) — o cadastro já
+   existe e já tem a location da Roga.
+3. **Decidir a fonte do público**, que é a pergunta de negócio de verdade: os 10.069 contatos do
+   próprio GHL (disponível hoje) ou o PMS `AD_HOT*` depois que entrar em operação (não é hoje). Se
+   for o GHL, a Máquina de Vendas da Roga não precisa de `cache-refresh` nem de `snap_*` — precisa de
+   uma leitura da própria location. Isso é decisão de arquitetura, e é do gestor.
+4. **Criar a instância de WhatsApp** da Roga no ZaptosWPP com usuário próprio no GHL, e só então
+   cadastrar em `instancia_ghl` (já com a coluna do passo 1).
+5. Só depois: `pronto:true` e o teste com **um** destinatário, conferindo entrega no GHL (§5.1).

@@ -175,6 +175,7 @@
           <button class="btn big ok" id="btnAgendar" onclick="agendarFila()">📅 Criar fila e enviar</button>
           <span class="note">monta a fila com os <b>selecionados</b> e <b>manda em seguida</b>, na cadência configurada · e-mail em lote · o painel abaixo mostra o andamento</span>
           <span class="fbig" id="filaStatus" style="margin-left:auto"></span>
+          <div class="note" id="envioResumo" style="flex-basis:100%;margin-top:6px;font-size:12.5px"></div>
         </div>
         <div id="filaPanel" style="margin-top:12px;border:1px solid var(--line);border-radius:10px;overflow:hidden">
           <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:#f4f8f6;border-bottom:1px solid var(--line);flex-wrap:wrap">
@@ -431,7 +432,7 @@
         REPDATA[r.codvend]={nome:r.nome,assistente:r.assistente||null,telefones:r.telefones||[],emails:r.emails||[]};
         REPSEL[r.codvend]={tel:(r.telefones||[]).filter(function(t){return foneCel(t.valor)!==false&&!rotFuzzy(t.rotulo);}).map(function(t){return t.valor;}),email:(r.emails||[]).filter(function(e){return !rotFuzzy(e.rotulo);}).map(function(e){return e.valor;})};
         var itag=tagInst(r.codvend,r.assistente);
-        html+='<div class="rrow"><div class="rmain"><span class="exp" onclick="toggleCli('+r.codvend+')" id="ex-'+r.codvend+'">▶</span><input type="checkbox" class="repchk" data-cod="'+r.codvend+'" data-nome="'+esc(r.nome)+'" checked><span class="rn">'+esc(r.nome)+'</span> '+itag+'<span class="wtag">'+((r.telefones||[]).length)+' tel · '+((r.emails||[]).length)+' email</span><span class="rc">'+r.clientes+' '+uni+'</span>'+val+'</div><div class="cli" id="cli-'+r.codvend+'"></div></div>';});
+        html+='<div class="rrow"><div class="rmain"><span class="exp" onclick="toggleCli('+r.codvend+')" id="ex-'+r.codvend+'">▶</span><input type="checkbox" class="repchk" onchange="resumoEnvio()" data-cod="'+r.codvend+'" data-nome="'+esc(r.nome)+'"><span class="rn">'+esc(r.nome)+'</span> '+itag+'<span class="wtag">'+((r.telefones||[]).length)+' tel · '+((r.emails||[]).length)+' email</span><span class="rc">'+r.clientes+' '+uni+'</span>'+val+'</div><div class="cli" id="cli-'+r.codvend+'"></div></div>';});
       $("reps").innerHTML=html;arteVarsHTML();fetchModelos();if(campKind()==="voucher")carregarVoucher();if(FILATIMER)clearInterval(FILATIMER);statusFila();FILATIMER=setInterval(statusFila,15000);});}
   function repContatosHTML(cod){var rd=REPDATA[cod]||{telefones:[],emails:[]};var sel=REPSEL[cod]||{tel:[],email:[]};
     var delbtn=function(tipo,valor){return '<button class="btn" style="margin-left:auto;padding:1px 8px;color:#c0392b" title="excluir" onclick="event.preventDefault();event.stopPropagation();removeRepContato('+cod+',\''+tipo+'\',\''+esc(valor)+'\')">✕</button>';};
@@ -469,7 +470,7 @@
         h+='</div></div>';});
       inner.innerHTML=h;box.setAttribute("data-loaded","1");previewModelo();});}
   function toggleCt(cod,ci){var b=$("ct-"+cod+"-"+ci),x=$("cx-"+cod+"-"+ci);if(b.classList.contains("show")){b.classList.remove("show");x.textContent="▶";}else{b.classList.add("show");x.textContent="▼";}}
-  function selReps(v){document.querySelectorAll(".repchk").forEach(function(c){c.checked=v;});}
+  function selReps(v){document.querySelectorAll(".repchk").forEach(function(c){c.checked=v;});resumoEnvio();}
   function bestContato(c){var cts=c.contatos||[];if(!cts.length)return null;var i;for(i=0;i<cts.length;i++){if(/compra/i.test(cts[i].funcao||""))return cts[i];}for(i=0;i<cts.length;i++){if(/principal/i.test(cts[i].funcao||""))return cts[i];}return cts[0];}
   function setCli(cod,ci,on){CLICHK[cod+"-"+ci]=on;}
   function loadRepCli(cod){return new Promise(function(res){if(CLIENTES[cod]){res();return;}getJSON(SUPA+"/functions/v1/campanhas-preview?codigo="+CUR+"&rep="+cod,function(d){if(d&&d.clientes){CLIENTES[cod]=d.clientes;ASSIST[cod]=d.assistente||null;}res();});});}
@@ -540,7 +541,8 @@
     if(mr)mr.style.display=(t==="cli")?"none":"";
     if(mc)mc.style.display=(t==="cli")?"":"none";
     if(tt)tt.textContent=(t==="cli")?"✍️ Mensagem e e-mail ao CLIENTE":"✍️ Mensagem e e-mail ao REPRESENTANTE";
-    var ar=$("arteDest");if(ar)ar.textContent=(t==="cli")?"vale para o e-mail do cliente":"vale para o e-mail do representante";}
+    var ar=$("arteDest");if(ar)ar.textContent=(t==="cli")?"vale para o e-mail do cliente":"vale para o e-mail do representante";
+    resumoEnvio();}
   /* O template do GHL so imprime campo do contato, e o percentual do voucher existia no CRM apenas
      no contato da EMPRESA — a campanha manda para os contatos das PESSOAS, onde o campo vinha vazio.
      Entao a tela leva os valores junto com o item da fila e o envio grava no contato que recebe.
@@ -610,7 +612,7 @@
     if(VALFILTRO&&String(c.validade||"")!==VALFILTRO)return false;
     return true;}
   function renderCliFlat(){var box=$("cliFlatList");if(!box)return;var q=($("cliBusca")?$("cliBusca").value:"").toLowerCase().trim();
-    renderValBar();
+    renderValBar();resumoEnvio();
     var vis=CLIFLAT.filter(function(c){return passaFiltro(c,q);});
     var selN=CLIFLAT.filter(function(c){return CLISEL[c.codparc];}).length;
     var cc=$("cliCount");
@@ -638,8 +640,8 @@
     if(vis.length>400)h+='<div class="note" style="padding:8px 10px">mostrando 400 de '+vis.length+' — refine a busca</div>';
     box.innerHTML=h;}
   function expCont(cod){var b=$("clc-"+cod),x=$("clx-"+cod);if(!b)return;if(b.style.display==="none"){b.style.display="";if(x)x.textContent="▼";}else{b.style.display="none";if(x)x.textContent="▶";}}
-  function toggleFlat(cod,on){CLISEL[cod]=on;var selN=CLIFLAT.filter(function(c){return CLISEL[c.codparc];}).length;var cc=$("cliCount");if(cc)cc.innerHTML='<b>'+selN+'</b> de '+CLIFLAT.length+' marcados';}
-  function toggleCanal(cod,oi,on){var c=CLIFLAT.filter(function(x){return x.codparc===cod;})[0];if(!c)return;var o=channelOpts(c)[oi];if(!o)return;if(!CLICT[cod])CLICT[cod]={};if(on){CLICT[cod][ckey(o)]=o;if(!CLISEL[cod]){CLISEL[cod]=true;var cb=$("clf-"+cod);if(cb)cb.checked=true;toggleFlat(cod,true);}}else{delete CLICT[cod][ckey(o)];}var rs=$("clr-"+cod);if(rs)rs.innerHTML=canaisResumo(c);}
+  function toggleFlat(cod,on){CLISEL[cod]=on;resumoEnvio();var selN=CLIFLAT.filter(function(c){return CLISEL[c.codparc];}).length;var cc=$("cliCount");if(cc)cc.innerHTML='<b>'+selN+'</b> de '+CLIFLAT.length+' marcados';}
+  function toggleCanal(cod,oi,on){var c=CLIFLAT.filter(function(x){return x.codparc===cod;})[0];if(!c)return;var o=channelOpts(c)[oi];if(!o)return;if(!CLICT[cod])CLICT[cod]={};if(on){CLICT[cod][ckey(o)]=o;if(!CLISEL[cod]){CLISEL[cod]=true;var cb=$("clf-"+cod);if(cb)cb.checked=true;toggleFlat(cod,true);}}else{delete CLICT[cod][ckey(o)];}var rs=$("clr-"+cod);if(rs)rs.innerHTML=canaisResumo(c);resumoEnvio();}
   function selFlat(v){var q=($("cliBusca")?$("cliBusca").value:"").toLowerCase().trim();CLIFLAT.forEach(function(c){if(!passaFiltro(c,q))return;CLISEL[c.codparc]=v;});renderCliFlat();}
   function campKind(){return CUR==="clube_saldo"?"clube":(CUR==="voucher_empurrar"?"voucher":(MOTORC[CUR]?"motor":"giro"));}
   function valorInfo(c){var k=campKind();
@@ -693,14 +695,54 @@
     var ex=exemploCli();
     var pc=$("prev_cli");if(pc){pc.innerHTML='<b>Prévia (exemplo'+(ex.cliente?" — "+esc(ex.nome):"")+'):</b><br>'+esc(fillMk($("mcli_wpp")?$("mcli_wpp").value:"",{CLIENTE:ex.merge.cliente,VALOR:(ex.bvalor!=null?ex.bvalor:ex.merge.valor),VALIDADE:ex.merge.validade,SALDO:ex.merge.saldo,DIAS:ex.merge.dias})).replace(/\n/g,"<br>");}
     verArteTarde();}
+  /* A ABA MANDA NO PUBLICO. Antes, "enviar" juntava o que estava marcado nas DUAS abas, e como todo
+     representante nascia marcado, uma comunicacao ao CLIENTE saia tambem para os 98 reps sem
+     ninguem ter pedido — foi o que aconteceu em 26/08 no Empurrar Voucher: 120 e-mails ao cliente
+     (o que se queria) mais 89 ao rep e 71 WhatsApp ao rep (que nao se queria; os 71 foram
+     cancelados antes de sair). Agora o publico e o da aba aberta, e so dele. */
+  function publicoAtivo(){return TAB==="cli"?"cliente":"rep";}
+  function repsMarcados(){var r=[];document.querySelectorAll(".repchk:checked").forEach(function(c){r.push(parseInt(c.getAttribute("data-cod")));});return r;}
+  function clientesMarcados(){
+    var out=[];
+    CLIFLAT.forEach(function(c){
+      if(!CLISEL[c.codparc])return;
+      var sel=CLICT[c.codparc]||defaultSel(c);
+      var chans=Object.keys(sel).map(function(k){return sel[k];});
+      if(CLISOEMAIL)chans=chans.filter(function(x){return x.canal==="email";});
+      if(!chans.length)return;
+      var vi=valorInfo(c);
+      out.push({codparc:c.codparc,nome:c.nome,saldo:c.saldo,pct:c.pct,validade:c.validade,dias:c.dias,crosssell:c.crosssell,novidades:c.novidades,valtxt:c.valtxt,situacao:c.situacao,instancia:c.assistente||null,chans:chans,merge:{cliente:c.nome,saldo:vi.saldo,valor:vi.valor,validade:vi.validade,dias:vi.dias}});});
+    return out;}
+  /* O aviso que faltava: quantas LINHAS vao sair, para quem, e por qual canal — antes de clicar.
+     "120 selecionados" nunca foi o numero da fila: a fila trabalha em linha por contato e canal. */
+  function resumoEnvio(){
+    var el=$("envioResumo");if(!el)return;
+    var pub=publicoAtivo();
+    if(pub==="rep"){
+      var n=repsMarcados().length;
+      el.innerHTML=n?('vai sair para <b>'+n+' representante'+(n>1?'s':'')+'</b> — <b>nada</b> vai para cliente'):
+        '<span style="color:#b7791f">nenhum representante marcado</span>';
+      return;}
+    var cs=clientesMarcados(),w=0,e=0;
+    cs.forEach(function(c){(c.chans||[]).forEach(function(x){if(x.canal==="email")e++;else w++;});});
+    var semCanal=0;CLIFLAT.forEach(function(c){if(CLISEL[c.codparc])semCanal++;});semCanal-=cs.length;
+    el.innerHTML=cs.length
+      ?('vai sair para <b>'+cs.length+' cliente'+(cs.length>1?'s':'')+'</b> = <b>'+(w+e)+' linha'+((w+e)>1?'s':'')+'</b> ('+e+' e-mail · '+w+' WhatsApp) — <b>nada</b> vai para representante'
+        +(semCanal>0?(' <span style="color:#b7791f">· '+semCanal+' marcado(s) sem contato, fora</span>'):''))
+      :'<span style="color:#b7791f">nenhum cliente com contato marcado</span>';}
   function agendarFila(){
     /* rascunho na tela manda: nunca regerar por cima do que a pessoa editou */
     if(DRAFTS.length)return agendarTodos();
     var btn=$("btnAgendar"),st=$("filaStatus");btn.disabled=true;btn.textContent="agendando…";st.textContent="preparando…";
-    var reps=[];document.querySelectorAll(".repchk:checked").forEach(function(c){reps.push(parseInt(c.getAttribute("data-cod")));});
-    var clientes=[];CLIFLAT.forEach(function(c){if(!CLISEL[c.codparc])return;var sel=CLICT[c.codparc]||defaultSel(c);var chans=Object.keys(sel).map(function(k){return sel[k];});if(CLISOEMAIL)chans=chans.filter(function(x){return x.canal==="email";});if(!chans.length)return;var vi=valorInfo(c);clientes.push({codparc:c.codparc,nome:c.nome,saldo:c.saldo,pct:c.pct,validade:c.validade,dias:c.dias,crosssell:c.crosssell,novidades:c.novidades,valtxt:c.valtxt,situacao:c.situacao,instancia:c.assistente||null,chans:chans,merge:{cliente:c.nome,saldo:vi.saldo,valor:vi.valor,validade:vi.validade,dias:vi.dias}});});
+    var PUB=publicoAtivo();
+    var reps=PUB==="rep"?repsMarcados():[];
+    var clientes=PUB==="cliente"?clientesMarcados():[];
     var cliSelN=0;CLIFLAT.forEach(function(c){if(CLISEL[c.codparc])cliSelN++;});
-    if(!reps.length&&!clientes.length){st.textContent=(cliSelN>reps.length?"clientes marcados não têm contato cadastrado":"marque reps (aba Representantes) e/ou clientes (aba Clientes)");btn.disabled=false;btn.textContent="📅 Criar fila e enviar";return;}
+    if(!reps.length&&!clientes.length){
+      st.textContent=PUB==="cliente"
+        ?(cliSelN?"os clientes marcados não têm contato cadastrado":"marque clientes nesta aba (a aba manda no público)")
+        :"marque representantes nesta aba (a aba manda no público)";
+      btn.disabled=false;btn.textContent="📅 Criar fila e enviar";return;}
     var repTpl={whatsapp:$("mrep_wpp").value,email_assunto:$("mrep_ass").value,email_corpo:$("mrep_corpo").value};
     var cliTpl={whatsapp:$("mcli_wpp").value,email_assunto:$("mcli_ass").value,email_corpo:$("mcli_corpo").value};
     var tid=arteSel();var itens=[];var pend=0;

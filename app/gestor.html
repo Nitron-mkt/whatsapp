@@ -53,6 +53,18 @@
   .mv .pub .pn{margin-left:auto;font-weight:700}
   .mv .pub.vazio{opacity:.5}
   .mv .sec{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:700;margin:14px 0 7px}
+  .mv .cmp{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;gap:12px;align-items:flex-start}
+  .mv .cmp.q{border-left:3px solid var(--ok);background:#f6fbf8}
+  .mv .cmp-n{font-size:20px;font-weight:750;line-height:1;min-width:58px;text-align:right}
+  .mv .cmp.q .cmp-n{color:var(--ok)}
+  .mv .cmp-c{flex:1;min-width:0}
+  .mv .cmp-t{font-size:13.5px;font-weight:700;margin-bottom:2px}
+  .mv .cmp-b{font-size:12px;color:var(--soft);line-height:1.5}
+  .mv .cmp-p{font-size:12px;color:var(--faint);line-height:1.55;margin-top:4px}
+  .mv .cmp-f{font-size:11.5px;color:var(--warn);margin-top:5px;line-height:1.45}
+  .mv .cmp-ch{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:20px;background:var(--chip);color:var(--soft);white-space:nowrap}
+  .mv .cmp-ch.w{background:#dff0e5;color:#136c3c}.mv .cmp-ch.m{background:#dceaf0;color:#0b6f86}
+  .mv .erpbox{border:1px solid var(--line);border-radius:9px;padding:9px 12px;font-size:12.5px;color:var(--soft);background:#f8faf9;line-height:1.55}
   .mv .btn{border:none;border-radius:8px;padding:6px 12px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--chip);color:var(--soft)}
   .mv .btn.big{padding:10px 16px;font-size:14px}.mv .btn.ok{background:var(--ok);color:#fff}.mv .btn.wpp{background:#1a8a4a;color:#fff}.mv .btn.mail{background:var(--info);color:#fff}.mv .btn.out{background:var(--panel);border:1px solid var(--line);color:var(--ink)}
   .mv .btn:disabled{opacity:.5;cursor:default}
@@ -198,22 +210,23 @@
           <span class="fbig" id="filaStatus" style="margin-left:auto"></span>
           <div class="note" id="envioResumo" style="flex-basis:100%;margin-top:6px;font-size:12.5px"></div>
         </div>
-        <div id="filaPanel" style="margin-top:12px;border:1px solid var(--line);border-radius:10px;overflow:hidden">
-          <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:#f4f8f6;border-bottom:1px solid var(--line);flex-wrap:wrap">
-            <b style="font-size:13px">📬 Fila de envios</b>
-            <span class="note" id="filaResumo">—</span>
-            <button class="btn" style="margin-left:auto;border-color:#c0392b;color:#c0392b;font-weight:700" onclick="filaParar()" title="Desliga as chaves da fila. Não cancela nada: só para de puxar linha nova.">⛔ Parar agora</button>
-            <button class="btn" onclick="filaCancelarPend()" title="Marca como cancelada toda linha ainda não enviada DESTA campanha.">✖ Cancelar pendentes</button>
-            <button class="btn" onclick="abrirCfg()">⚙ Cadência</button>
-            <button class="btn" onclick="statusFila()">↻ atualizar</button>
-          </div>
-          <div class="note" id="filaAcaoStat" style="padding:0 12px"></div>
-          <div id="filaPend"></div>
-          <div id="filaLista" style="max-height:300px;overflow:auto"></div>
-        </div>
         <span class="note" id="note"></span>
       </div>
       </div><!--/opFlow-->
+      <div id="filaPanel" style="margin-top:12px;border:1px solid var(--line);border-radius:10px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:#f4f8f6;border-bottom:1px solid var(--line);flex-wrap:wrap">
+          <b style="font-size:13px">📬 Fila de envios</b>
+          <span class="note" id="filaDe" style="font-weight:600"></span>
+          <span class="note" id="filaResumo">—</span>
+          <button class="btn" style="margin-left:auto;border-color:#c0392b;color:#c0392b;font-weight:700" onclick="filaParar()" title="Desliga as chaves da fila (WhatsApp e e-mail). Não cancela nada: só para de puxar linha nova.">⛔ Parar agora</button>
+          <button class="btn" onclick="filaCancelarPend()" title="Marca como cancelada toda linha desta campanha que ainda não saiu.">✖ Cancelar pendentes</button>
+          <button class="btn" onclick="abrirCfg()">⚙ Cadência</button>
+          <button class="btn" onclick="statusFila()">↻ atualizar</button>
+        </div>
+        <div class="note" id="filaAcaoStat" style="padding:0 12px"></div>
+        <div id="filaPend"></div>
+        <div id="filaLista" style="max-height:300px;overflow:auto"></div>
+      </div>
       <div id="drafts" style="display:none"></div>
       <div class="modal" id="cfgModal">
         <div class="card">
@@ -300,14 +313,14 @@
   var EMPRESAS=[
     {id:"nitron",nome:"Grupo Nitron (Plásticos)",codemp:[1,2,14],pronto:true},
     {id:"mundo_ud",nome:"Mundo UD",codemp:[4],pronto:false},
-    {id:"teak",nome:"Teak Brazil",codemp:[8,21],pronto:false},
+    {id:"teak",nome:"Teak Brazil",codemp:[8,21],pronto:false,fonte:"teak",emp:"teak",rotulo:" (leitura)"},
     {id:"mood",nome:"Mood Fruits",codemp:[16,9],pronto:false},
     {id:"hyak",nome:"Hyak Internacional",codemp:[5,7],pronto:false},
-    {id:"roga",nome:"Roga Village",codemp:[12],pronto:false,fonte:"crm",emp:"ROGA"}
+    {id:"roga",nome:"Roga Village",codemp:[12],pronto:false,fonte:"crm",emp:"roga"}
   ];
   var EMPRESA="nitron";
   function empAtual(){for(var i=0;i<EMPRESAS.length;i++)if(EMPRESAS[i].id===EMPRESA)return EMPRESAS[i];return EMPRESAS[0];}
-  function popEmpresas(){var s=$("empresa");if(!s)return;s.innerHTML="";EMPRESAS.forEach(function(e){var o=document.createElement("option");o.value=e.id;o.textContent=e.nome+(e.pronto?"":" (a configurar)");s.appendChild(o);});s.value=EMPRESA;}
+  function popEmpresas(){var s=$("empresa");if(!s)return;s.innerHTML="";EMPRESAS.forEach(function(e){var o=document.createElement("option");o.value=e.id;o.textContent=e.nome+(e.pronto?"":(e.rotulo||" (a configurar)"));s.appendChild(o);});s.value=EMPRESA;}
   function trocarEmpresa(){EMPRESA=$("empresa").value;var e=empAtual();var sub=$("subEmpresa");if(sub)sub.textContent=e.nome+" · Máquina de Vendas";
     if(e.pronto){$("catalogo").style.display="";document.querySelectorAll(".cc.sel").forEach(function(x){x.classList.remove("sel");});$("op").classList.remove("show");}
     else{$("op").classList.remove("show");$("catalogo").style.display="none";var box=$("empAviso");if(!box){box=document.createElement("div");box.id="empAviso";box.className="op show";$("catalogo").parentNode.insertBefore(box,$("catalogo").nextSibling);}
@@ -315,6 +328,10 @@
          sincronizar o snapshot": para ela nao existe snapshot a gerar. O ERP dela so tem compra,
          entao a tela le o funil do GHL na hora. */
       if(e.fonte==="crm"){renderCRM(e,box);return;}
+      /* A Teak tem os dois lados: cliente no ERP (CODEMP 8 e 21) e lead no CRM (subconta
+         propria). Por isso painel proprio, e nao o aviso de "falta sincronizar" — ela ja esta
+         sincronizada. Ver renderTeak. */
+      if(e.fonte==="teak"){renderTeak(e,box);return;}
       box.innerHTML='<div class="oh"><h3>'+esc(e.nome)+'</h3><p>CODEMP '+e.codemp.join(", ")+' · Sankhya↔GHL</p></div><div class="bd2"><div class="note" style="padding:16px;line-height:1.7">🏗️ Esta empresa ainda <b>não tem os dados sincronizados</b> para a Máquina de Vendas.<br>O fluxo (campanhas, contatos Sankhya+GHL, fila, Key Accounts) é <b>o mesmo</b> — falta gerar o snapshot desta empresa e mapear a subconta GHL dela. É só me pedir que eu configuro.</div></div>';box.style.display="";}
     if(e.pronto){var av=$("empAviso");if(av)av.style.display="none";}}
   /* ---------- Painel de empresa que roda pelo CRM ----------
@@ -331,7 +348,7 @@
     var cab='<div class="oh"><h3>'+esc(e.nome)+'</h3><p>CODEMP '+e.codemp.join(", ")+' · fonte: <b>CRM (GHL)</b>, não o ERP · hotel e eventos</p></div>';
     if(CRMCACHE[e.emp]){pintarCRM(e,box,CRMCACHE[e.emp],cab);return;}
     box.innerHTML=cab+'<div class="bd2"><div class="note" style="padding:14px">consultando o CRM da '+esc(e.nome)+'… <span style="opacity:.7">(o funil vem ao vivo, leva alguns segundos)</span></div></div>';
-    getJSON(SUPA+"/functions/v1/roga-crm?empresa="+encodeURIComponent(e.emp||"ROGA"),function(d){
+    getJSON(SUPA+"/functions/v1/roga-crm?empresa="+encodeURIComponent(e.emp||"roga"),function(d){
       CRMCACHE[e.emp]=d; pintarCRM(e,box,d,cab);
     });
   }
@@ -365,6 +382,24 @@
       h+='<div class="trava">Nenhum contato marcado como <b>não perturbe</b> na base inteira — não há higiene de opt-out. Há também contatos de <b>teste</b> com tag de produção. Filtrar isso é pré-requisito do primeiro envio.</div>';
     }
 
+    /* Campanhas antes do funil: o gestor abre esta tela para decidir o que disparar, nao para
+       admirar o funil. O funil fica abaixo, como a evidencia que sustenta cada campanha. */
+    var camps=campanhasRoga(d);
+    if(camps.length){
+      h+='<div class="sec">Campanhas que dá para montar com este dado</div>';
+      camps.forEach(function(c){
+        h+='<div class="cmp'+(c.quente?" q":"")+'">'
+          +'<div class="cmp-n">'+nfmt(c.alvo)+'</div>'
+          +'<div class="cmp-c"><div class="cmp-t">'+esc(c.n)+'</div>'
+          +'<div class="cmp-b">'+c.base+'</div>'
+          +'<div class="cmp-p">'+esc(c.pq)+'</div>'
+          +(c.falta?'<div class="cmp-f">⚠ falta: '+c.falta+'</div>':"")
+          +'</div>'
+          +'<span class="cmp-ch '+(c.canal==="WhatsApp"?"w":"m")+'">'+esc(c.canal)+'</span>'
+          +'</div>';
+      });
+    }
+
     h+='<div class="sec">Funil no CRM — ao vivo</div>';
     var fun=(d.funil||[]).slice().sort(function(a,c){return (c.total||0)-(a.total||0);});
     fun.forEach(function(f){
@@ -395,6 +430,21 @@
         +'<span class="pn">'+nfmt(x.contatos)+'</span></div>';
     });
 
+    /* O assunto ERP fica encerrado com numero medido, nao com afirmacao. So afirma quando as sete
+       consultas responderam: "medido e vazio" e "nao medido" nao podem virar a mesma frase. */
+    h+='<div class="sec">Sankhya (ERP)</div>';
+    var medidos=d.erp_medidos, campos=d.erp_campos||7;
+    if(medidos===campos&&d.erp_total===0){
+      h+='<div class="erpbox">Nenhum dado do ERP no CRM: os <b>'+campos+' campos</b> criados para receber o Sankhya '
+        +'(CODPARC, Última Estadia, Estadias, Estado do Ciclo, Canal Preferido, Valor Vencido, Ficha Roga) '
+        +'estão <b>todos com zero contato</b>. Conferido campo a campo. '
+        +'Nada a importar — e nada a esperar: o ERP da Roga só tem nota de <b>compra</b>, os parceiros com movimento lá são <b>fornecedores</b> do hotel.</div>';
+    } else if(medidos===0){
+      h+='<div class="erpbox">Não foi possível medir os campos do ERP nesta leitura.</div>';
+    } else {
+      h+='<div class="erpbox">'+nfmt(d.erp_total)+' contato(s) com algum campo do ERP preenchido ('+medidos+' de '+campos+' campos medidos).</div>';
+    }
+
     h+='<div class="note" style="margin-top:12px">Lido do GHL '+esc(tempoDesde(d.atualizado)||"agora")
       +' · location <code>'+esc((d.empresa&&d.empresa.ghl_location)||"")+'</code>'
       +' · '+nfmt(d.oportunidades_lidas)+' oportunidade(s) percorrida(s)'
@@ -402,6 +452,175 @@
       +' <button class="btn" style="margin-left:8px" onclick="recarregarCRM()">↻ atualizar</button></div>';
     h+='</div>';
     box.innerHTML=h;
+  }
+  /* ---------- Painel da Teak Brazil ----------
+     A Teak e o primeiro caso com os DOIS lados: cliente no ERP e lead no CRM. E os dois vem de
+     sincronismos independentes, com idades diferentes, entao a tela os separa em dois blocos em
+     vez de somar numa lista — num balaio unico, numero velho do ERP fica indistinguivel de
+     numero fresco do CRM.
+     Tudo aqui sai de view (teak_espera, teak_lead*, teak_cliente*): a tela nao recalcula regra
+     nenhuma, porque regra propria de tela mente. */
+  var TEAK={};
+  function teakCount(url,cb){
+    var x=new XMLHttpRequest();x.open("GET",url,true);
+    for(var k in H)x.setRequestHeader(k,H[k]);
+    x.setRequestHeader("Prefer","count=exact");x.setRequestHeader("Range","0-0");
+    x.onreadystatechange=function(){if(x.readyState===4){
+      var cr=x.getResponseHeader("Content-Range")||"";var n=cr.split("/")[1];
+      cb((n==null||n==="*")?null:Number(n));}};
+    x.send();
+  }
+  function renderTeak(e,box){
+    box.style.display="";
+    var cab='<div class="oh"><h3>Teak Brazil</h3><p>CODEMP 8 e 21 · subconta própria do GHL · teca: painéis, revestimentos, madeira serrada</p></div>';
+    box.innerHTML=cab+'<div class="bd2"><div class="note" style="padding:14px">carregando os dados da Teak…</div></div>';
+    var falta=4;
+    function pronto(){ if(--falta<=0) pintarTeak(e,box,cab); }
+    getJSON(SUPA+"/rest/v1/teak_espera?select=campanha_codigo,esperando,regra",function(d){
+      TEAK.espera={}; if(Array.isArray(d))d.forEach(function(r){TEAK.espera[r.campanha_codigo]=r;}); pronto();});
+    getJSON(SUPA+"/functions/v1/campanhas-listar?empresa=teak",function(d){
+      TEAK.camps=(d&&d.campanhas)||[]; pronto();});
+    getJSON(SUPA+"/rest/v1/cache_meta?chave=in.(snapshot:teak,leads:teak)&select=chave,atualizado,detalhe",function(d){
+      TEAK.meta={}; if(Array.isArray(d))d.forEach(function(r){TEAK.meta[r.chave]=r;}); pronto();});
+    getJSON(SUPA+"/rest/v1/snap_pipeline?empresa=eq.teak&pipeline=eq.Novos%20Clientes&select=stage,posicao&order=posicao",function(d){
+      TEAK.estagios=Array.isArray(d)?d:[]; TEAK.porEstagio={};
+      if(!TEAK.estagios.length){pronto();return;}
+      var f=TEAK.estagios.length;
+      TEAK.estagios.forEach(function(st){
+        teakCount(SUPA+"/rest/v1/teak_lead?stage=eq."+encodeURIComponent(st.stage)+"&select=ghl_id",function(n){
+          TEAK.porEstagio[st.stage]=n; if(--f<=0)pronto();});
+      });
+    });
+  }
+  /* Quais campanhas leem o ERP e quais leem o CRM. E o que decide em qual bloco cada uma aparece. */
+  var TEAK_BASE={teak_recompra_giro:"erp",teak_primeiro_pedido:"erp"};
+  function teakCard(c){
+    var e=TEAK.espera[c.codigo]||{};
+    var n=(e.esperando==null)?"—":e.esperando;
+    var interno=(c.publico||[]).indexOf("interno")>=0;
+    return '<div class="cc"><div class="nm">'+esc(c.nome)+' <span style="float:right;font-size:15px;font-weight:750;color:'+(Number(n)?"var(--accent)":"var(--faint)")+'">'+esc(n)+'</span></div>'
+      +'<div class="ob">'+esc(c.objetivo||"")+'</div>'
+      +(interno?'<span class="tg t-need">interno · não envia</span>':"")
+      +(!c.ativa?'<span class="tg" style="background:var(--chip);color:var(--faint)">desligada de propósito</span>':"")
+      +'</div>';
+  }
+  function pintarTeak(e,box,cab){
+    function det(m){try{return m?JSON.parse(m.detalhe||"{}"):{};}catch(x){return {};}}
+    var sm=TEAK.meta["snapshot:teak"], lm=TEAK.meta["leads:teak"];
+    var ds=det(sm), dl=det(lm);
+    var h=cab+'<div class="bd2">';
+
+    /* Trava antes de numero, como no painel da Roga: quem abre precisa saber o que impede
+       disparar ANTES de se animar com o tamanho da base. */
+    h+='<div class="sec">O que impede disparar hoje</div>';
+    h+='<div class="trava"><b>A fila ainda não é por empresa.</b> <code>fila_config</code> tem uma linha só (uma cadência para todas as contas) e o <code>fila-processar</code> marca erro em toda linha de WhatsApp sem instância. A Teak não tem instância — ela usa o WhatsApp <b>nativo do GHL</b> — então a fila hoje recusaria 100% dos envios dela.</div>';
+    h+='<div class="trava"><b>Janela de 24h da Meta.</b> O canal da Teak é a API da Meta pelo GHL: texto livre só sai dentro de 24h desde a última mensagem do cliente. Nas listas antigas (feira, base dormente) isso vale para quase todo mundo — o primeiro toque precisa de template aprovado, ou vai por e-mail.</div>';
+    var semDono=(TEAK.espera["teak_dado_telefone"]||{}).esperando;
+    if(semDono)h+='<div class="trava"><b>'+esc(semDono)+' contatos com problema de dado</b> (sem telefone, telefone a revisar, ou sem dono no CRM). Sem dono o número de saída fica indefinido, então eles ficam fora das listas de envio e aparecem na lista de conserto.</div>';
+
+    // ---------- bloco 1: ERP ----------
+    h+='<div class="sec" style="margin-top:16px">Sankhya · clientes da Teak</div>';
+    h+='<div class="note" style="margin-bottom:8px">CODEMP <b>8 e 21</b> — só as notas faturadas por estas duas empresas. Nenhum dado da Nitron entra aqui. Atualizado '+esc(sm?tempoDesde(sm.atualizado):"nunca")+'.</div>';
+    h+='<div class="kpis" style="padding-left:0;padding-right:0">'
+      +'<div class="kpi"><div class="n">'+nfmt(ds.parceiros)+'</div><div class="l">clientes faturados 12m</div></div>'
+      +'<div class="kpi"><div class="n">'+nfmt(ds.contatos)+'</div><div class="l">contatos</div></div>'
+      +'<div class="kpi s"><div class="n">'+nfmt(ds.giro)+'</div><div class="l">no ciclo de recompra</div></div>'
+      +'<div class="kpi"><div class="n">'+nfmt(ds.reps)+'</div><div class="l">vendedores</div></div>'
+      +'</div>';
+    var erp=TEAK.camps.filter(function(c){return TEAK_BASE[c.codigo]==="erp";});
+    h+='<div class="cards">'+(erp.length?erp.map(teakCard).join(""):'<div class="note">nada aqui.</div>')+'</div>';
+
+    // ---------- bloco 2: CRM ----------
+    h+='<div class="sec" style="margin-top:18px">CRM · leads da Teak</div>';
+    h+='<div class="note" style="margin-bottom:8px">Subconta <b>própria</b> da Teak no GHL — nenhum contato de outra conta. <b>'+nfmt(dl.leads)+'</b> contatos espelhados, '+nfmt(dl.sem_fone)+' sem telefone. Atualizado '+esc(lm?tempoDesde(lm.atualizado):"nunca")+'.</div>';
+    if((TEAK.estagios||[]).length){
+      h+='<div class="pipe"><div class="pipe-h"><b>Novos Clientes</b><span class="note">funil do CRM da Teak</span></div><div class="stg">';
+      TEAK.estagios.forEach(function(st){
+        var n=TEAK.porEstagio[st.stage]; var z=!n;
+        h+='<div class="st'+(z?" z":"")+'"><div class="stn">'+(n==null?"—":n)+'</div><div class="stl">'+esc(st.stage)+'</div></div>';
+      });
+      h+='</div></div>';
+    }
+    var crm=TEAK.camps.filter(function(c){return TEAK_BASE[c.codigo]!=="erp";});
+    h+='<div class="cards">'+(crm.length?crm.map(teakCard).join(""):'<div class="note">nada aqui.</div>')+'</div>';
+
+    h+='<div class="note" style="margin-top:14px">Toda contagem desta tela sai de view (<code>teak_espera</code>, <code>teak_lead*</code>, <code>teak_cliente*</code>) — a mesma fonte que o envio usa. '
+      +'<button class="btn" style="margin-left:8px" onclick="recarregarTeak()">↻ atualizar</button></div>';
+    h+='</div>';
+    box.innerHTML=h;
+  }
+  function recarregarTeak(){var e=empAtual();var box=$("empAviso");if(box)renderTeak(e,box);}
+  /* ---------- Campanhas possíveis, derivadas do dado ----------
+     Lista de campanha não é texto escrito à mão: é consequência do que o CRM mostra. Se o funil
+     mudar, a lista muda junto. Uma lista fixa envelheceria em uma semana e viraria mentira na tela.
+
+     Cada campanha carrega o que impede disparar (`falta`), porque público sem canal não é campanha
+     — é intenção. A regra da casa: toda trava recusa alto. */
+  function campanhasRoga(d){
+    var out=[], b=d.base||{}, fun=d.funil||[], pub={}, si=d.sinais||{};
+    (d.publicos||[]).forEach(function(p){pub[p.tag]=p.contatos||0;});
+    function pipe(nome){for(var i=0;i<fun.length;i++)if(fun[i].nome===nome)return fun[i];return null;}
+    function est(p,nome){if(!p)return null;var e=p.estagios||[];for(var i=0;i<e.length;i++)if(e[i].nome===nome)return e[i];return null;}
+    var semDono=(b.com_dono!=null&&b.total!=null&&b.com_dono*20<b.total);
+    /* A trava de dono vale para todo WhatsApp: o numero de saida e o do assignedTo e fromNumber
+       nao funciona. Repetir em cada cartao e proposital — quem le um cartao isolado precisa ver. */
+    var travaWpp=semDono?"atribuir dono no CRM (sem dono o WhatsApp não sai) + instância da Roga":"instância de WhatsApp da Roga";
+
+    // 1) Reserva parada na entrada do funil de hospedagem
+    var hosp=pipe("Hospedagem Lazer"), ent=est(hosp,"Solicitacao de Reserva");
+    if(ent&&ent.aberto>0){
+      out.push({n:"Retomar reserva parada",alvo:ent.aberto,
+        base:"abertas em <b>Solicitação de Reserva</b>"+(ent.parado_dias!=null?", a mais recente mexeu há "+ent.parado_dias+" d":""),
+        canal:"WhatsApp",quente:true,
+        pq:"É o público mais quente da conta: pediu reserva e ninguém respondeu. Os estágios seguintes estão zerados, então ninguém está tratando esta fila.",
+        falta:travaWpp});
+    }
+    // 2) Evento corporativo travado no primeiro estágio
+    var corp=pipe("Eventos Corporativos"), lead=est(corp,"Lead Novo");
+    if(lead&&lead.aberto>0){
+      out.push({n:"Qualificar lead de evento corporativo",alvo:lead.aberto,
+        base:"abertas em <b>Lead Novo</b>"+(lead.parado_dias!=null?", a mais recente mexeu há "+lead.parado_dias+" d":""),
+        canal:"WhatsApp",quente:true,
+        pq:"Pediu proposta pelo site. O pipeline tem ticket alto — a maior venda registrada da conta veio daqui.",
+        falta:travaWpp});
+    }
+    // 3) Objetivo declarado pelo agente de IA (o sinal mais rico da conta)
+    var obj=(si.objetivo&&si.objetivo.contatos)||0, objF=d.objetivo_com_fone;
+    if(obj>0){
+      out.push({n:"Follow-up por objetivo declarado",alvo:(objF!=null?objF:obj),
+        base:"com <b>Objetivo do Lead</b> preenchido"+(objF!=null&&objF!==obj?" e telefone (de "+obj+" no total)":""),
+        canal:"WhatsApp",quente:true,
+        pq:"O agente de IA já classificou a intenção (\"Restaurante: almoço/day use\", \"Eventos Corporativos\"). Dá para segmentar a mensagem por objetivo em vez de mandar texto único.",
+        falta:(d.objetivo_sem_dono?d.objetivo_sem_dono+" destes estão sem dono · ":"")+travaWpp});
+    }
+    // 4) Base B2B importada — a unica que sustenta e-mail
+    var b2b=(pub["contato-empresas"]||0)+(pub["agencias"]||0);
+    if(b2b>0){
+      out.push({n:"Prospecção B2B para eventos",alvo:b2b,
+        base:"<code>contato-empresas</code> + <code>agencias</code>, com Razão Social e Segmento",
+        canal:"E-mail",quente:false,
+        pq:"Base fria, importada por planilha, mas qualificada por segmento. É a única grande que tem e-mail — a base geral só tem "+((b.com_email!=null&&b.total)?Math.round(b.com_email*100/b.total)+"%":"pouco")+".",
+        falta:"arte/template de e-mail + higiene (nunca foi disparada)"});
+    }
+    // 5) Reativar perdidos
+    var perd=0; fun.forEach(function(f){perd+=(f.perdido||0);});
+    if(perd>0){
+      out.push({n:"Reativar oportunidade perdida",alvo:perd,
+        base:"marcadas como <b>perdidas</b> em todos os pipelines",
+        canal:"WhatsApp",quente:false,
+        pq:"Em Hospedagem há mais perdidas que ganhas. Vale entender o motivo antes de reabordar — perdido sem motivo registrado pode ser só abandono de atendimento.",
+        falta:"motivo da perda não está preenchido · "+travaWpp});
+    }
+    // 6) Business Club — pipeline vazio, mas ha demanda declarada e venda registrada
+    var bc=pipe("Business Club"), oqp=(si.o_que_precisa&&si.o_que_precisa.contatos)||0;
+    if(bc&&bc.total===0&&oqp>0){
+      out.push({n:"Captação para o Business Club",alvo:oqp,
+        base:"responderam <b>O que precisa?</b> no formulário do site",
+        canal:"WhatsApp",quente:false,
+        pq:"O pipeline Business Club está zerado desde que foi criado, mas existem 4 formulários no ar e a maior venda da conta veio de um quiz de captação. A demanda existe e não está sendo colocada no funil.",
+        falta:"definir a oferta e quem atende · "+travaWpp});
+    }
+    return out;
   }
   function recarregarCRM(){var e=empAtual();delete CRMCACHE[e.emp];var box=$("empAviso");if(box)renderCRM(e,box);}
   var CUR="clube_saldo", DRAFTS=[], CLIENTES={}, SOMA=true, REPDATA={}, REPSEL={}, ATUALIZADO=null, ASSIST={}, CLICHK={}, POR_REP=[];
@@ -508,7 +727,8 @@
       prev.innerHTML='<div style="border:1px solid #d9e0dc;border-radius:9px;overflow:hidden">'+cab('<span class="note">com os dados de <b>'+esc(ex.nome)+'</b></span>')+ass+'<iframe id="arteIf" style="width:100%;height:440px;border:0;background:#fff"></iframe>'+av+'</div>';
       var ifr=$("arteIf");if(ifr)ifr.srcdoc=d.html;
       ARTETXT=htmlParaTexto(d.html);aplicarArteNoCorpo();});}
-  function renderCat(camps){var by={};camps.forEach(function(c){(by[c.pipe]=by[c.pipe]||[]).push(c);});
+  var NOMECAMP={};
+  function renderCat(camps){var by={};camps.forEach(function(c){(by[c.pipe]=by[c.pipe]||[]).push(c);NOMECAMP[c.codigo]=c.nome;});
     /* conta por area pra barra de cima, e monta so os pipes desta area */
     var reserv={};["logistica","cobranca"].forEach(function(a){AREAS[a].pipes.forEach(function(x){reserv[x]=a;});});
     var cont={comercial:0,logistica:0,cobranca:0};
@@ -521,7 +741,10 @@
       by[pk].forEach(function(c){var op=OPERAVEIS[c.codigo]?1:0;var ka=KA[c.codigo]?1:0;var rot=ROT[c.codigo]?1:0;var sal=SAL[c.codigo]?1:0;var cob=COB[c.codigo]?1:0;var age=AGE[c.codigo]?1:0;var ret=RET[c.codigo]?1:0;var iap=IAP[c.codigo]?1:0;var pro=PROS[c.codigo]?1:0;var tpl=TPL[c.codigo]?1:0;var red=REDES[c.codigo]?1:0;var clr=clicavel(c.codigo);if(clr&&!PRIMEIRA)PRIMEIRA=c.codigo;var bg=c.status_dados==="pronto"?'<span class="tg t-ok">'+(c.ativa?"ativa":"pronta")+'</span>':(c.status_dados==="proposta"?'<span class="tg t-need" style="background:#efe7fb;color:#5b3fa0">proposta IA</span>':'<span class="tg t-need">precisa dado</span>');
         html+='<div class="cc'+(clr?" on":"")+'" id="cc-'+c.codigo+'"'+(clr?' onclick="abrir(\''+c.codigo+'\')"':'')+'><div class="nm">'+esc(c.nome)+'</div><div class="ob">'+esc(c.objetivo||"")+'</div>'+bg+(op?' <span class="tg t-ok">operável</span>':'')+(ka?' <span class="tg t-ok">briefing</span>':'')+(rot?' <span class="tg t-ok">roteiro</span>':'')+(sal?' <span class="tg t-ok">logística</span>':'')+(cob?' <span class="tg t-ok">cobrança</span>':'')+(age?' <span class="tg t-ok">agendamento</span>':'')+(ret?' <span class="tg t-ok">logística</span>':'')+(iap?' <span class="tg t-ok">inteligência</span>':'')+(pro?' <span class="tg t-ok">contatos (Motor)</span>':'')+(tpl?' <span class="tg t-ok">templates</span>':'')+(red?' <span class="tg t-ok">store-check</span>':'')+'</div>';});
       html+='</div></div>';});$("catalogo").innerHTML=html;}
-  function abrir(cod){if(!clicavel(cod))return;CUR=cod;document.querySelectorAll(".cc").forEach(function(e){e.classList.remove("sel");});var cc=$("cc-"+cod);if(cc)cc.classList.add("sel");
+  function abrir(cod){if(!clicavel(cod))return;CUR=cod;
+    /* o painel da fila e o mesmo em todas as telas, entao trocar de campanha tem de reapontar ele */
+    if(FILATIMER){clearInterval(FILATIMER);FILATIMER=null;}
+    setTimeout(statusFila,0);document.querySelectorAll(".cc").forEach(function(e){e.classList.remove("sel");});var cc=$("cc-"+cod);if(cc)cc.classList.add("sel");
     $("op").classList.add("show");
     if(COM[cod]){$("opFlow").style.display="none";$("roteiroFlow").style.display="none";$("kaFlow").style.display="";return abrirComunicado(cod);}
     if(REDES[cod]){$("opFlow").style.display="none";$("roteiroFlow").style.display="none";$("kaFlow").style.display="";return abrirRedes(cod);}
@@ -1243,7 +1466,7 @@
      UPDATE ao anon, que esta embutido neste HTML. La as unicas transicoes possiveis sao quatro, e
      'enviado' nunca e mexido — mensagem entregue nao se desfaz.                                  */
   function filaAcao(corpo,cb){
-    var st=$("filaAcaoStatCom")||$("filaAcaoStat");if(st){st.textContent="…";st.style.color="#6a7f78";}
+    var st=$("filaAcaoStat");if(st){st.textContent="…";st.style.color="#6a7f78";}
     postJSON(SUPA+"/functions/v1/fila-acao",corpo,function(r){
       if(st){
         if(r&&r.ok){st.style.color="#1a7a44";
@@ -1268,7 +1491,7 @@
   /* Bloco de pendencias por motivo, com os dois botoes que faltavam. Le a mesma classificacao da
      agenda (fila_trava_resumo), entao os dois lugares contam a mesma coisa. */
   function pendencias(){
-    var box=$("filaPendCom")||$("filaPend");if(!box)return;
+    var box=$("filaPend");if(!box)return;
     getJSON(SUPA+"/rest/v1/fila_trava_resumo?select=trava,trava_txt,acao,quem,recupera,gravidade,linhas&campanha=eq."+encodeURIComponent(CUR)+"&order=gravidade.asc",function(rs){
       if(!Array.isArray(rs)||!rs.length){box.innerHTML="";return;}
       var por={};rs.forEach(function(r){var k=r.trava;if(!por[k])por[k]={t:k,txt:r.trava_txt,ac:r.acao,quem:r.quem,rec:r.recupera,g:r.gravidade,n:0};por[k].n+=(+r.linhas||0);});
@@ -1291,12 +1514,20 @@
   function pendCancelar(t,n){
     if(!confirm("Cancelar "+n+" linha(s) deste motivo?\n\nSaem da fila e da lista de pendências. O que já foi enviado não é afetado."))return;
     filaAcao({acao:"cancelar",trava:t,filtro:{campanha:CUR},quem:"painel",motivo:"cancelamento da pendencia "+t});}
-  function statusFila(){pendencias();getJSON(SUPA+"/functions/v1/fila-enfileirar?campanha="+CUR,function(c){if(c.pendente===undefined&&c.enviado===undefined)return;
+  function statusFila(){
+    /* Compartilhado entre as telas, o painel precisa dizer em que campanha os botoes vao mexer —
+       senao "Cancelar pendentes" fica ambiguo justamente na hora em que a pessoa esta com pressa.
+       O nome vem do de-para do catalogo, e NAO do titulo da tela: o titulo e preenchido dentro do
+       callback de cada tela, entao lendo dele o rotulo mostrava a campanha ANTERIOR (conferido no
+       teste de navegador: em "Empurrar Voucher" aparecia "clube_saldo"). Rotulo com nome errado ao
+       lado de um botao de cancelar e pior do que rotulo nenhum. */
+    var de=$("filaDe");if(de)de.textContent="· "+(NOMECAMP[CUR]||CUR);
+    pendencias();getJSON(SUPA+"/functions/v1/fila-enfileirar?campanha="+CUR,function(c){if(c.pendente===undefined&&c.enviado===undefined)return;
     /* estes numeros sao da CAMPANHA INTEIRA (contagem exata no banco), nao das linhas mostradas
        abaixo — a lista e so um recorte das 80 ultimas. Confundir os dois foi o que fez cada tela
        mostrar um total diferente. */
-    var res=$("filaResumoCom")||$("filaResumo");if(res)res.innerHTML='<b>'+(c.pendente||0)+'</b> a sair ('+(c.whatsapp_pendente||0)+' wpp · '+(c.email_pendente||0)+' email) · <b style="color:#1a7f4b">'+(c.enviado||0)+'</b> enviados'+((c.erro||0)?(' · <b style="color:#c0392b">'+c.erro+'</b> erro'):'')+((c.cancelado||0)?(' · <b style="color:#6a7f78">'+c.cancelado+'</b> cancelado'):'')+' <span class="note">— total '+(c.total||0)+' nesta campanha</span>';
-    var lista=$("filaListaCom")||$("filaLista");if(lista){var its=c.itens||[];if(!its.length){lista.innerHTML='<div class="note" style="padding:14px">Fila vazia. Marque os destinatários e clique <b>Criar fila e enviar</b>.</div>';}
+    var res=$("filaResumo");if(res)res.innerHTML='<b>'+(c.pendente||0)+'</b> a sair ('+(c.whatsapp_pendente||0)+' wpp · '+(c.email_pendente||0)+' email) · <b style="color:#1a7f4b">'+(c.enviado||0)+'</b> enviados'+((c.erro||0)?(' · <b style="color:#c0392b">'+c.erro+'</b> erro'):'')+((c.cancelado||0)?(' · <b style="color:#6a7f78">'+c.cancelado+'</b> cancelado'):'')+' <span class="note">— total '+(c.total||0)+' nesta campanha</span>';
+    var lista=$("filaLista");if(lista){var its=c.itens||[];if(!its.length){lista.innerHTML='<div class="note" style="padding:14px">Fila vazia. Marque os destinatários e clique <b>Criar fila e enviar</b>.</div>';}
       else{var h='<table class="ftab"><thead><tr><th>Quando</th><th>Público</th><th>Canal</th><th>Destinatário</th><th>Status</th><th></th></tr></thead><tbody>';
         its.forEach(function(r){var dest=r.canal==="email"?(r.email||""):(r.fone||"");var inst=r.instancia?(" · 📲 "+r.instancia):"";var arte=r.template_id?" 🎨arte":"";var stc=r.status==="enviado"?"#1a7f4b":(r.status==="erro"?"#c0392b":"#b7791f");var when=String(r.enviado_em||r.criado_em||"").replace("T"," ").slice(5,16);
           /* uma linha por vez: cancelar o que ainda nao saiu, reenviar o que falhou. 'enviado' nao
@@ -1453,14 +1684,7 @@
       + '<button class="btn out" id="comTeste">Testar no meu e-mail</button>'
       + '<span class="note" id="comCadNota"></span><span class="fbig" id="comSt" style="margin-left:auto"></span></div>'
       + '<div class="cfila"><div class="oh" style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:#f6faf8;border-bottom:1px solid var(--line)">'
-      + '<b style="font-size:13px">Fila deste comunicado</b><span class="note" id="filaResumoCom"></span>'
-      /* os mesmos botoes do painel de campanha: nao pode existir tela com freio de mao e tela sem */
-      + '<button class="btn" style="margin-left:auto;border-color:#c0392b;color:#c0392b;font-weight:700" onclick="filaParar()" title="Desliga as chaves da fila. Nao cancela nada.">\u26D4 Parar agora</button>'
-      + '<button class="btn" onclick="filaCancelarPend()" title="Cancela toda linha desta campanha que ainda nao saiu.">\u2716 Cancelar pendentes</button>'
-      + '<button class="btn" onclick="statusFila()">\u21BB atualizar</button></div>'
-      + '<div class="note" id="filaAcaoStatCom" style="padding:0 12px"></div>'
-      + '<div id="filaPendCom"></div>'
-      + '<div id="filaListaCom"></div></div></div>';
+      + '<b style="font-size:13px">Fila deste comunicado</b><span class="note" style="margin-left:auto">a fila, o botão de parar e o de cancelar estão no painel <b>📬 Fila de envios</b>, logo abaixo</span></div></div></div>';
     $("kaFlow").innerHTML = h;
     comLigarFixos();
     comPintarLista();

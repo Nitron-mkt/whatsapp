@@ -779,7 +779,7 @@
     getJSON(SUPA+"/functions/v1/campanhas-preview?codigo="+cod,function(d){if(d.erro){$("reps").innerHTML='<div style="padding:16px;color:#c0392b">'+d.erro+'</div>';return;}
       SOMA=(d.somaSaldo!==false);var uni=(cod==="clube_saldo")?"grupos":"clientes";
       var vlbl=(cod==="clube_saldo")?"disponível":"faturamento 12m";
-      $("op-nome").textContent=d.campanha||cod;$("op-meta").textContent="Sankhya · dados do snapshot · inadimplentes excluídos"+(SEM_CLUBE[cod]?" · clientes do Clube Nitron excluídos":"");
+      $("op-nome").textContent=d.campanha||cod;$("op-meta").textContent="Sankhya · dados do snapshot · inadimplentes excluídos"+(SEM_CLUBE[cod]?" · clientes do Clube Nitron excluídos":"")+(d.janela_dias?(" · só quem vence em até "+d.janela_dias+" dias"):"");
       var k='<div class="kpi"><div class="n">'+d.totais.clientes+'</div><div class="l">'+uni+'</div></div><div class="kpi"><div class="n">'+d.totais.representantes+'</div><div class="l">representantes</div></div>';
       if(SOMA)k+='<div class="kpi s"><div class="n">'+brl(d.totais.saldo)+'</div><div class="l">'+vlbl+'</div></div>';
       $("op-kpis").innerHTML=k;
@@ -834,6 +834,15 @@
   function selCli(v){var note=$("note");
     if(v){note.textContent="carregando clientes de todos os reps…";Promise.all((POR_REP||[]).map(loadRepCli)).then(function(){CLICHK={};document.querySelectorAll(".clichk").forEach(function(c){c.checked=true;});var t=0;Object.keys(CLIENTES).forEach(function(k){t+=(CLIENTES[k]||[]).length;});note.textContent="✓ "+t+" clientes marcados";});}
     else{Object.keys(CLIENTES).forEach(function(cod){(CLIENTES[cod]||[]).forEach(function(cl,ci){CLICHK[cod+"-"+ci]=false;});});document.querySelectorAll(".clichk").forEach(function(c){c.checked=false;});note.textContent="nenhum cliente marcado";}}
+  /* Um lugar so para montar o cliente que vai ao campanhas-disparar. Antes o "Gerar mensagens" e o
+     "Criar fila e enviar" mandavam pacotes diferentes, e o rascunho perdia o valtxt — no Clube a
+     vencer o disparo nao recebia os dias e escrevia "vence em em breve". */
+  function cliPayload(c){
+    var o={codparc:c.codparc,nome:c.nome,saldo:c.saldo,pct:c.pct,validade:c.validade,dias:c.dias,
+           crosssell:c.crosssell,novidades:c.novidades,valtxt:c.valtxt,situacao:c.situacao};
+    if(c.vig_dias!=null)o.clube_vig_dias=c.vig_dias;
+    else{var m=String(c.valtxt||"").match(/(\d+)\s*d/);if(m)o.clube_vig_dias=+m[1];}
+    return o;}
   function gerar(){var note=$("note");$("drafts").innerHTML="";DRAFTS=[];var btn=$("btn");btn.disabled=true;btn.textContent="gerando…";note.textContent="";
     var reps=[];document.querySelectorAll(".repchk:checked").forEach(function(c){reps.push({cod:parseInt(c.getAttribute("data-cod")),nome:c.getAttribute("data-nome")});});
     var manual={};document.querySelectorAll(".ctchk:checked").forEach(function(c){var cod=c.getAttribute("data-cod"),ci=+c.getAttribute("data-ci"),ti=+c.getAttribute("data-ti");var cl=(CLIENTES[cod]||[])[ci];if(!cl)return;var key=cod+"-"+ci;if(!manual[key])manual[key]=[];manual[key].push(cl.contatos[ti]);});
@@ -843,7 +852,7 @@
     var pend=0,iaErro=false;
     function done(){pend--;if(pend<=0){btn.disabled=false;btn.textContent="Gerar mensagens";note.textContent="";renderDrafts(iaErro);}}
     if(reps.length){pend++;postJSON(SUPA+"/functions/v1/campanhas-disparar",{codigo:CUR,modo:"rascunho",publico:"rep",reps:reps.map(function(r){return r.cod;})},function(d){if(d.ia_erro)iaErro=true;(d.itens||[]).forEach(function(it){var rp=null;reps.forEach(function(x){if(x.nome===it.rep)rp=x;});var inst=rp?instDe(rp.cod,(REPDATA[rp.cod]||{}).assistente):null;DRAFTS.push({tipo:"rep",codvend:rp?rp.cod:null,instancia:inst,saldo_txt:(SOMA?brl(it.saldo):""),titulo:it.rep+" · "+it.clientes+(SOMA?((CUR==="clube_saldo"?" grupos":" clientes")+" · "+brl(it.saldo)):" clientes"),nome:it.rep,wpp:it.whatsapp,assunto:it.email_assunto,corpo:it.email_corpo});});done();});}
-    if(clientes.length){pend++;postJSON(SUPA+"/functions/v1/campanhas-disparar",{codigo:CUR,modo:"rascunho",publico:"cliente",clientes:clientes.map(function(c){return {codparc:c.codparc,nome:c.nome,saldo:c.saldo,pct:c.pct,validade:c.validade,dias:c.dias};})},function(d){if(d.ia_erro)iaErro=true;(d.itens||[]).forEach(function(it,idx){var c=clientes[idx]||{};var ct=SOMA?brl(c.saldo):((c.pct!=null?c.pct+"% ":"")+(c.validade?("até "+c.validade):""));DRAFTS.push({tipo:"cliente",instancia:c.instancia||null,saldo_txt:ct,validade:(c.validade||""),titulo:it.nome+" · "+ct,nome:it.nome,contatos:c.contatos||[],wpp:it.whatsapp,assunto:it.email_assunto,corpo:it.email_corpo});});done();});}
+    if(clientes.length){pend++;postJSON(SUPA+"/functions/v1/campanhas-disparar",{codigo:CUR,modo:"rascunho",publico:"cliente",clientes:clientes.map(cliPayload)},function(d){if(d.ia_erro)iaErro=true;(d.itens||[]).forEach(function(it,idx){var c=clientes[idx]||{};var vi=valorInfo(c);var ct=vi.saldo||vi.valor||"";DRAFTS.push({tipo:"cliente",instancia:c.instancia||null,saldo_txt:ct,validade:(c.validade||""),titulo:it.nome+(ct?(" · "+ct):""),nome:it.nome,contatos:c.contatos||[],wpp:it.whatsapp,assunto:it.email_assunto,corpo:it.email_corpo});});done();});}
   }
   /* ===== EDICAO DA MENSAGEM =====
      A IA escreve primeiro; o que a pessoa digita por cima passa a valer. Guardamos o texto no
@@ -1022,11 +1031,22 @@
      regra propria ("6% de voucher") e nem conhecia o [VALIDADE] — resultado: a tela mostrava
      "6% de voucher de desconto no voucher, valido ate [VALIDADE]" e o cliente recebia outra coisa.
      Agora previa e disparo leem o mesmo valorInfo()/camposCrm(), entao o que aparece e o que sai. */
+  /* Exemplo de mentira, mas do TIPO CERTO: o que ele nao pode fazer e falar de dinheiro numa
+     campanha de prazo (ou de prazo numa de dinheiro). Devolve o mesmo formato do valorInfo(). */
+  function exGen(){
+    var k=campKind();
+    if(k==="clube")return {bvalor:"R$ 10.000",merge:{cliente:"Loja Exemplo",valor:"R$ 10.000 de direito de compra no Clube Nitron",saldo:"R$ 10.000",validade:"",dias:""}};
+    if(k==="voucher")return {bvalor:"8%",merge:{cliente:"Loja Exemplo",valor:"8% de desconto válido até 31/08/2026",saldo:"8%",validade:"31/08/2026",dias:""}};
+    if(k==="motor"){
+      var vt=(CUR==="clube_a_vencer")?"Clube vence em 30d":(CUR==="recompra_novo_produto")?"lançamentos: Teca, Decor Util":(CUR==="rep_roteiro_visitas")?"Giro vencido":"sugerir: Frasqueiras, Lixeiras";
+      var bv=(CUR==="clube_a_vencer")?"30 dias":vt.replace(/^[^:]+:\s*/,"");
+      return {bvalor:bv,merge:{cliente:"Loja Exemplo",valor:vt,saldo:vt,validade:"",dias:""}};}
+    return {bvalor:"83 dias",merge:{cliente:"Loja Exemplo",valor:"83 dias sem comprar",saldo:"R$ 35.318",validade:"",dias:"83"}};}
   function exemploCli(){
     var c=null;
     for(var i=0;i<CLIFLAT.length;i++){if(CLISEL[CLIFLAT[i].codparc]){c=CLIFLAT[i];break;}}
     if(!c&&CLIFLAT.length)c=CLIFLAT[0];
-    if(!c)return {nome:"Loja Exemplo",cliente:null,campos:null,merge:{cliente:"Loja Exemplo",valor:"R$ 10.000 de condição",saldo:"R$ 10.000",validade:"",dias:""}};
+    if(!c){var g=exGen();return {nome:"Loja Exemplo",cliente:null,campos:null,bvalor:g.bvalor,merge:g.merge};}
     var vi=valorInfo(c);
     return {nome:c.nome,cliente:c,campos:camposCrm(c),bvalor:valorBracket(c),
       merge:{cliente:c.nome,rep:c.rep||"",saldo:vi.saldo,valor:vi.valor,validade:vi.validade,dias:vi.dias}};}
@@ -1045,9 +1065,24 @@
     if(CUR==="clube_a_vencer"){var m=String(c.valtxt||"").match(/(\d+)\s*d/);return m?(m[1]+" dias"):"em breve";}
     if(CUR==="rep_roteiro_visitas")return String(c.valtxt||c.situacao||"");
     return (c.dias!=null?(c.dias+" dias"):"");}
-  function previewModelo(){var repEx="Fulano",listaEx="• Cliente A — R$ 10.000\n• Cliente B — R$ 5.000",cliEx="Loja Exemplo",valEx="R$ 10.000 de condição";
-    if(CLIFLAT.length){var c0=CLIFLAT[0];cliEx=c0.nome;if(c0.rep)repEx=c0.rep;valEx=(c0.saldo!=null)?(brl(c0.saldo)+" de condição"):(c0.pct!=null?(c0.pct+"% de voucher"):(c0.dias?(c0.dias+" dias sem comprar"):"a condição"));listaEx=CLIFLAT.filter(function(x){return x.rep===c0.rep;}).slice(0,3).map(function(x){return "• "+x.nome+" — "+((x.saldo!=null)?brl(x.saldo):(x.pct!=null?x.pct+"%":""));}).join("\n")||listaEx;}
-    else{var ks=Object.keys(CLIENTES);if(ks.length){var cod=ks[0];var rd=REPDATA[cod];if(rd&&rd.nome)repEx=rd.nome;var cs=CLIENTES[cod]||[];if(cs.length){listaEx=cs.slice(0,3).map(function(x){return "• "+x.nome+" — "+((x.saldo!=null)?brl(x.saldo):(x.pct!=null?x.pct+"%":""));}).join("\n");var d0=cs[0];cliEx=d0.nome;valEx=(d0.saldo!=null)?(brl(d0.saldo)+" de condição"):(d0.pct!=null?(d0.pct+"% de voucher"):(d0.dias?(d0.dias+" dias sem comprar"):"a condição"));}}}
+  /* O bullet de exemplo do rep tem de ser o MESMO que o disparo escreve. Esta funcao repete o
+     motorBullet()/bulletsDe() do campanhas-disparar; se mudar la, muda aqui. */
+  function bulletEx(c){
+    var nome=c.nome||c.nomeparc||"Cliente";
+    var k=campKind();
+    if(k==="clube")return "• "+nome+" — "+brl(c.saldo)+" de direito de compra";
+    if(k==="voucher")return "• "+nome+" — "+(c.pct!=null?c.pct+"%":"")+" de desconto"+(c.validade?(", vence "+c.validade):"");
+    if(k==="motor")return "• "+nome+" — "+(c.valtxt||"");
+    return "• "+nome+" — "+(c.ticket>0?("ticket médio "+brl(c.ticket)):brl(c.saldo))+(c.dias!=null?(" · "+c.dias+"d sem comprar"):"");}
+  function previewModelo(){var repEx="Fulano",cliEx="Loja Exemplo";
+    var base=CLIFLAT.length?CLIFLAT:((function(){var ks=Object.keys(CLIENTES);return ks.length?(CLIENTES[ks[0]]||[]):[];})());
+    var g0=exGen();var valEx=g0.bvalor||g0.merge.valor;
+    var listaEx="• Cliente A — "+g0.merge.saldo+"\n• Cliente B — "+g0.merge.saldo;
+    if(base.length){var c0=base[0];cliEx=c0.nome;if(c0.rep)repEx=c0.rep;
+      var vb=valorBracket(c0);valEx=(vb!=null&&vb!=="")?vb:valorInfo(c0).valor;
+      var mesmos=base.filter(function(x){return !c0.rep||x.rep===c0.rep;});
+      listaEx=(mesmos.length?mesmos:base).slice(0,3).map(bulletEx).join("\n")||listaEx;}
+    else{var ks2=Object.keys(REPDATA);if(ks2.length&&REPDATA[ks2[0]].nome)repEx=REPDATA[ks2[0]].nome;}
     var pr=$("prev_rep");if(pr){pr.innerHTML='<b>Prévia (exemplo):</b><br>'+esc(fillMk($("mrep_wpp")?$("mrep_wpp").value:"",{REP:repEx,LISTA:listaEx})).replace(/\n/g,"<br>");}
     var ex=exemploCli();
     var pc=$("prev_cli");if(pc){pc.innerHTML='<b>Prévia (exemplo'+(ex.cliente?" — "+esc(ex.nome):"")+'):</b><br>'+esc(fillMk($("mcli_wpp")?$("mcli_wpp").value:"",{CLIENTE:ex.merge.cliente,VALOR:(ex.bvalor!=null?ex.bvalor:ex.merge.valor),VALIDADE:ex.merge.validade,SALDO:ex.merge.saldo,DIAS:ex.merge.dias})).replace(/\n/g,"<br>");}
@@ -1068,7 +1103,7 @@
       if(CLISOEMAIL)chans=chans.filter(function(x){return x.canal==="email";});
       if(!chans.length)return;
       var vi=valorInfo(c);
-      out.push({codparc:c.codparc,nome:c.nome,saldo:c.saldo,pct:c.pct,validade:c.validade,dias:c.dias,crosssell:c.crosssell,novidades:c.novidades,valtxt:c.valtxt,situacao:c.situacao,instancia:c.assistente||null,chans:chans,merge:{cliente:c.nome,saldo:vi.saldo,valor:vi.valor,validade:vi.validade,dias:vi.dias}});});
+      out.push({codparc:c.codparc,nome:c.nome,saldo:c.saldo,pct:c.pct,validade:c.validade,dias:c.dias,crosssell:c.crosssell,novidades:c.novidades,valtxt:c.valtxt,vig_dias:(c.vig_dias!=null?c.vig_dias:null),situacao:c.situacao,instancia:c.assistente||null,chans:chans,merge:{cliente:c.nome,saldo:vi.saldo,valor:vi.valor,validade:vi.validade,dias:vi.dias}});});
     return out;}
   /* O aviso que faltava: quantas LINHAS vao sair, para quem, e por qual canal — antes de clicar.
      "120 selecionados" nunca foi o numero da fila: a fila trabalha em linha por contato e canal. */
@@ -1105,7 +1140,7 @@
     var tid=arteSel();var itens=[];var pend=0;
     function fin(){pend--;if(pend<=0){if(!itens.length){st.textContent="nada para enfileirar (marque contatos do rep/cliente)";btn.disabled=false;btn.textContent="📅 Criar fila e enviar";return;}postJSON(SUPA+"/functions/v1/fila-enfileirar",{itens:itens},function(r){btn.disabled=false;btn.textContent="📅 Criar fila e enviar";if(r.ok){st.innerHTML="<b>✓ "+r.enfileirados+" na fila</b>";if(FILATIMER)clearInterval(FILATIMER);statusFila();FILATIMER=setInterval(statusFila,15000);}else{st.textContent="✗ "+(r.erro||"falha");}});}}
     if(reps.length){pend++;postJSON(SUPA+"/functions/v1/campanhas-disparar",{codigo:CUR,publico:"rep",reps:reps,modeloRep:repTpl},function(d){(d.itens||[]).forEach(function(it){var rs=REPSEL[it.codvend]||{tel:[],email:[]};var inst=instDe(it.codvend,(REPDATA[it.codvend]||{}).assistente);(rs.tel||[]).forEach(function(f){itens.push({campanha:CUR,publico:"rep",canal:"whatsapp",fone:f,instancia:inst,corpo:it.whatsapp,nome:it.rep});});(rs.email||[]).forEach(function(e){itens.push({campanha:CUR,publico:"rep",canal:"email",email:e,assunto:it.email_assunto,corpo:it.email_corpo,template_id:tid||null,nome:it.rep,merge:{rep:it.rep}});});});fin();});}
-    if(clientes.length){pend++;postJSON(SUPA+"/functions/v1/campanhas-disparar",{codigo:CUR,publico:"cliente",clientes:clientes.map(function(c){var o={codparc:c.codparc,nome:c.nome,saldo:c.saldo,pct:c.pct,validade:c.validade,dias:c.dias,crosssell:c.crosssell,novidades:c.novidades,valtxt:c.valtxt,situacao:c.situacao};var mm=String(c.valtxt||"").match(/(\d+)\s*d/);if(mm)o.clube_vig_dias=+mm[1];return o;}),modeloCliente:cliTpl},function(d){(d.itens||[]).forEach(function(it,idx){var c=clientes[idx]||{};(c.chans||[]).forEach(function(ch){if(ch.canal==="email"){itens.push({campanha:CUR,publico:"cliente",canal:"email",email:ch.valor,assunto:it.email_assunto,corpo:it.email_corpo,template_id:tid||null,nome:c.nome,codparc:c.codparc,merge:c.merge,campos:camposCrm(c)});}else{itens.push({campanha:CUR,publico:"cliente",canal:"whatsapp",fone:ch.valor,instancia:c.instancia,corpo:it.whatsapp,nome:c.nome,codparc:c.codparc,campos:camposCrm(c)});}});});fin();});}}
+    if(clientes.length){pend++;postJSON(SUPA+"/functions/v1/campanhas-disparar",{codigo:CUR,publico:"cliente",clientes:clientes.map(cliPayload),modeloCliente:cliTpl},function(d){(d.itens||[]).forEach(function(it,idx){var c=clientes[idx]||{};(c.chans||[]).forEach(function(ch){if(ch.canal==="email"){itens.push({campanha:CUR,publico:"cliente",canal:"email",email:ch.valor,assunto:it.email_assunto,corpo:it.email_corpo,template_id:tid||null,nome:c.nome,codparc:c.codparc,merge:c.merge,campos:camposCrm(c)});}else{itens.push({campanha:CUR,publico:"cliente",canal:"whatsapp",fone:ch.valor,instancia:c.instancia,corpo:it.whatsapp,nome:c.nome,codparc:c.codparc,campos:camposCrm(c)});}});});fin();});}}
   function abrirKA(cod){var foco={ka_cross_sell:"Foco cross-sell — ampliar mix/ticket na conta",ka_ruptura_rede:"Foco ruptura — item de alto giro parado na rede",ka_revisao_trimestral:"Revisão trimestral — pauta estratégica"}[cod]||"Briefing";$("op-nome").textContent="Key Accounts — grandes contas";$("op-meta").textContent="Tratamento humano · dossiê do CRM · não dispara nada · "+foco;$("op-kpis").innerHTML="";var ai=$("atuInfo");if(ai)ai.textContent="";
     $("kaFlow").innerHTML='<div class="note" style="padding:16px">carregando grandes contas…</div>';
     getJSON(SUPA+"/functions/v1/campanhas-keyaccounts?limit=60",function(d){if(d.erro||!d.contas){$("kaFlow").innerHTML='<div class="note" style="padding:16px;color:#c0392b">erro ao carregar</div>';return;}

@@ -1,3 +1,11 @@
+// campanhas-disparar (v48) — CLUBE A VENCER: (a) a audiencia agora tem teto de 45 dias. A vigencia
+// do Clube dura um ano, e o filtro era so "tem vigencia": entravam 148 clientes, dos quais 141 com
+// 46 a 362 dias pela frente — e a mensagem ao rep os apresentava como "perto de vencer" (havia
+// bullet de 240d). (b) TODO prompt de IA agora comeca declarando A CAMPANHA, o assunto dela e o que
+// e proibido nela: a IA recebia so a regra do [VALOR] e nunca o nome da campanha, entao escrevia
+// texto plausivel e errado (chegou a escrever "seu desconto do Clube" e a citar valor em dinheiro,
+// quando o assunto do Clube a vencer e so o prazo que resta). (c) ctxDe() nao inventa mais contexto:
+// campanha sem CTX proprio agora BARRA o disparo, em vez de escrever com o texto de "giro vencido".
 // campanhas-disparar (v47) — chave de servico via srvKey(). Desde 23/08 a plataforma injeta
 // em SUPABASE_SERVICE_ROLE_KEY uma chave sb_secret_ que o Data API recusa (PGRST303
 // "JWT issued at future"); SRV_JWT guarda o JWT legado, que segue valido.
@@ -19,6 +27,10 @@ const fmtDate = (s: any) => { const m = String(s || "").match(/^(\d{4})-(\d{2})-
 const lj = (n: any) => (Number(n) > 1 ? ` (${n} lojas)` : "");
 const GIRO: Record<string, string[]> = { recompra_giro_a_vencer: ["A_VENCER"], recompra_giro_vencido: ["VENCIDO"], rep_sem_comprar: ["VENCIDO", "REATIVACAO"] };
 const MOTOR: Record<string, number> = { recompra_cross_sell: 1, rep_sugestao_produto: 1, rep_roteiro_visitas: 1, clube_a_vencer: 1, recompra_novo_produto: 1 };
+// Janela de aviso do Clube a vencer. Sem teto, "a condicao esta perto de vencer" saia para quem
+// tem quase um ano de vigencia pela frente. Tem de bater com o mesmo teto no campanhas-preview,
+// senao a tela conta uma audiencia e o disparo manda para outra.
+const CLUBE_VENC_DIAS = 45;
 function parseJSON(t: string): any { try { const m = t.match(/\{[\s\S]*\}/); return m ? JSON.parse(m[0]) : null; } catch { return null; } }
 function fill(s: string, map: Record<string, string>) { let o = String(s || ""); for (const k in map) o = o.replace(new RegExp("\\[" + k + "\\]", "gi"), map[k]); return o; }
 function pick<T>(a: T[]): T { return a[Math.floor(Math.random() * a.length)]; }
@@ -53,50 +65,70 @@ const TOM_REP = "TOM COM O REPRESENTANTE (obrigatorio, vale mais que qualquer ou
   + "6) Sem tom de chefia nem de auditoria: escreva como colega que preparou material para facilitar o dia dele.";
 
 const CTX: Record<string, any> = {
-  clube_saldo: { valor: "[VALOR] e um valor em dinheiro (ex: 'R$ 12.500') = DIREITO DE COMPRA do trimestre no Clube Nitron. Escreva ex: 'voce tem [VALOR] de direito de compra no Clube Nitron'. NUNCA saldo parado.", cliente: "Convide a aproveitar a condicao do Clube e repor o trimestre.", rep: "A lista traz clientes DELE com direito de compra do trimestre disponivel no Clube. Explique o que e e ofereca ajuda para ele aproveitar isso junto desses clientes." },
-  voucher_empurrar: { valor: "[VALOR] e um percentual (ex '6%') de desconto no voucher e [VALIDADE] e a DATA LIMITE. Escreva ex 'voce tem [VALOR] de desconto no voucher, valido ate [VALIDADE]'. De DIRECIONAMENTO: e a hora de fazer o pedido do mes / repor o sortimento que mais gira aproveitando o desconto, fechando ANTES do prazo.", cliente: "Avise do [VALOR] de desconto valido ate [VALIDADE] e de DIRECIONAMENTO CONCRETO: convide a MONTAR O PEDIDO AGORA para repor o sortimento/estoque que gira aproveitando a condicao, completando o mix, com urgencia gentil (o prazo esta chegando). Um argumento concreto + 1 CTA clara. NAO seja generico.", rep: "A lista logo abaixo traz os clientes DELE com voucher a vencer (nome + % + validade). Diga que a lista vem abaixo e explique que e um desconto ja liberado, com data limite real. Ofereca ajuda para ele falar com esses clientes antes do prazo - sem cobrar visita nem impor prazo a ele." },
-  recompra_giro_a_vencer: { valor: "[VALOR] e um tempo (ex '45 dias') sem comprar; o ciclo de recompra (giro) esta chegando ao fim. Escreva ex 'ja faz [VALOR] desde a ultima compra'. NUNCA saldo/cobranca.", cliente: "Lembre, leve, que e bom momento de repor o giro antes de faltar na gondola.", rep: "A lista traz clientes DELE cujo giro esta chegando ao fim. Na lista cada cliente vem com o TICKET MEDIO dele (valor medio por pedido/reposicao, ex 'ticket medio R$ 44.000') e os dias sem comprar — explique que esse valor e o quanto ele COSTUMA colocar em cada pedido (a reposicao tipica), a referencia de quanto ele deveria repor agora, NAO e cobranca nem saldo." },
-  recompra_giro_vencido: { valor: "[VALOR] e um tempo (ex '83 dias') sem comprar: o giro do cliente JA VENCEU (passou do ciclo de recompra). Escreva ex 'faz [VALOR] desde seu ultimo pedido — o giro ja venceu'. Deixe claro que e a HORA DE REPOR o estoque. NUNCA cobranca/saldo.", cliente: "Reative acolhedor: faz [VALOR] (giro vencido), convide a repor o giro antes de faltar na gondola. Deixe claro que e sobre repor a compra, NAO e cobranca.", rep: "A lista traz clientes DELE que passaram do giro (giro VENCIDO). IMPORTANTE: cada cliente na lista vem com o TICKET MEDIO dele (valor medio por pedido/reposicao, ex 'ticket medio R$ 44.000') e os dias sem comprar — explique ao rep que esse valor e o quanto o cliente COSTUMA colocar em CADA pedido (a reposicao tipica dele), a referencia de quanto ele deveria estar repondo agora, e NAO e cobranca nem saldo." },
-  rep_sem_comprar: { valor: "[VALOR] e um tempo (ex '120 dias') sem pedido. Escreva ex 'faz [VALOR] sem um pedido'. NUNCA saldo/cobranca.", cliente: "Cliente parado: pergunte gentil se ha algo a melhorar e convide a retomar as compras.", rep: "A lista traz clientes DELE que estao sem pedido ha um tempo. Em vez de cobrar contato, PERGUNTE se ele sabe o que aconteceu com esses clientes e ofereca ajuda para retomar. Na lista cada cliente vem com o TICKET MEDIO historico (valor medio por pedido, ex 'ticket medio R$ 44.000') e os dias sem comprar — explique que esse valor e o quanto ele COSTUMAVA colocar em cada pedido, a referencia do que se perde parado, NAO e cobranca nem saldo." },
-  recompra_cross_sell: { valor: "[VALOR] sao LINHAS de produto que o cliente ainda NAO compra mas que vendem bem no canal dele (ex 'Frasqueiras, Lixeiras'). Se aparecer '(lancamento)', e uma linha NOVA. Escreva ex 'que tal incluir as linhas [VALOR] no proximo pedido'. NUNCA saldo/tempo.", cliente: "Sugira incluir essas linhas para ampliar o sortimento e o ticket.", rep: "A lista traz clientes DELE e as linhas que fazem sentido oferecer a cada um. Apresente como sugestao de mix e ofereca material ou informacao para ele levar." },
-  rep_sugestao_produto: { valor: "[VALOR] sao LINHAS sugeridas para o cliente experimentar (ex 'Potes, Cozinha'). Escreva ex 'sugiro incluir [VALOR] na proxima compra'.", cliente: "Sugira ao lojista experimentar essas linhas na proxima visita/pedido.", rep: "A lista traz sugestao de linhas por cliente para ele levar na visita, se fizer sentido. Ofereca ajuda com material ou argumento de venda." },
-  recompra_novo_produto: { valor: "[VALOR] sao LINHAS recem-lancadas (novidades) que o cliente ainda NAO compra (ex 'Teca, Decor Util'). Apresente como LANCAMENTO/novidade: chance de sair na frente, diferenciar a loja e pegar giro novo. NUNCA trate como saldo/tempo.", cliente: "Apresente os lancamentos e convide a conhecer/experimentar. Tom de novidade e pioneirismo, sem pressao.", rep: "A lista traz clientes DELE que ainda nao compram os lancamentos. Apresente como novidade que ele pode levar primeiro, e ofereca material ou amostra para apoiar." },
-  clube_a_vencer: { valor: "[VALOR] e um tempo ate a condicao do Clube VENCER (ex '30 dias'). Escreva ex 'sua condicao do Clube vence em [VALOR]'. Convide a usar antes de vencer.", cliente: "Avise que a condicao do Clube esta a vencer e convide a aproveitar antes do prazo.", rep: "A lista traz clientes DELE com a condicao do Clube perto de vencer. Avise do prazo e ofereca ajuda para ele aproveitar com esses clientes." },
-  rep_roteiro_visitas: { valor: "[VALOR] e o motivo/prioridade da visita (ex 'Giro vencido').", cliente: "Convide para uma conversa/visita.", rep: "A lista traz clientes DELE que podem fazer sentido na rota, do mais relevante ao menos. Apresente como sugestao de roteiro pensada para facilitar o caminho, e ofereca levantar informacao de qualquer um deles antes da visita." },
+  clube_saldo: { assunto: "o DIREITO DE COMPRA em dinheiro que o cliente tem para usar no trimestre do Clube Nitron", proibido: "chamar isso de saldo parado, de desconto, de credito, de bonus ou de divida; falar de prazo em dias", valor: "[VALOR] e um valor em dinheiro (ex: 'R$ 12.500') = DIREITO DE COMPRA do trimestre no Clube Nitron. Escreva ex: 'voce tem [VALOR] de direito de compra no Clube Nitron'. NUNCA saldo parado.", cliente: "Convide a aproveitar a condicao do Clube e repor o trimestre.", rep: "A lista traz clientes DELE com direito de compra do trimestre disponivel no Clube. Explique o que e e ofereca ajuda para ele aproveitar isso junto desses clientes." },
+  voucher_empurrar: { assunto: "um DESCONTO em percentual, ja liberado, com DATA LIMITE para usar", proibido: "citar valor em dinheiro (R$), saldo, faturamento ou dias sem comprar", valor: "[VALOR] e um percentual (ex '6%') de desconto no voucher e [VALIDADE] e a DATA LIMITE. Escreva ex 'voce tem [VALOR] de desconto no voucher, valido ate [VALIDADE]'. De DIRECIONAMENTO: e a hora de fazer o pedido do mes / repor o sortimento que mais gira aproveitando o desconto, fechando ANTES do prazo.", cliente: "Avise do [VALOR] de desconto valido ate [VALIDADE] e de DIRECIONAMENTO CONCRETO: convide a MONTAR O PEDIDO AGORA para repor o sortimento/estoque que gira aproveitando a condicao, completando o mix, com urgencia gentil (o prazo esta chegando). Um argumento concreto + 1 CTA clara. NAO seja generico.", rep: "A lista logo abaixo traz os clientes DELE com voucher a vencer (nome + % + validade). Diga que a lista vem abaixo e explique que e um desconto ja liberado, com data limite real. Ofereca ajuda para ele falar com esses clientes antes do prazo - sem cobrar visita nem impor prazo a ele." },
+  recompra_giro_a_vencer: { assunto: "o TEMPO desde a ultima compra: o ciclo de recompra (giro) esta chegando ao fim", proibido: "citar valor em dinheiro ao cliente, falar de desconto, de divida ou de cobranca", valor: "[VALOR] e um tempo (ex '45 dias') sem comprar; o ciclo de recompra (giro) esta chegando ao fim. Escreva ex 'ja faz [VALOR] desde a ultima compra'. NUNCA saldo/cobranca.", cliente: "Lembre, leve, que e bom momento de repor o giro antes de faltar na gondola.", rep: "A lista traz clientes DELE cujo giro esta chegando ao fim. Na lista cada cliente vem com o TICKET MEDIO dele (valor medio por pedido/reposicao, ex 'ticket medio R$ 44.000') e os dias sem comprar — explique que esse valor e o quanto ele COSTUMA colocar em cada pedido (a reposicao tipica), a referencia de quanto ele deveria repor agora, NAO e cobranca nem saldo." },
+  recompra_giro_vencido: { assunto: "o TEMPO desde a ultima compra: o ciclo de recompra (giro) JA VENCEU", proibido: "citar valor em dinheiro ao cliente, falar de desconto, de divida ou de cobranca", valor: "[VALOR] e um tempo (ex '83 dias') sem comprar: o giro do cliente JA VENCEU (passou do ciclo de recompra). Escreva ex 'faz [VALOR] desde seu ultimo pedido — o giro ja venceu'. Deixe claro que e a HORA DE REPOR o estoque. NUNCA cobranca/saldo.", cliente: "Reative acolhedor: faz [VALOR] (giro vencido), convide a repor o giro antes de faltar na gondola. Deixe claro que e sobre repor a compra, NAO e cobranca.", rep: "A lista traz clientes DELE que passaram do giro (giro VENCIDO). IMPORTANTE: cada cliente na lista vem com o TICKET MEDIO dele (valor medio por pedido/reposicao, ex 'ticket medio R$ 44.000') e os dias sem comprar — explique ao rep que esse valor e o quanto o cliente COSTUMA colocar em CADA pedido (a reposicao tipica dele), a referencia de quanto ele deveria estar repondo agora, e NAO e cobranca nem saldo." },
+  rep_sem_comprar: { assunto: "o TEMPO que o cliente esta sem nenhum pedido", proibido: "falar de divida, cobranca, desconto ou valor devido", valor: "[VALOR] e um tempo (ex '120 dias') sem pedido. Escreva ex 'faz [VALOR] sem um pedido'. NUNCA saldo/cobranca.", cliente: "Cliente parado: pergunte gentil se ha algo a melhorar e convide a retomar as compras.", rep: "A lista traz clientes DELE que estao sem pedido ha um tempo. Em vez de cobrar contato, PERGUNTE se ele sabe o que aconteceu com esses clientes e ofereca ajuda para retomar. Na lista cada cliente vem com o TICKET MEDIO historico (valor medio por pedido, ex 'ticket medio R$ 44.000') e os dias sem comprar — explique que esse valor e o quanto ele COSTUMAVA colocar em cada pedido, a referencia do que se perde parado, NAO e cobranca nem saldo." },
+  recompra_cross_sell: { assunto: "LINHAS de produto que o cliente ainda NAO compra e que vendem bem no canal dele", proibido: "citar valor em dinheiro, desconto, prazo ou dias sem comprar", valor: "[VALOR] sao LINHAS de produto que o cliente ainda NAO compra mas que vendem bem no canal dele (ex 'Frasqueiras, Lixeiras'). Se aparecer '(lancamento)', e uma linha NOVA. Escreva ex 'que tal incluir as linhas [VALOR] no proximo pedido'. NUNCA saldo/tempo.", cliente: "Sugira incluir essas linhas para ampliar o sortimento e o ticket.", rep: "A lista traz clientes DELE e as linhas que fazem sentido oferecer a cada um. Apresente como sugestao de mix e ofereca material ou informacao para ele levar." },
+  rep_sugestao_produto: { assunto: "LINHAS de produto sugeridas para o cliente experimentar", proibido: "citar valor em dinheiro, desconto, prazo ou dias sem comprar", valor: "[VALOR] sao LINHAS sugeridas para o cliente experimentar (ex 'Potes, Cozinha'). Escreva ex 'sugiro incluir [VALOR] na proxima compra'.", cliente: "Sugira ao lojista experimentar essas linhas na proxima visita/pedido.", rep: "A lista traz sugestao de linhas por cliente para ele levar na visita, se fizer sentido. Ofereca ajuda com material ou argumento de venda." },
+  recompra_novo_produto: { assunto: "LINHAS recem-lancadas (novidades) que o cliente ainda NAO compra", proibido: "citar valor em dinheiro, desconto, prazo ou dias sem comprar", valor: "[VALOR] sao LINHAS recem-lancadas (novidades) que o cliente ainda NAO compra (ex 'Teca, Decor Util'). Apresente como LANCAMENTO/novidade: chance de sair na frente, diferenciar a loja e pegar giro novo. NUNCA trate como saldo/tempo.", cliente: "Apresente os lancamentos e convide a conhecer/experimentar. Tom de novidade e pioneirismo, sem pressao.", rep: "A lista traz clientes DELE que ainda nao compram os lancamentos. Apresente como novidade que ele pode levar primeiro, e ofereca material ou amostra para apoiar." },
+  clube_a_vencer: { assunto: "o TEMPO QUE FALTA para a vigencia do Clube Nitron do cliente TERMINAR. E um prazo em dias, e so isso. O Clube Nitron e um DIREITO DE COMPRA com vigencia: o que esta acabando e o PRAZO para usar, nao um valor", proibido: "citar QUALQUER valor em dinheiro (R$), saldo, faturamento, ticket ou percentual; chamar o Clube de desconto, de credito, de saldo, de bonus ou de premio; inventar qualquer numero que nao seja o prazo que veio em [VALOR]", valor: "[VALOR] e um tempo ate a condicao do Clube VENCER (ex '30 dias'). Escreva ex 'sua condicao do Clube vence em [VALOR]'. Convide a usar antes de vencer.", cliente: "Avise que a condicao do Clube esta a vencer e convide a aproveitar antes do prazo.", rep: "A lista traz clientes DELE com a condicao do Clube perto de vencer. Avise do prazo e ofereca ajuda para ele aproveitar com esses clientes." },
+  rep_roteiro_visitas: { assunto: "a PRIORIDADE de visita de cada cliente da carteira", proibido: "prometer prazo, citar desconto ou valor de cobranca", valor: "[VALOR] e o motivo/prioridade da visita (ex 'Giro vencido').", cliente: "Convide para uma conversa/visita.", rep: "A lista traz clientes DELE que podem fazer sentido na rota, do mais relevante ao menos. Apresente como sugestao de roteiro pensada para facilitar o caminho, e ofereca levantar informacao de qualquer um deles antes da visita." },
 };
-function ctxDe(codigo: string) { return CTX[codigo] || CTX.recompra_giro_vencido; }
+/* Antes caia em CTX.recompra_giro_vencido: uma campanha nova, sem contexto cadastrado, saia com o
+   texto de "giro vencido" — plausivel, bem escrito e falando de outra coisa. Silencio assim nao se
+   descobre lendo a mensagem. Agora nao ha disparo sem contexto proprio. */
+function ctxDe(codigo: string) { return CTX[codigo] || null; }
+
+/* A IA nunca sabia DE QUE CAMPANHA se tratava: recebia a regra do [VALOR] e o objetivo, nunca o
+   nome nem o assunto. Dava texto plausivel e errado. Todo prompt agora comeca por aqui. */
+function cabeca(codigo: string, nomeCamp: string, ctx: any) {
+  return `CAMPANHA: "${nomeCamp || codigo}" (codigo interno ${codigo}).\n`
+    + `ASSUNTO DESTA CAMPANHA — a mensagem tem de ser sobre isto, e sobre nada mais: ${ctx.assunto}\n`
+    + `PROIBIDO NESTA CAMPANHA: ${ctx.proibido}.\n`
+    + `Se algum dado nao estiver no prompt, NAO invente: escreva a mensagem sem ele.`;
+}
 
 async function claude(sys: string, user: string, max = 700): Promise<any> {
   const key = Deno.env.get("ANTHROPIC_API_KEY"); if (!key) return null;
   try { const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" }, body: JSON.stringify({ model: MODELO, max_tokens: max, temperature: 1, system: sys, messages: [{ role: "user", content: user }] }) }); if (!r.ok) return null; return parseJSON((await r.json())?.content?.[0]?.text || ""); } catch { return null; }
 }
-async function modeloRep(promptIa: string, ctx: any) {
+async function modeloRep(promptIa: string, ctx: any, cab: string) {
   const fb = {
     whatsapp: "Oi [REP], tudo bem?\n\nSeparamos alguns clientes seus que podem fazer sentido para um contato agora:\n\n[LISTA]\n\nE uma sugestao, fique a vontade para ajustar. O que podemos fazer para te ajudar? Se quiser apoio em algum desses clientes, ou alguma informacao que a gente possa levantar antes, me fala.",
     email_assunto: "[REP], separamos alguns clientes para te ajudar",
     email_corpo: "Oi [REP], tudo bem?\n\nSeparamos alguns clientes seus que podem fazer sentido para um contato agora:\n\n[LISTA]\n\nE uma sugestao, fique a vontade para ajustar como preferir.\n\nO que podemos fazer para te ajudar? Se quiser apoio em algum desses clientes, ou alguma informacao que a gente possa levantar antes do contato, me fala que eu preparo."
   };
-  const sys = `${BASE}\n\n${TOM_REP}\n\nTAREFA: escreva um MODELO AO REPRESENTANTE. OBRIGATORIO: inclua o token [LISTA] no WhatsApp E no e-mail - e onde entra a lista real dos clientes dele (nome, condicao, prazo); SEM [LISTA] a mensagem NAO serve. Use tambem [REP]. Fale COM o rep, como parceiro. CONTEXTO DA LISTA (explique isso a ele, sem virar ordem): ${ctx.rep} ANGULO DE APOIO: ${pick(ANG_REP)} Responda APENAS JSON {whatsapp, email_assunto, email_corpo}. pt-BR, direto - mas com o cumprimento no inicio e a oferta de ajuda no fim, sempre.`;
+  const sys = `${BASE}\n\n${cab}\n\n${TOM_REP}\n\nTAREFA: escreva um MODELO AO REPRESENTANTE. OBRIGATORIO: inclua o token [LISTA] no WhatsApp E no e-mail - e onde entra a lista real dos clientes dele (nome, condicao, prazo); SEM [LISTA] a mensagem NAO serve. Use tambem [REP]. Fale COM o rep, como parceiro. CONTEXTO DA LISTA (explique isso a ele, sem virar ordem): ${ctx.rep} ANGULO DE APOIO: ${pick(ANG_REP)} Responda APENAS JSON {whatsapp, email_assunto, email_corpo}. pt-BR, direto - mas com o cumprimento no inicio e a oferta de ajuda no fim, sempre.`;
   const p0 = await claude(sys, (promptIa ? promptIa + "\n" : "") + "Use [REP] e SEMPRE [LISTA] no corpo.", 650);
   const p = (p0 && p0.whatsapp) ? { ...fb, ...p0 } : fb; return garantirLista(p);
 }
-async function modeloCliente(promptIa: string, ctx: any) {
+async function modeloCliente(promptIa: string, ctx: any, cab: string) {
   const fb = { whatsapp: "Ola [CLIENTE]! Aqui e da Nitron. Que tal montarmos um novo pedido? Estamos a disposicao.", email_assunto: "Nitron — vamos conversar?", email_corpo: "Ola [CLIENTE],\n\nQue tal montar um novo pedido com a gente?\n\nEstamos a disposicao." };
-  const sys = `${BASE}\n\nTAREFA: escreva um MODELO AO CLIENTE (lojista). Use [CLIENTE] e [VALOR]${ctx === CTX.voucher_empurrar ? " e [VALIDADE]" : ""}. CRITICO sobre [VALOR]: ${ctx.valor} A mensagem precisa fazer sentido quando substituido. OBJETIVO: ${ctx.cliente} ANGULO: ${pick(ANG_CLI)} 1 argumento concreto + 1 CTA. Responda APENAS JSON {whatsapp, email_assunto, email_corpo}. Curto, pt-BR.`;
+  const sys = `${BASE}\n\n${cab}\n\nTAREFA: escreva um MODELO AO CLIENTE (lojista). Use [CLIENTE] e [VALOR]${ctx === CTX.voucher_empurrar ? " e [VALIDADE]" : ""}. CRITICO sobre [VALOR]: ${ctx.valor} A mensagem precisa fazer sentido quando substituido. OBJETIVO: ${ctx.cliente} ANGULO: ${pick(ANG_CLI)} 1 argumento concreto + 1 CTA. Responda APENAS JSON {whatsapp, email_assunto, email_corpo}. Curto, pt-BR.`;
   const p = await claude(sys, (promptIa ? promptIa + "\n" : "") + "Escreva o modelo.", 550); return (p && p.whatsapp) ? { ...fb, ...p } : fb;
+}
+/* Dias que faltam para a vigencia do Clube acabar. O painel manda clube_vig_dias quando tem, mas o
+   caminho de rascunho manda so o texto pronto ("Clube vence em 39d") — e nesse caso o [VALOR] virava
+   "em breve" e a mensagem perdia justamente o numero de que ela trata. */
+function vigDias(c: any): number | null {
+  for (const v of [c.clube_vig_dias, c.vig_dias]) if (v != null && v !== "") return Number(v);
+  const m = String(c.valtxt || "").match(/(\d+)\s*d/);
+  return m ? Number(m[1]) : null;
 }
 function valorCliente(codigo: string, c: any) {
   if (codigo === "clube_saldo") return `${brl(Number(c.saldo))}`;
   if (codigo === "voucher_empurrar") return `${Number(c.pct)}%`;
   if (codigo === "recompra_cross_sell" || codigo === "rep_sugestao_produto") return String(c.crosssell || "novas linhas");
   if (codigo === "recompra_novo_produto") return String(c.novidades || "nossos lancamentos");
-  if (codigo === "clube_a_vencer") return (c.clube_vig_dias != null ? `${c.clube_vig_dias} dias` : "em breve");
+  if (codigo === "clube_a_vencer") { const d = vigDias(c); return d != null ? `${d} dias` : "poucos dias"; }
   if (codigo === "rep_roteiro_visitas") return String(c.valtxt || c.situacao || "");
   return `${Number(c.dias)} dias`;
 }
 function motorBullet(codigo: string, c: any) {
   const nome = (c.razao || ("Cod " + c.codparc)) + lj(c.lojas);
-  if (codigo === "clube_a_vencer") return `• ${nome} — Clube vence em ${c.clube_vig_dias}d`;
+  if (codigo === "clube_a_vencer") { const d = vigDias(c); return `• ${nome} — Clube vence em ${d != null ? d + "d" : "breve"}`; }
   if (codigo === "rep_roteiro_visitas") return `• ${nome} — ${c.situacao || ""}${Number(c.saldo_entregar) > 0 ? (" · saldo " + brl(Number(c.saldo_entregar))) : ""}${Number(c.dias) ? (" · " + c.dias + "d") : ""}`;
   if (codigo === "recompra_novo_produto") return `• ${nome} — apresentar lancamento: ${c.novidades || ""}`;
   return `• ${nome} — sugerir ${c.crosssell || ""}`;
@@ -105,7 +137,7 @@ async function motorFetch(sb: any, codigo: string) {
   let q = sb.from("ghl_cliente").select("codparc,razao,rep,situacao,ticket,dias,crosssell,novidades,saldo_entregar,clube_vig_dias,clube_saldo_pedir").eq("nitron", true);
   if (codigo === "recompra_cross_sell" || codigo === "rep_sugestao_produto") q = q.not("crosssell", "is", null).eq("situacao", "Em dia");
   else if (codigo === "recompra_novo_produto") q = q.not("novidades", "is", null).eq("situacao", "Em dia");
-  else if (codigo === "clube_a_vencer") q = q.not("clube_vig_dias", "is", null);
+  else if (codigo === "clube_a_vencer") q = q.not("clube_vig_dias", "is", null).gte("clube_vig_dias", 0).lte("clube_vig_dias", CLUBE_VENC_DIAS);
   else q = q.not("rep", "is", null).neq("situacao", "Em dia");
   const { data } = await q.limit(50000); return data || [];
 }
@@ -123,10 +155,12 @@ Deno.serve(async (req) => {
     const isClube = codigo === "clube_saldo"; const isVoucher = codigo === "voucher_empurrar"; const isGiro = !!GIRO[codigo]; const isMotor = !!MOTOR[codigo];
     if (!isClube && !isVoucher && !isGiro && !isMotor) return j({ campanha: camp.nome, aviso: "gatilho ainda nao mapeado" });
     const promptIa = camp.prompt_ia || ""; const ctx = ctxDe(codigo);
+    if (!ctx) return j({ erro: `campanha '${codigo}' sem contexto de IA cadastrado (CTX). Sem ele a IA escreveria o texto de outra campanha.` }, 500);
+    const cab = cabeca(codigo, camp.nome, ctx);
 
-    if (body.modelo) { const [mr, mc] = await Promise.all([modeloRep(promptIa, ctx), modeloCliente(promptIa, ctx)]); return j({ campanha: camp.nome, codigo, modeloRep: mr, modeloCliente: mc }); }
-    const mr = garantirLista(body.modeloRep || await modeloRep(promptIa, ctx));
-    const mc = body.modeloCliente || await modeloCliente(promptIa, ctx);
+    if (body.modelo) { const [mr, mc] = await Promise.all([modeloRep(promptIa, ctx, cab), modeloCliente(promptIa, ctx, cab)]); return j({ campanha: camp.nome, codigo, modeloRep: mr, modeloCliente: mc }); }
+    const mr = garantirLista(body.modeloRep || await modeloRep(promptIa, ctx, cab));
+    const mc = body.modeloCliente || await modeloCliente(promptIa, ctx, cab);
     const out: any[] = [];
 
     if (publico === "cliente") {

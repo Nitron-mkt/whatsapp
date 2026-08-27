@@ -1,3 +1,8 @@
+// campanhas-disparar (v49) — a janela do Clube a vencer saiu do codigo e foi para o banco:
+// campanhas.filtros_padrao->>'clube_venc_dias' (hoje 60). Ela mudou duas vezes em um dia; deixar o
+// numero em constante obrigava a redeployar duas funcoes para ajustar uma regra comercial, com o
+// risco de as duas ficarem com valores diferentes. Agora as duas leem a MESMA linha do banco e um
+// UPDATE resolve. A constante abaixo e so o padrao de quem nao tiver o campo preenchido.
 // campanhas-disparar (v48) — CLUBE A VENCER: (a) a audiencia agora tem teto de 45 dias. A vigencia
 // do Clube dura um ano, e o filtro era so "tem vigencia": entravam 148 clientes, dos quais 141 com
 // 46 a 362 dias pela frente — e a mensagem ao rep os apresentava como "perto de vencer" (havia
@@ -28,9 +33,13 @@ const lj = (n: any) => (Number(n) > 1 ? ` (${n} lojas)` : "");
 const GIRO: Record<string, string[]> = { recompra_giro_a_vencer: ["A_VENCER"], recompra_giro_vencido: ["VENCIDO"], rep_sem_comprar: ["VENCIDO", "REATIVACAO"] };
 const MOTOR: Record<string, number> = { recompra_cross_sell: 1, rep_sugestao_produto: 1, rep_roteiro_visitas: 1, clube_a_vencer: 1, recompra_novo_produto: 1 };
 // Janela de aviso do Clube a vencer. Sem teto, "a condicao esta perto de vencer" saia para quem
-// tem quase um ano de vigencia pela frente. Tem de bater com o mesmo teto no campanhas-preview,
-// senao a tela conta uma audiencia e o disparo manda para outra.
-const CLUBE_VENC_DIAS = 45;
+// tem quase um ano de vigencia pela frente. O valor vem de campanhas.filtros_padrao (mesma linha
+// que o campanhas-preview le, para os dois nunca discordarem); isto aqui e so o padrao.
+const CLUBE_VENC_PADRAO = 60;
+function clubeVencDias(camp: any): number {
+  const v = Number((camp?.filtros_padrao || {}).clube_venc_dias);
+  return Number.isFinite(v) && v > 0 ? v : CLUBE_VENC_PADRAO;
+}
 function parseJSON(t: string): any { try { const m = t.match(/\{[\s\S]*\}/); return m ? JSON.parse(m[0]) : null; } catch { return null; } }
 function fill(s: string, map: Record<string, string>) { let o = String(s || ""); for (const k in map) o = o.replace(new RegExp("\\[" + k + "\\]", "gi"), map[k]); return o; }
 function pick<T>(a: T[]): T { return a[Math.floor(Math.random() * a.length)]; }
@@ -133,11 +142,11 @@ function motorBullet(codigo: string, c: any) {
   if (codigo === "recompra_novo_produto") return `• ${nome} — apresentar lancamento: ${c.novidades || ""}`;
   return `• ${nome} — sugerir ${c.crosssell || ""}`;
 }
-async function motorFetch(sb: any, codigo: string) {
+async function motorFetch(sb: any, codigo: string, vencDias: number) {
   let q = sb.from("ghl_cliente").select("codparc,razao,rep,situacao,ticket,dias,crosssell,novidades,saldo_entregar,clube_vig_dias,clube_saldo_pedir").eq("nitron", true);
   if (codigo === "recompra_cross_sell" || codigo === "rep_sugestao_produto") q = q.not("crosssell", "is", null).eq("situacao", "Em dia");
   else if (codigo === "recompra_novo_produto") q = q.not("novidades", "is", null).eq("situacao", "Em dia");
-  else if (codigo === "clube_a_vencer") q = q.not("clube_vig_dias", "is", null).gte("clube_vig_dias", 0).lte("clube_vig_dias", CLUBE_VENC_DIAS);
+  else if (codigo === "clube_a_vencer") q = q.not("clube_vig_dias", "is", null).gte("clube_vig_dias", 0).lte("clube_vig_dias", vencDias);
   else q = q.not("rep", "is", null).neq("situacao", "Em dia");
   const { data } = await q.limit(50000); return data || [];
 }
@@ -179,7 +188,7 @@ Deno.serve(async (req) => {
     let repList: { codvend: number; rep: string }[] = [];
     let giroByRep: Record<string, any[]> = {}; let motorByRep: Record<string, any[]> = {};
     if (isMotor) {
-      const rowsM = (await motorFetch(sb, codigo)).filter((c: any) => !inad.has(Number(c.codparc)));
+      const rowsM = (await motorFetch(sb, codigo, clubeVencDias(camp))).filter((c: any) => !inad.has(Number(c.codparc)));
       const { data: sreps } = await sb.from("snap_rep").select("codvend,rep"); const nameMap: Record<string, number> = {}; (sreps || []).forEach((s: any) => { if (s.rep) nameMap[String(s.rep).toUpperCase()] = Number(s.codvend); });
       const tmp: Record<string, Record<string, any[]>> = {};
       rowsM.forEach((c: any) => { const cv = nameMap[String(c.rep || "").toUpperCase()]; if (cv == null) return; const g = gk(mtz, c.codparc); (tmp[cv] = tmp[cv] || {}); (tmp[cv][g] = tmp[cv][g] || []).push(c); });

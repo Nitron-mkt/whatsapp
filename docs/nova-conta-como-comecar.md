@@ -1,197 +1,305 @@
 # Máquina de Vendas — como começar numa conta nova
 
 > **Para que serve este arquivo:** abrir um chat novo do Claude Code para **outra empresa do grupo**
-> (Mundo UD, Teak, Mood Fruits, Hyak, Roga Village) sem ter de recontar tudo. Abra o chat no mesmo repositório e
-> mande:
+> (Mundo UD, Mood Fruits, Hyak, Roga Village) sem ter de recontar tudo. Abra o chat no mesmo
+> repositório e mande:
 >
 > ```
 > Leia docs/nova-conta-como-comecar.md e vamos configurar a empresa <NOME>.
 > ```
 >
-> Este documento é o **estado real em 26/08/2026**, conferido no código e no banco — não é plano.
-> Onde algo está pendente ou quebrado, está escrito que está.
+> Este documento é o **estado real em 26/08/2026**, conferido no código, no banco e nas APIs — não é
+> plano. Onde algo está pendente ou quebrado, está escrito que está.
+
+---
+
+## 0. A regra da casa: um cérebro, dados isolados
+
+A **inteligência é uma só** e vale para todas as contas do grupo: as mesmas Edge Functions, as
+mesmas travas, o mesmo aprendizado. O que é isolado é o **dado**.
+
+Em termos práticos:
+
+- **Quando o assunto é uma empresa, só aparece dado dela.** O painel da Teak mostra Teak; o da
+  Nitron mostra Nitron. Nunca "substituir" o dado de uma empresa pelo de outra, nunca somar as duas
+  numa mesma tela.
+- **Um chat por conta.** Cada conversa de configuração trata de uma empresa. Não misture.
+- **Melhoria de mecanismo é para todos; dado nunca.** Se você conserta uma trava, ela passa a valer
+  para as cinco. Se você mexe em dado, mexe no de uma.
+
+Como as tabelas são compartilhadas e discriminadas pela coluna `empresa`, esse isolamento depende
+de **toda leitura ter o filtro**. Isso não é confiável na base da memória — em 26/08 quatro funções
+da Nitron estavam lendo linha da Teak, e uma ia sair num rascunho no dia seguinte. Por isso existe:
+
+```bash
+python3 scripts/conferir_isolamento.py     # sai com erro se achar leitura sem filtro
+```
+
+**Rode antes de qualquer deploy.** Ele percorre todas as Edge Functions, acha leitura das tabelas
+multi-empresa e cobra o `.eq("empresa", ...)`. Sabe ignorar `insert`/`upsert` (ali a empresa vai
+dentro da linha) e alteração de uma linha já identificada por `id`. O `deno check` não acha nada
+disso, e nenhum teste de unidade acha.
 
 ---
 
 ## 1. O que existe hoje
 
-Uma máquina de campanhas que roda **uma empresa só**: o Grupo Nitron (Plásticos).
-As outras cinco estão cadastradas na tela, marcadas `(a configurar)`, e não têm dado.
+Uma máquina de campanhas que roda **duas empresas** pelo ERP: o Grupo Nitron (Plásticos) e a Teak
+Brazil. A **Roga Village** é o terceiro caso e não segue esse molde — o ERP dela só tem compra, e o
+painel dela lê o CRM (§9). As outras três estão no cadastro sem `ghl_location` e sem CODEMP, e não
+têm dado.
 
 ```
-Sankhya (Oracle, ERP)  ──►  Supabase (Postgres + Edge Functions)  ──►  GHL (CRM)  ──►  ZaptosWPP  ──►  WhatsApp
-     dados do negócio          snapshot, regras, fila de envio        contato/mensagem   instância      celular
+Sankhya (Oracle, ERP)  ──┐
+                         ├──►  Supabase (Postgres + Edge Functions)  ──►  GHL  ──►  WhatsApp
+GHL (contatos do CRM) ───┘        snapshot, regras, fila de envio        CRM       (ver 2.5)
                                           │
-                                          └──►  painel HTML (gestor + agenda)
+                                          └──►  painel HTML (um por empresa)
 ```
 
 **Projeto Supabase:** `integracao-crm-sankhya` — `bwbeieumxcuomtrvlqxs`
-**Painel:** <https://gestordecampanhas.marketing-da5.workers.dev/> · agenda em `/agenda`
-**Repositório:** `Nitron-mkt/whatsapp`, branch de trabalho `claude/supabase-access-8190et`
+**Painéis:** <https://gestordecampanhas.marketing-da5.workers.dev/> (Nitron) · `/agenda`
+· Teak: `/functions/v1/gestor/teak` (a rota `/teak` do Worker depende de `wrangler deploy`, ver 7)
+**Repositório:** `Nitron-mkt/whatsapp`
 
-### As seis empresas (em `app/gestor.html`, `var EMPRESAS`)
+### As empresas (tabela `empresa`, coluna `painel_id`)
 
-| id | nome | CODEMP (Sankhya) | location do GHL | pronto |
-|---|---|---|---|---|
-| `nitron` | Grupo Nitron (Plásticos) | 1, 2, 14 | `rZ8y7lzqV7fzxsartaX2` | ✅ **sim** |
-| `mundo_ud` | Mundo UD | 4 | `b461C1a4cou5XvykmQ1l` | ❌ |
-| `teak` | Teak Brazil | 8, 21 | `DRhJc78pTfF9dlaH5NK9` | ❌ |
-| `mood` | Mood Fruits | 16, 9 | `uhiDA222WYxSm5q0eUuj` | ❌ |
-| `hyak` | Hyak Internacional | 5, 7 | `NBJY3ZnA7qSrYyEi0wl7` | ❌ |
-| `roga` | Roga Village | 12 | `uqZMP3rxrdHqMHPQYRAp` | ❌ (ver §9) |
+| painel_id | nome | CODEMP | universo | canal WhatsApp | pronto |
+|---|---|---|---|---|---|
+| `nitron` | Grupo Nitron (Plásticos) | 1, 2, 14 | clube | ZaptosWPP | ✅ |
+| `teak` | Teak Brazil | 8, 21 | faturamento | nativo do GHL | ✅ |
+| `roga` | Roga Village | 12 | **CRM, não ERP** (§9) | a definir | ❌ |
+| `mundo_ud` | Mundo UD | — | — | — | ❌ |
+| `mood` | Mood Fruits | — | — | — | ❌ |
+| `hyak` | Hyak Internacional | — | — | — | ❌ |
 
-As locations foram conferidas uma a uma na API do GHL em 26/08/2026. **A versão anterior deste
-documento trocava duas:** dizia que `Mundo UD` era `uhiDA222WYxSm5q0eUuj`, que na verdade é a
-`MOOD FRUITS BRASIL COMERCIO EXPORTACAO LTDA`. Mandar por esse id criaria contato na subconta errada
-— exatamente o que a §3.1 manda evitar.
+> A tabela `empresa` **já existia** antes desta sessão: é o cadastro do Motor de prospecção, com
+> chave `codigo` (maiúscula) e colunas `ghl_location`, `linha_negocio`, `descricao_ia`. Não está nas
+> migrações antigas e nenhuma view a lia. Ela foi **estendida**, não duplicada — havia também
+> `CONSTELACAO` e `ROGA` cadastradas, que o painel nunca listou.
+
+As locations do GHL foram conferidas uma a uma na API em 26/08/2026: `nitron` =
+`rZ8y7lzqV7fzxsartaX2`, `teak` = `DRhJc78pTfF9dlaH5NK9`, `roga` = `uqZMP3rxrdHqMHPQYRAp`,
+`mundo_ud` = `b461C1a4cou5XvykmQ1l`, `mood` = `uhiDA222WYxSm5q0eUuj`, `hyak` =
+`NBJY3ZnA7qSrYyEi0wl7`. **Uma versão anterior deste documento trocava duas:** dizia que `Mundo UD`
+era `uhiDA222WYxSm5q0eUuj`, que é a `MOOD FRUITS`. Mandar por esse id criaria contato na subconta
+errada.
 
 ---
 
 ## 2. Como as peças se ligam
 
-### 2.1 Dados: Sankhya → snapshot
+### 2.1 O cadastro `empresa` é a fonte de verdade
 
-`cache-refresh` consulta o Oracle do Sankhya via `DbExplorerSP.executeQuery` (login por
+Tudo que era chumbado no fonte virou coluna. Antes de qualquer coisa, leia esta linha:
+
+| coluna | para que |
+|---|---|
+| `painel_id` | chave minúscula usada pelo painel e pela coluna `empresa` das tabelas de dado |
+| `codemp` | CODEMP do Sankhya, texto separado por vírgula (`"8,21"`) |
+| `ghl_location` | subconta do GHL. **Sem isso, toda função recusa** |
+| `ghl_token_env` | nome do secret com o token do GHL **desta** subconta |
+| `campos` | jsonb com os ids de campo personalizado do GHL, que são **por location** |
+| `universo` | `clube` ou `faturamento` — quem entra no snapshot (ver 2.2) |
+| `canal_wpp` | `zaptos` ou `ghl_nativo` — por onde o WhatsApp sai (ver 2.5) |
+| `marca` | nome que aparece no texto (`{{location.name}}`) e no assunto do e-mail |
+| `teste_contact_id` | contato desta location para o modo `b.test` |
+| `painel` | arquivo HTML que atende a empresa |
+| `fonte_publico` | `sankhya`, `crm`, ou os dois |
+
+### 2.2 Dados do ERP: Sankhya → snapshot
+
+`cache-refresh?empresa=<painel_id>` consulta o Oracle via `DbExplorerSP.executeQuery` (login por
 `MobileLoginSP.login`, resposta em **ISO-8859-1** — decodificar, senão os acentos viram lixo) e grava
-tabelas `snap_*` no Postgres. As campanhas **nunca** leem o Sankhya direto: leem o snapshot.
+`snap_parceiro`, `snap_contato`, `snap_rep`, `snap_giro`. Todas têm coluna `empresa`, e a troca
+apaga **só as linhas daquela empresa**.
 
-Roda de 3 em 3 horas (cron `cache-refresh-3h`).
+**O universo muda por empresa, e essa é a parte que engana:**
 
-### 2.2 Regras: views
+- `clube` (Nitron): `AD_PARCEIRO` onde `CONTRATO<>0 OR PERCCAMPANHA>0` — 1050 parceiros.
+  Esse universo **não tem CODEMP nenhum**: é cadastro de contrato/voucher, não movimento.
+- `faturamento` (Teak): quem comprou no CODEMP da empresa nos últimos 12 meses.
 
-Quem entra em cada campanha é uma **view**, não código espalhado. Exemplos:
+Era por isso que "trocar o CODEMP" nunca ia funcionar: o CODEMP só filtra faturamento e
+inadimplência. Ver a seção 3.
 
-- `voucher_cli` / `voucher_cli_todos` — quem tem voucher, com `perc_voucher`, `perc_adic`, `dtvalidade`
-- `rep_carteira` — carteira de cada representante
-- `rep_instancia` — **fonte única** de qual assistente/instância atende cada representante
-- `roteiro_cliente_apto` — quem entra no roteiro de visitas (com as exclusões documentadas na migração)
-- `agenda_catalogo` / `agenda_realizado` / `agenda_espera` — a agenda
-- `fila_trava_catalogo` / `fila_trava` / `fila_trava_resumo` — **por que uma mensagem não saiu**
-- `fila_conferencia` — clientes × destinos × linhas (os três números que pareciam se contradizer)
+### 2.3 Dados do CRM: GHL → snapshot de lead
 
-### 2.3 Envio: a fila
+`ghl-leads-refresh?empresa=<painel_id>` espelha os contatos da subconta em `snap_lead`, e os
+pipelines em `snap_pipeline`. Existe porque **nem toda empresa tem o público no ERP**: na Teak são
+13 clientes no Sankhya contra 2931 contatos no CRM.
+
+Mesma regra dos `snap_*`: a campanha **nunca** fala com o GHL para montar público, lê o snapshot; e
+aborta **antes** de apagar se a API não devolver nada — senão um 403 zeraria o público e a tela
+mostraria "0 leads" como se fosse verdade.
+
+### 2.4 Regras: views
+
+Quem entra em cada campanha é uma **view**, não código espalhado. As views são **por empresa**.
+
+Nitron: `voucher_cli`, `rep_carteira`, `rep_instancia`, `roteiro_cliente_apto`, `agenda_*`,
+`fila_trava*`, `fila_conferencia`, `clube_grupo`, `giro_rep_bucket`.
+
+Teak: `teak_lead` (base), `teak_lead_aguardando`, `teak_lead_qualificado`, `teak_lead_proposta`,
+`teak_lead_feira`, `teak_lead_dormente`, `teak_lead_dado`, `teak_rep_candidato`,
+`teak_cliente_recompra`, `teak_cliente_ativar`, `teak_espera`.
+
+> **As views da Nitron têm `where empresa = 'nitron'` escrito na mão.** Não é enfeite:
+> `giro_rep_bucket` e `agenda_espera` liam `snap_giro` sem filtro nenhum. E CODVEND/CODPARC são
+> **globais** no Sankhya — a Teak usa os CODVEND 67, 109, 153 e 214, que também existem na Nitron —
+> então sem filtro o join de `vw_rep_contato_rastreio` duplicaria contato.
+
+### 2.5 Envio: a fila, e o canal que muda por empresa
 
 ```
-painel ──► fila-enfileirar (POST) ──► tabela fila_envio (status pendente)
+painel ──► fila-enfileirar (POST) ──► fila_envio (status pendente)
                                               │
                         cron fila-processar-1min (1×/min)
                                               │
                                               ▼
-                                     campanhas-enviar  ──► GHL ──► ZaptosWPP
+                                     campanhas-enviar  ──► GHL ──► WhatsApp
 ```
 
-- `fila_config` manda no ritmo: `wpp_ativo`, `email_ativo`, `wpp_intervalo_seg`, `wpp_burst`,
-  `wpp_burst_min_seg`/`max_seg` (espera **sorteada** entre as mensagens de uma rajada — cadência de
-  metrônomo é um dos sinais que derruba número), `email_lote`.
-- `campanhas-enviar` é a **única porta** para o WhatsApp. Toda trava vive nela.
-- `fila-acao` cancela / reenviar / parar / retomar.
+`campanhas-enviar` é a **única porta** para o WhatsApp. Toda trava vive nela. Mas o caminho depende
+de `empresa.canal_wpp`:
 
-### 2.4 O painel
+> **Quem dispara sozinho:** só o `campanhas-cron` (todo dia útil às 08:00 BRT), e ele varre
+> **apenas a Nitron** — filtro explícito desde 26/08. Antes ele lia `campanhas` só por
+> `ativa = true`: as campanhas da Teak entraram nessa varredura no minuto em que existiram, e não
+> dispararam apenas porque nasceram sem `cadencia`. Bastava alguém preencher esse campo para uma
+> campanha da Teak sair sozinha no dia seguinte. **Empresa nova não ganha agendador de graça** — é
+> uma decisão, não um efeito colateral.
 
-`app/gestor.html` e `app/agenda.html` são **SPAs de arquivo único**, sem build. Vão para o Storage
-(bucket `app`) e a função `gestor` serve por caminho.
+**`zaptos` (Nitron).** Manda `type: "SMS"` com o texto `#contact_instance:<instancia>`, espera o app
+confirmar a troca na conversa, e só então manda o texto. Várias instâncias, uma por assistente.
+
+> A regra mais importante desse canal: o número de saída é o do **`assignedTo` do contato** no GHL.
+> `#contact_instance` governa só a atribuição de **entrada**. **`fromNumber` NÃO funciona** —
+> testado em 26/08. Não tente de novo. É por isso que existe `campanha-dono`, que empresta o contato
+> e registra o dono anterior para poder devolver.
+
+**`ghl_nativo` (Teak).** Manda `type: "WhatsApp"` direto. É a **WhatsApp Business Cloud API da
+Meta**, pelo próprio GHL: as mensagens têm `messageType TYPE_WHATSAPP` e `altId` no formato
+`wamid.HBg...`. Não existe instância, não existe bind, não existe trava de proprietário — a location
+tem **um número** e é por ele que sai.
+
+> Em troca vale um limite que a Nitron não tem: a Meta só aceita **texto livre dentro de 24h** desde
+> a última mensagem do cliente. Fora disso é preciso **template aprovado**. Quando o GHL recusa por
+> isso, o motivo vai no `recusado` — não vira "enviado".
+
+`fila_config` manda no ritmo: `wpp_ativo`, `email_ativo`, `wpp_intervalo_seg`, `wpp_burst`,
+`wpp_burst_min_seg`/`max_seg` (espera **sorteada** entre as mensagens de uma rajada — cadência de
+metrônomo é um dos sinais que derruba número), `email_lote`.
+
+### 2.6 Os painéis
+
+**Um painel por empresa quando o processo é diferente.** São SPAs de arquivo único, sem build, no
+Storage (bucket `app`), servidas pela função `gestor` por caminho.
+
+- `app/gestor.html` — Nitron. "Escolher campanha → montar fila → disparar", para 17 mil clientes com
+  Clube, saldo e voucher.
+- `app/agenda.html` — agenda de campanhas da Nitron.
+- `app/teak.html` — Teak, versão de página inteira. **Não é o gestor com outra cor**: é um funil +
+  caixa de entrada, organizado nos 4 pipelines que a própria Teak desenhou no CRM.
+- O **mesmo conteúdo da Teak também vive dentro do `gestor.html`**, no filtro de empresa: escolher
+  "Teak Brazil" abre o painel dela (`renderTeak`), ao lado do da Roga Village (`renderCRM`). É o
+  caminho normal de uso — o gestor é a porta de entrada e o filtro é onde se troca de conta.
 
 ```bash
 # publicar (o path vai na QUERY, o corpo é o HTML CRU — não JSON)
-curl -X POST "https://bwbeieumxcuomtrvlqxs.supabase.co/functions/v1/host-upload?path=gestor.html" \
+curl -X POST "https://bwbeieumxcuomtrvlqxs.supabase.co/functions/v1/host-upload?path=teak.html" \
   -H "Authorization: Bearer <ANON>" -H "Content-Type: text/plain" \
-  --data-binary @app/gestor.html
+  --data-binary @app/teak.html
 ```
 
 **Sempre confira o md5 publicado ANTES de subir** — já houve perda de trabalho de outra pessoa por
 sobrescrita:
 
 ```bash
-curl -s "https://gestordecampanhas.marketing-da5.workers.dev/" | md5sum   # deve bater com a sua base
-md5sum app/gestor.html && curl -s "https://gestordecampanhas.marketing-da5.workers.dev/" | md5sum  # depois: iguais
+md5sum app/teak.html && curl -s ".../functions/v1/gestor/teak" | md5sum   # depois: iguais
 ```
+
+> Em 26/08 o `gestor.html` **publicado diverge do que está no repo**. Não sei qual é o mais novo e
+> não sobrescrevi. Antes de publicar o da Nitron, resolva isso.
 
 ---
 
-## 3. O que está PRESO à conta Nitron (a lista de trabalho)
+## 3. O que o roteiro antigo mandava fazer — e por que teria derrubado a Nitron
 
-Isto é o que precisa de ajuste para outra empresa. Foi levantado no código, não de memória.
+A versão anterior deste arquivo dizia, no passo 2: *"rodar `cache-refresh` com os CODEMP dela"*.
+Feito ao pé da letra, isso **apagaria o snapshot da Nitron**.
 
-### 3.1 `locationId` do GHL, chumbado em 5 funções
+Medido em 26/08 antes de mexer em nada:
 
-```
-const LOC = "rZ8y7lzqV7fzxsartaX2";   // Nitron
-```
+- nenhuma tabela `snap_*` tinha coluna de empresa (a PK era `codparc`);
+- `trocar()` fazia `delete()` da tabela inteira antes de inserir;
+- com CODEMP 8,21 o `snap_giro` cairia de **1175 linhas para 2**, e o `snap_contato` de 2613 para
+  ~1050 — porque o CODEMP só filtra faturamento/inadimplência, e o universo `AD_PARCEIRO` não tem
+  CODEMP nenhum.
 
-Está em: `campanhas-enviar`, `campanha-dono`, `campanhas-comunicado`, `rep-instancia-sync`,
-`rep-instancia-atribuir`.
+Isso está resolvido (`empresa` em todas as tabelas, `delete().eq("empresa", …)`), mas fica
+registrado: **a suposição "é só trocar o CODEMP" era falsa**, e é o tipo de coisa que só aparece
+lendo o código antes de rodar.
 
-Cada empresa é uma **subconta (location) diferente** do mesmo GHL. A tabela da §1 tem o id de cada
-uma, conferido na API. **Confirmar location por empresa antes de qualquer envio** — mandar para a
-subconta errada cria contato no CRM errado.
+Outras três suposições que também caíram, cada uma custando uma volta:
 
-> **Decisão a tomar (parcialmente resolvida):** a tabela de cadastro que esta seção propunha criar
-> **já existe** — é a `public.empresa` no Supabase, com `codigo`, `codemp`, `ghl_location`,
-> `linha_negocio`, `descricao_ia` e `ativa`, e já traz as seis empresas. O que falta não é criar o
-> cadastro: é fazer as 5 funções **lerem** dele em vez do `const LOC`. Enquanto isso não acontecer,
-> `LOC` continua sendo a Nitron em toda chamada, venha de onde vier o pedido.
+1. **O `GHL_TOKEN` não serve para todas as empresas.** Ele é escopado a **uma location**. Chamando
+   `/contacts/search` com o locationId da Teak: `403 "The token does not have access to this
+   location"`. Por isso `empresa.ghl_token_env`. (O `GHL_TOKEN_TEAK` já existia nos secrets.)
+2. **Os ids de campo personalizado são por location.** "Codigo Parceiro" é `HaDWHgnJSjDDdPF7XFDH` na
+   Nitron e `5ZfLRhefBnUyAys0BOGU` na Teak. Mandar o id errado faz o GHL aceitar **calado** e gravar
+   no campo errado.
+3. **Nem toda empresa usa ZaptosWPP.** Ver 2.5.
 
-### 3.2 IDs de campo personalizado do GHL — são por location
 
-```
-FID_CODPARC      = "HaDWHgnJSjDDdPF7XFDH"   // CODPARC do Sankhya no contato
-voucher_pct      = "II773kLNc7R4Pw278zcf"   // contact.voucher_positivacao
-voucher_adic     = "h6yFBPOnoe4af0BDWNIB"   // contact.adicional_positivacao
-voucher_total    = "8YX7LVJcbwiqD8dHwUSe"   // contact.total_pontos
-voucher_validade = "sQsGU460EXuId97hpKEi"   // contact.voucher_validade
-```
-
-Em `campanhas-enviar`, tabela `CAMPO` (id + merge tag juntos, de propósito). Numa location nova esses
-ids **não existem**: criar os campos e refazer o de-para.
-
-**Pegadinha do GHL:** o `fieldKey` é derivado do nome e a derivação é **perdida** — `% do Saldo
-Atendível` virou `contact._do_saldo_atendivel`, `Positivação` virou `contact.positivao`. **Nomeie
-campo sem `%` e sem acento.**
-
-### 3.3 CODEMP no SQL do Sankhya
-
-`cache-refresh` tem `CODEMP IN (1,2,14)` em quatro pontos. Trocar pelos CODEMP da empresa
-(tabela na seção 1).
-
-### 3.4 Cadastro de instâncias de WhatsApp
-
-Tabela `instancia_ghl`: `instancia` (nome no ZaptosWPP), `usuario_ghl_id` (usuário do GHL),
-`escopo` (`rep` ou `cliente`), `ativa`.
-
-**A regra mais importante de todo o sistema:**
-
-> O número de saída do WhatsApp é o do **`assignedTo` do contato** no GHL.
-> `#contact_instance:<token>` governa só a atribuição de **entrada**.
-> **`fromNumber` NÃO funciona** — testado em 26/08: mandei com `fromNumber: +5511913243207` e a
-> mensagem saiu pela dona do contato (`userId` da Juliete). Não tente de novo.
-
-Consequência: para mandar por um número, o contato tem de ser **daquele usuário**. É o que
-`campanha-dono` faz — empresta o contato e **registra o dono anterior** para poder devolver.
-
-### 3.5 Segredos do projeto (Edge Functions)
-
-| segredo | para que |
-|---|---|
-| `SRV_JWT` | chave de serviço. **Necessário:** a plataforma injeta em `SUPABASE_SERVICE_ROLE_KEY` um valor `sb_secret_` que o PostgREST recusa com **PGRST303**. Todas as funções usam `Deno.env.get("SRV_JWT") \|\| Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")` |
-| `GHL_TOKEN` | API do GHL |
-| credenciais Sankhya | login do `MobileLoginSP` |
+> **Pegadinha do GHL que continua valendo:** o `fieldKey` é derivado do nome e a derivação é
+> **perdida** — `% do Saldo Atendível` virou `contact._do_saldo_atendivel`, `Positivação` virou
+> `contact.positivao`. **Nomeie campo sem `%` e sem acento.**
 
 ---
 
 ## 4. Roteiro para ligar uma empresa nova
 
-Na ordem. Não pule o 6.
+Na ordem. Não pule o 8.
 
-1. **Confirmar a location do GHL** da empresa e anotar o id.
-2. **CODEMP**: rodar `cache-refresh` com os CODEMP dela e conferir se o snapshot veio com volume
-   plausível (comparar contagem de parceiros com o Sankhya).
-3. **Campos personalizados no GHL**: criar CODPARC e os do voucher na location nova, sem `%` e sem
-   acento no nome, e anotar os ids.
-4. **Instâncias**: cadastrar em `instancia_ghl` as instâncias do ZaptosWPP dessa empresa, com
-   `usuario_ghl_id` e `escopo`. Sem isso o WhatsApp é **recusado** (é proposital).
-5. **Marcar `pronto:true`** na `var EMPRESAS` do painel.
-6. **Teste com UM destinatário seu**, e conferir no GHL que a mensagem foi **entregue** — não que foi
+1. **Location do GHL.** Ache o id (`list_locations` no MCP do GHL, ou o painel da agência) e grave em
+   `empresa.ghl_location`.
+2. **Token.** O token do GHL é por location. Confirme que existe um secret para esta subconta e
+   grave o **nome** dele em `empresa.ghl_token_env`. Teste com
+   `campanhas-enviar {"diag":true,"empresa":"<id>"}`: se vier 200 e o `location` certo, o token
+   serve.
+3. **CODEMP e universo.** Grave `codemp` e escolha `universo`:
+   - a empresa tem programa de Clube/voucher (`AD_PARCEIRO` com contrato ou `PERCCAMPANHA`)? → `clube`
+   - não tem? → `faturamento`
+   Confira antes, no Sankhya: `select count(*) from AD_PARCEIRO where CODPARC in (<quem compra dela>)`.
+   Se der zero, é `faturamento` — e campanha de voucher teria público **zero**.
+4. **Snapshot do ERP.** `cache-refresh?empresa=<id>&parte=parc`, depois `cont`, `rep`, `giro`.
+   Compare com a contagem que você tirou direto do Sankhya. Se não bater, pare.
+5. **Snapshot do CRM**, se a empresa tiver público lá: `ghl-leads-refresh?empresa=<id>`. Confira
+   `paginacao_incompleta: false` e que `leads` == `total_informado_pelo_ghl`.
+6. **Canal de WhatsApp.** Abra uma conversa de WhatsApp da empresa no GHL e olhe uma mensagem:
+   - `messageType TYPE_WHATSAPP` + `altId` `wamid...` → `ghl_nativo`
+   - mensagem de sistema do ZaptosWPP na conversa → `zaptos`, e aí cadastre as instâncias em
+     `instancia_ghl` (com `empresa`), senão o WhatsApp é **recusado** (é proposital).
+7. **Campos personalizados.** Crie no GHL o que faltar (sem `%` e sem acento) e grave os ids em
+   `empresa.campos`. Campo que a empresa não tem é simplesmente ignorado — não é erro.
+8. **Views, catálogo e painel.** Não copie os da Nitron sem olhar: veja a seção 4.1.
+9. **Teste com UM destinatário seu**, e confira no GHL que a mensagem foi **entregue** — não que foi
    "aceita". Ver seção 5.
+
+### 4.1 O que NÃO copiar da Nitron
+
+A Nitron vende carteira; nem toda empresa do grupo vende. Antes de duplicar campanha, pergunte:
+
+- **Tem Clube/voucher?** Se não, as campanhas `clube_*` e `voucher_*` têm público zero. Na Teak,
+  dos 13 clientes faturados em 12 meses, **nenhum** está no universo de voucher.
+- **Tem rede de representantes?** Se não, `rep_*` e `campanhas-comunicado` não se aplicam. A Teak é
+  **uma pessoa** (Marcelo Carvalho, dono dos 2931 contatos do CRM e CODVEND 214 no Sankhya).
+- **O que move a empresa é recompra ou o lead andar no funil?** Na Teak é o funil — por isso o
+  painel dela é organizado nos pipelines do CRM, e não nos pipes da Nitron.
+- **A empresa já desenhou o processo dela em algum lugar?** A Teak tinha **4 pipelines prontos** no
+  GHL (Novos Clientes, Ciclo de Recompra, Key Accounts, Recrutamento de Força de Vendas). Foi o
+  achado mais útil do levantamento: a estrutura da empresa já estava descrita no CRM dela.
 
 ---
 
@@ -214,6 +322,9 @@ do sistema e marca erro (pendência aberta). Até existir: depois do primeiro en
 E cuidado: em modo rajada (`wpp_burst > 1`) o `fila-processar` manda `exigir_confirmacao: false`,
 que desliga a única checagem que poderia ter travado o lote na primeira linha.
 
+**No canal `ghl_nativo` o mesmo erro aparece do outro lado**: fora da janela de 24h a Meta recusa
+texto livre. Isso agora vira `recusado` com o motivo escrito, e não "enviado".
+
 ### 5.2 A aba manda no público
 
 O botão "Criar fila e enviar" juntava o que estava marcado nas **duas** abas, e todo representante
@@ -229,6 +340,9 @@ Tag fora do mapa de `preencher()` sai em branco — o e-mail do voucher ia sair 
 "desconto total de&nbsp;&nbsp;%". Use o modo **"com nossos dados"** da prévia da arte: ele passa pelo
 mesmo caminho do envio e lista em vermelho as variáveis que sairiam vazias.
 
+> As **merge tags** ficam no código (`TAG`) e só os **ids** vêm do cadastro. A tag é contrato do
+> template; o id é por location. São coisas diferentes com ciclos de vida diferentes.
+
 ### 5.4 `ON CONFLICT` não aponta para índice parcial
 
 Um `unique (...) where devolvido_em is null` fez todo upsert do PostgREST falhar, o código não olhou
@@ -237,7 +351,9 @@ o erro, e nove contatos trocaram de proprietário **sem registro para desfazer**
 
 ### 5.5 `create or replace view` não reordena coluna
 
-Coluna nova em view existente só entra **no fim** do select. Não tente inserir no meio.
+Coluna nova em view existente só entra **no fim** do select. Não tente inserir no meio. E se a view
+que depende dela foi criada como `select *, algo`, a coluna nova **empurra o nome** e o Postgres
+recusa (`cannot change name of view column`): ali é `drop` + `create`, na ordem certa.
 
 ### 5.6 Cadência é quantizada pelo cron
 
@@ -250,6 +366,28 @@ O resumo da fila contava as **últimas 200 linhas** e a tela mostrava esse núme
 total da campanha — daí "cada tela mostra um valor diferente". Corrigido em 26/08 (`count exact`).
 Ao fazer tela nova: **se o número é um total, conte no banco.**
 
+### 5.8 Vazio não é a mesma coisa que não carregado
+
+Uma lista vazia porque a ingestão falhou parece uma lista vazia porque não há ninguém. O painel da
+Teak diz qual dos dois é, e `ghl-leads-refresh` devolve `paginacao_incompleta` comparando com o
+total que o próprio GHL informa.
+
+### 5.9 Filtrar as views não basta
+
+Quando uma tabela vira multi-empresa, o instinto é ajustar as views — e é o que eu fiz primeiro.
+Mas **toda função que lê a tabela direto continua sendo um ponto de vazamento**, e são muitas: de
+149 tabelas do banco, 13 têm coluna `empresa`; as outras 136 são da Nitron e não têm noção de
+empresa nenhuma. Em 26/08 quatro funções da Nitron liam linha da Teak (`campanhas-disparar` em três
+pontos, `campanhas-retorno` em dois, `campanhas-roteiro` em dois), e `rep_sem_comprar` — que roda
+sexta — ia gerar rascunho com cliente da Teak na lista de um rep da Nitron. É por isso que existe
+o `scripts/conferir_isolamento.py` da seção 0: essa classe de defeito não aparece em teste.
+
+### 5.10 Parâmetro que a assinatura recebe e o corpo ignora
+
+`function ghl(tok, ...)` recebendo o token e o header continuando com `Deno.env.get("GHL_TOKEN")`:
+compila, passa no `deno check`, e só quebra na location de outra empresa. Achado em duas funções ao
+ler o arquivo inteiro antes do deploy.
+
 ---
 
 ## 6. Regras de segurança em vigor (não violar)
@@ -261,38 +399,60 @@ Ao fazer tela nova: **se o número é um total, conte no banco.**
 - O `anon` está **embutido no HTML público** do painel. Por isso escrita em `fila_envio` passa por
   Edge Function (`fila-acao`), e não por PostgREST direto.
 - **P0 aberto:** o `anon` ainda tem INSERT/UPDATE/DELETE em tabelas e não há login na frente do
-  painel. Quem for mexer em permissão, comece por aqui.
+  painel. Quem for mexer em permissão, comece por aqui. **Novo nesta lista:** o `anon` também lê a
+  tabela `empresa`, o que expõe `ghl_location` e os ids de campo (não expõe token — `ghl_token_env`
+  guarda só o *nome* do secret). Entre no mesmo pacote de RLS.
 
 ---
 
-## 7. Pendências conhecidas (herdadas)
+## 7. Pendências conhecidas
 
 | # | pendência |
 |---|---|
 | 1 | Pós-checagem de entrega: ler a resposta do ZaptosWPP na conversa e marcar erro em vez de `enviado` |
 | 2 | Pré-checagem: não gastar linha se a instância estiver desconectada |
-| 3 | `ghl-contatos-sync` ainda tem chave de serviço **chumbada no fonte** — tirar |
+| 3 | `ghl-contatos-sync` ainda tem chave de serviço **chumbada no fonte** — tirar. Em 26/08 o `campanhas-cron` tinha o mesmo problema e foi corrigido; vale varrer as outras |
+| 17 | **O repo não tem todas as funções que estão no ar.** `campanhas-cron` estava deployado e ausente do repositório — foi trazido em 26/08. Fazer o inventário completo de deployado × repo |
 | 4 | `BIND_MARGEM_MS` em 20s por mensagem (sobra de diagnóstico descartado) |
-| 5 | `LOC` chumbado em 5 funções (seção 3.1) |
-| 6 | P0: revogar escrita do `anon` + RLS + login no painel |
+| ~~5~~ | ~~`LOC` chumbado em 5 funções~~ — **fechada em 26/08**: sai do cadastro `empresa` |
+| 6 | P0: revogar escrita do `anon` + RLS + login no painel (ver 6) |
 | 7 | Cron `ml-calc-batch` devolvendo 401 |
-| 8 | Worker do Cloudflare: `/logistica` e `/cobranca` dão 404 |
-| 9 | Workflow de resposta no GHL (o GHL **não tem** endpoint de criação de workflow — só `GET /workflows/` e `add-contact-to-workflow`); paliativo é o cron `campanha-dono-varrer-5min` |
+| 8 | Worker do Cloudflare **atrás do repo**: `/logistica`, `/cobranca` e `/teak` dão 404 embora estejam no mapa de `deploy/worker/gestor-worker.js`. Falta `wrangler deploy` |
+| 9 | Workflow de resposta no GHL (o GHL **não tem** endpoint de criação de workflow); paliativo é o cron `campanha-dono-varrer-5min` |
 | 10 | 8 representantes com problema de dado (telefone compartilhado, duplicados, sem contato no CRM) |
 | 11 | 3 clientes com **dois e-mails colados** num campo do Sankhya |
 | 12 | Ticket no Supabase sobre `SUPABASE_SERVICE_ROLE_KEY` vir como `sb_secret_` |
+| ~~13~~ | ~~`gestor.html` publicado diverge do repo~~ — **fechada em 26/08**: o publicado era o mais NOVO (tinha o painel da Roga Village, que le o funil do CRM ao vivo, e nao estava no repo). O repo adotou o publicado como base e o painel da Teak foi enxertado nele |
+| ~~14~~ | ~~Sem cron de refresh para a Teak~~ — **fechada em 26/08**: `cache-refresh-teak-3h` (5 */3) e `ghl-leads-refresh-teak-2h` (38 */2), em `supabase/cron/teak.sql` |
+| 15 | `crm-resposta-roteia` ainda usa `GHL_TOKEN` direto (é da Nitron; parametrizar quando outra empresa precisar) |
+| 16 | Teak: 8 contatos **sem dono** no CRM e 498 com problema de telefone — lista em `teak_lead_dado` |
+| 18 | **13 leituras sem filtro de empresa**, apontadas por `scripts/conferir_isolamento.py`. Nenhuma causa dano hoje (a Teak tem 0 linhas em `fila_envio`), mas é o que bloqueia a Teak de enviar: `fila-processar` (5), `fila-enfileirar` (2), `agenda-api` (4), `crm-resposta-roteia` (1), `instancia_ghl` em `fila-processar` (1) |
+| 19 | `fila_config` tem **uma linha só** (`id=1`): uma cadência para todas as empresas. A Teak precisa da dela |
+| 20 | `fila-processar` marca como **erro** toda linha de WhatsApp sem instância. A Teak não tem instância (canal nativo do GHL), então a fila **rejeitaria 100% dos envios dela**. Precisa entender `empresa.canal_wpp` |
+| 21 | `campanhas-disparar` só sabe montar público de **carteira** (clube, voucher, giro, motor). Não sabe montar público de **lead** — a Teak precisa do equivalente |
+| 22 | `instancia_alias` não tem coluna `empresa` |
 
 ---
 
 ## 8. Como trabalhar (o que funcionou aqui)
 
+- **Meça antes de escrever código.** Todo achado que mudou o plano — o snapshot que seria apagado, o
+  token que dá 403, o canal de WhatsApp diferente — veio de uma consulta ou de uma chamada de API
+  feita **antes**, não de ler o código e supor.
+- **Leia o arquivo inteiro antes de fazer deploy.** Três defeitos que passariam no `deno check`
+  foram achados assim (seção 5.9).
 - **Conserte o dado, não oito funções.** Quando as campanhas antigas estavam com instância errada, a
   correção foi um *trigger* na origem, não editar cada função.
-- **Uma fonte de verdade por assunto.** `rep_instancia` para instância; `CAMPO` para campo do CRM;
-  `fila_trava_catalogo` para motivo de falha. Duas listas do mesmo assunto divergem — sempre.
+- **Uma fonte de verdade por assunto.** `empresa` para location/CODEMP/campos; `rep_instancia` para
+  instância; `TAG` para merge tag; `fila_trava_catalogo` para motivo de falha. Duas listas do mesmo
+  assunto divergem — sempre. Foi por isso que a tabela `empresa` que já existia foi **estendida** em
+  vez de duplicada.
 - **Prévia tem de usar o caminho do envio.** Prévia com regra própria mente, e mentiu.
-- **Toda trava recusa alto.** Sem instância, dono divergente, troca não confirmada: **não manda**.
-  Mensagem pelo número errado é pior do que mensagem não enviada.
+- **Toda trava recusa alto.** Sem instância, dono divergente, troca não confirmada, sem location, sem
+  token: **não manda**. Mensagem pelo número errado é pior do que mensagem não enviada.
+- **Mas trava tem de recusar pelo motivo certo.** A trava de instância aplicada à Teak recusaria
+  100% dos envios por falta de algo que naquele canal não existe. Trava correta pelo motivo errado
+  ainda é um defeito.
 - **Antes de mexer no painel publicado, confira o md5.**
 - Comentário no código explica **por que**, com o caso real que motivou. É o que evitou refazer erro.
 
@@ -539,3 +699,100 @@ que fazer.
 Para acender: gerar um **Private Integration token na subconta Roga Village** (escopos
 `opportunities.readonly`, `contacts.readonly`, `locations/customFields.readonly`) e gravar como
 segredo `GHL_TOKEN_ROGA` nas Edge Functions. Nada mais precisa mudar — nem a função, nem o painel.
+
+### 9.11 Sankhya no CRM da Roga: conferido, não existe
+
+Pergunta do gestor em 27/08: *"acho que os dados do Sankhya nem estão no CRM"*. Estava certo.
+Conferido campo a campo na API — os sete campos criados em 19/08 para receber o ERP:
+
+| campo | contatos |
+|---|---|
+| CODPARC (Sankhya) | 0 |
+| Ultima Estadia | 0 |
+| Estadias (total) | 0 |
+| Estado do Ciclo | 0 |
+| Canal Preferido | 0 |
+| Valor Vencido | 0 |
+| Ficha Roga (IA) | 0 |
+
+**Zero em todos.** Nunca houve importação, e não havia o que importar. O assunto ERP está encerrado
+para a Roga: `empresa.universo` dela agora é **`crm`** (migração `20260827_roga_universo_crm.sql`),
+um terceiro valor ao lado de `clube` e `faturamento` — os dois anteriores pressupõem CODEMP e nota
+de venda, que a Roga não tem. Deixá-la como `clube` fazia o cadastro afirmar algo falso, e cadastro
+que mente é pior que cadastro vazio, porque alguém confia nele.
+
+A tela mostra isso com número, não com promessa — e só **afirma** que está vazio quando as sete
+consultas responderam. `erp_medidos` existe para separar "medido e vazio" de "não medido": somar
+`(n||0)` daria zero nos dois casos, e a tela usaria esse zero para afirmar algo que poderia ser
+falso. Confirmado na prática ao rodar contra a Teak, onde esses campos não existem: veio
+`erp_medidos: 0/7` e a tela corretamente **não** afirmou nada.
+
+### 9.12 Os sinais que o CRM realmente alimenta
+
+Medido em 27/08. Só vale puxar o que tem conteúdo:
+
+| campo | contatos | serve para |
+|---|---|---|
+| `Segmento` | 750 | qualificar o B2B importado |
+| `Objetivo do Lead` | **255** (210 com telefone) | **definir público por intenção** |
+| `Observacao do Lead` | 56 | contexto — **sai em inglês**, ver ressalva |
+| `O que precisa?` | 45 | Evento Social / Vivencial / Business Club / Lazer |
+| `Resumo do Lead` | 24 | personalizar mensagem (estruturado, em português) |
+| `Informacoes Gerais` | 8 | proposta de jornada corporativa |
+| `Interesse`, `Origem Inteligente` | **0** | criados e nunca alimentados — não puxar |
+
+`Objetivo do Lead` é o campo mais valioso da conta: o agente de IA já classificou a intenção
+("Eventos Corporativos: empresa/equipe/reunião", "Restaurante: almoço/day use"). É o que transforma
+10 mil contatos numa lista de 210 com quem dá para falar.
+
+Três armadilhas achadas no caminho:
+
+1. **O resumo da IA sai em inglês** ("*Karina Mota sought information on how to participate...*").
+   Usado como merge tag numa mensagem em português, sai torto. O `Resumo do Lead` — estruturado e em
+   português ("Período: 1 de julho | Pessoas: 2 | Interesse: Restaurante") — é a alternativa segura.
+2. **Há ruído entrando como lead.** Um contato com `Observacao` preenchida é uma conversa sobre
+   impressora 3D, sem relação com a Roga: o bot capturou uma thread aleatória do Instagram. Filtrar
+   por `Objetivo do Lead` preenchido elimina boa parte.
+3. **O celular pode não estar no campo `phone`.** Um contato tem `phone: +558896481767` (fixo) e o
+   celular certo em `additionalPhones: +5588996481767`. Quem montar a fila tem de olhar os dois,
+   senão manda WhatsApp para telefone fixo.
+
+### 9.13 As campanhas que a tela propõe — derivadas, não escritas
+
+A seção "Campanhas que dá para montar com este dado" **não é uma lista fixa**: sai de
+`campanhasRoga()`, que lê o funil e os sinais da resposta ao vivo. Se o funil mudar, a lista muda
+junto — uma lista escrita à mão envelheceria em uma semana e viraria mentira na tela. Cada cartão
+carrega o que **impede** disparar, porque público sem canal não é campanha, é intenção.
+
+Com o retrato de 27/08 a tela propõe seis, em ordem de temperatura:
+
+| campanha | alvo | canal | por que |
+|---|---|---|---|
+| Retomar reserva parada | 36 | WhatsApp | pediu reserva e ninguém respondeu; os estágios seguintes estão zerados |
+| Qualificar lead de evento corporativo | 33 | WhatsApp | pediu proposta pelo site; é o pipeline de ticket alto |
+| Follow-up por objetivo declarado | 210 | WhatsApp | intenção já classificada pela IA — dá para segmentar a mensagem |
+| Prospecção B2B para eventos | 750 | E-mail | base fria com Razão Social e Segmento; é a única grande com e-mail |
+| Reativar oportunidade perdida | 22 | WhatsApp | mais perdidas que ganhas em Hospedagem, e sem motivo registrado |
+| Captação para o Business Club | 45 | WhatsApp | pipeline zerado, mas 4 formulários no ar e a maior venda veio de um quiz |
+
+As três primeiras aparecem marcadas como quentes. A trava de dono aparece em **todas** as de
+WhatsApp, e de propósito: quem lê um cartão isolado precisa ver que sem `assignedTo` a mensagem não
+sai. Dos 255 com objetivo, **195 estão sem dono**.
+
+### 9.14 O merge com a Teak, e a regra do md5 provando seu valor
+
+Ao publicar as campanhas, o md5 do painel no ar **não era mais o que eu havia subido**: outra sessão
+publicou o painel da Teak Brazil em cima. A regra da §2.4 (conferir o md5 **antes** de subir) é o
+que impediu a sobrescrita — sem ela, o painel da Teak teria sido apagado sem ninguém notar. Vale
+notar que o histórico da branch da Teak tem um commit chamado *"recupera o painel Roga Village"*: a
+colisão já havia acontecido na direção oposta.
+
+O caminho foi merge, não sobrescrita: `origin/claude/teak-brazil-setup-qs6hf1` integrada, conflitos
+resolvidos preservando os dois painéis, e as campanhas reaplicadas por cima. E a Teak trouxe a
+**fundação multiempresa** que a §9.5 apontava como pré-requisito — coluna `empresa` em `snap_*`,
+`instancia_ghl`, `fila_envio` e `campanhas`, e o fim do `const LOC` chumbado nas 5 funções.
+
+Por isso a `roga-crm` foi realinhada (v3): resolve a empresa por **`painel_id`** e tira o nome do
+secret de **`empresa.ghl_token_env`**, em vez da convenção `GHL_TOKEN_<EMPRESA>` que eu havia
+inventado. Duas convenções para a mesma coisa divergem sempre — e a delas é melhor, porque o
+cadastro manda, não o código. Provado ponta a ponta: `?empresa=teak` roda completo pelo cadastro.

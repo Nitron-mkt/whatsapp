@@ -10,8 +10,14 @@
 //   /logistica   -> gestor.html   (mesma página; ela le a área do caminho da URL)
 //   /cobranca    -> gestor.html   (idem)
 //   /agenda      -> agenda.html
+//   /teak        -> teak.html     (Teak Brazil: outra empresa, outro processo, outra pagina)
 //
 // Deploy:  wrangler deploy   (ou colar no editor do dashboard da Cloudflare)
+//
+// ATENCAO: em 26/08 o Worker PUBLICADO estava atras deste arquivo — /logistica e /cobranca
+// respondiam 404 embora estejam no mapa aqui (e a pendencia 8 do doc). Ou seja, editar este
+// arquivo NAO basta: sem `wrangler deploy` a rota nova nao existe. Enquanto isso, a pagina da
+// Teak sai por https://<projeto>.supabase.co/functions/v1/gestor/teak
 
 const BASE = "https://bwbeieumxcuomtrvlqxs.supabase.co/storage/v1/object/public/app/";
 
@@ -28,6 +34,10 @@ const PAG = {
   "cobrança": "gestor.html",
   "agenda": "agenda.html",
   "agenda.html": "agenda.html",
+  // A Teak nao e uma "area" do gestor: e outra empresa, com processo proprio (lead de feira em
+  // vez de carteira com Clube). Por isso arquivo proprio, e nao mais um alias do gestor.html.
+  "teak": "teak.html",
+  "teak.html": "teak.html",
 };
 
 export default {
@@ -37,7 +47,7 @@ export default {
     const arq = PAG[chave];
     if (!arq) {
       return new Response("página desconhecida: /" + chave +
-        "\npáginas: /gestor · /logistica · /cobranca · /agenda", {
+        "\npáginas: /gestor · /logistica · /cobranca · /agenda · /teak", {
         status: 404,
         headers: { "content-type": "text/plain; charset=utf-8" },
       });

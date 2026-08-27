@@ -1,4 +1,4 @@
-// campanhas-comunicado (v4) — apoio a campanha rep_comunicado: recado livre da gestao para a rede
+// campanhas-comunicado (v5) — apoio a campanha rep_comunicado: recado livre da gestao para a rede
 // de representantes. NAO tem gatilho de dado e NAO usa IA: o texto e escrito na tela e muda a cada
 // envio, entao aqui so devolvemos a rede com os contatos de cada rep e guardamos os comunicados
 // anteriores para reuso.
@@ -30,18 +30,46 @@ const nf = (s: any) => digits(s).replace(/^0+/, "").replace(/^55/, "");
 function e164(fone: any): string { const d = digits(fone); if (!d) return ""; if (d.length <= 11) return "+55" + d; return "+" + d; }
 
 const API = "https://services.leadconnectorhq.com";
-const LOC = "rZ8y7lzqV7fzxsartaX2";
+// v5: locationId E TOKEN saem do fonte e vem do cadastro `empresa`. Cada empresa do grupo e uma
+// SUBCONTA (location) diferente do mesmo GHL, e o token do GHL e escopado por location:
+// conferido em 26/08, o token da Nitron responde 403 "The token does not have access to this
+// location" na location da Teak. Mandar para a subconta errada cria contato no CRM errado.
+// Os dois sao passados como ARGUMENTO, nunca guardados em variavel de modulo: estado de modulo e
+// compartilhado pelo isolate, e duas requisicoes de empresas diferentes ao mesmo tempo poderiam
+// trocar o valor no meio da operacao.
+// O loader esta repetido nas funcoes que precisam dele de proposito: cada Edge Function e um
+// deploy independente, e um import compartilhado significaria redeployar todas juntas.
+type EmpGhl = { loc: string; tok: string };
+const empGhlCache: Record<string, { at: number; v: EmpGhl }> = {};
+async function empresaGhl(id: string): Promise<EmpGhl> {
+  const hit = empGhlCache[id];
+  if (hit && Date.now() - hit.at < 300000) return hit.v;
+  const base = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, ""); const k = srvKey();
+  if (!base || !k) throw new Error("sem SUPABASE_URL/chave de servico para ler o cadastro de empresa");
+  const r = await fetch(`${base}/rest/v1/empresa?painel_id=eq.${encodeURIComponent(id)}&select=ghl_location,ghl_token_env`, { headers: { apikey: k, Authorization: "Bearer " + k } });
+  if (!r.ok) throw new Error("cadastro de empresa: HTTP " + r.status);
+  const rows = await r.json().catch(() => []);
+  const row = Array.isArray(rows) ? rows[0] : null;
+  const loc = row?.ghl_location ? String(row.ghl_location) : "";
+  if (!loc) throw new Error(`empresa "${id}" sem ghl_location no cadastro — operacao recusada`);
+  const tokEnv = String(row?.ghl_token_env || "GHL_TOKEN");
+  const tok = Deno.env.get(tokEnv) || Deno.env.get("GHL_TOKEN") || "";
+  if (!tok) throw new Error(`sem token do GHL para "${id}": o secret ${tokEnv} nao existe nas Edge Functions`);
+  const v: EmpGhl = { loc, tok };
+  empGhlCache[id] = { at: Date.now(), v };
+  return v;
+}
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146.0 Safari/537.36";
 // Uma unica busca no GHL com todos os telefones dos reps; devolve fone normalizado -> assignedTo.
-async function donosNoCRM(fones: string[]): Promise<Record<string, string> | null> {
-  const tok = Deno.env.get("GHL_TOKEN"); if (!tok || !fones.length) return null;
+async function donosNoCRM(g: EmpGhl, fones: string[]): Promise<Record<string, string> | null> {
+  const tok = g.tok; if (!tok || !fones.length) return null;
   const out: Record<string, string> = {};
   try {
     for (let i = 0; i < fones.length; i += 90) {
       const r = await fetch(API + "/contacts/search", {
         method: "POST",
         headers: { Authorization: "Bearer " + tok, Version: "2021-07-28", "Content-Type": "application/json", Accept: "application/json", "User-Agent": UA },
-        body: JSON.stringify({ locationId: LOC, pageLimit: 100, filters: [{ field: "phone", operator: "contains_set", value: fones.slice(i, i + 90) }] }),
+        body: JSON.stringify({ locationId: g.loc, pageLimit: 100, filters: [{ field: "phone", operator: "contains_set", value: fones.slice(i, i + 90) }] }),
       });
       if (!r.ok) return null;
       const d = await r.json().catch(() => ({}));
@@ -86,7 +114,10 @@ Deno.serve(async (req) => {
     const { data: rcs, error: eRc } = await sb.from("rep_carteira").select("codvend,apelido,codparc,assist_idcrm,celular,email,clientes,carteira"); if (eRc) throw eRc;
     if (!rcs || !rcs.length) return j({ erro: "rep_carteira vazia — rode o rep-refresh antes" }, 500);
 
-    const { data: instRows, error: eI } = await sb.from("instancia_ghl").select("instancia,usuario_ghl_id").eq("ativa", true); if (eI) throw eI;
+    // Esta funcao e da Nitron (ver a nota no donosNoCRM abaixo). O filtro e explicito porque
+    // instancia_ghl passou a ter dono: sem ele, uma instancia de outra empresa apareceria como
+    // assistente valida de um representante daqui.
+    const { data: instRows, error: eI } = await sb.from("instancia_ghl").select("instancia,usuario_ghl_id").eq("ativa", true).eq("empresa", "nitron"); if (eI) throw eI;
     const porUsuario: Record<string, string> = {};
     (instRows || []).forEach((x: any) => { if (x.usuario_ghl_id) porUsuario[String(x.usuario_ghl_id)] = String(x.instancia); });
 
@@ -98,7 +129,10 @@ Deno.serve(async (req) => {
     const baseCp: Record<string, Ct[]> = {}; const baseCpMail: Record<string, Ct[]> = {};
     for (let i = 0; i < cps.length; i += 300) {
       const ch = cps.slice(i, i + 300);
-      const { data: sc, error: e1 } = await sb.from("snap_contato").select("codparc,fone,email").in("codparc", ch); if (e1) throw e1;
+      // .eq(empresa): CODPARC e GLOBAL no Sankhya e snap_contato agora tem mais de uma empresa.
+      // O CODPARC 1 e o 78701, por exemplo, existem na Nitron E na Teak — sem o filtro, o contato
+      // da outra empresa entraria na lista de quem recebe o comunicado.
+      const { data: sc, error: e1 } = await sb.from("snap_contato").select("codparc,fone,email").eq("empresa", "nitron").in("codparc", ch); if (e1) throw e1;
       (sc || []).forEach((c: any) => {
         if (c.fone) (baseCp[c.codparc] = baseCp[c.codparc] || []).push({ valor: c.fone, rotulo: "Sankhya" });
         if (c.email) (baseCpMail[c.codparc] = baseCpMail[c.codparc] || []).push({ valor: c.email, rotulo: "Sankhya" });
@@ -136,7 +170,11 @@ Deno.serve(async (req) => {
     // instancia de verdade: a assistente proprietaria do contato no CRM
     const fones: string[] = [];
     reps.forEach((r: any) => (r.telefones || []).forEach((t: any) => { const v = e164(t.valor); if (v) fones.push(v); }));
-    const donos = await donosNoCRM(Array.from(new Set(fones)));
+    // "nitron" explicito, nao esquecido: comunicado aos representantes so existe na Nitron (rede
+    // de 80 reps). A Teak e uma pessoa so e nao tem rede de representantes — quando tiver, esta
+    // funcao passa a receber a empresa como as outras. O importante e que o valor agora sai do
+    // cadastro e nao de um id chumbado no fonte.
+    const donos = await donosNoCRM(await empresaGhl("nitron"), Array.from(new Set(fones)));
     if (donos) {
       reps = reps.map((r: any) => {
         let inst: string | null = null;

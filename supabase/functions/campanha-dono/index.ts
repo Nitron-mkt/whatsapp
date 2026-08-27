@@ -48,17 +48,56 @@ function variantes(fone: any): string[] {
   return [...out];
 }
 const API = "https://services.leadconnectorhq.com";
-const LOC = "rZ8y7lzqV7fzxsartaX2";
-const FID_CODPARC = "HaDWHgnJSjDDdPF7XFDH";
-const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146.0 Safari/537.36";
-function ghl(method: string, path: string, body?: any) {
-  return fetch(API + path, { method, headers: { "Authorization": "Bearer " + Deno.env.get("GHL_TOKEN"), "Version": "2021-07-28", "Content-Type": "application/json", "Accept": "application/json", "User-Agent": UA }, body: body ? JSON.stringify(body) : undefined });
+// v2: locationId E TOKEN saem do fonte e vem do cadastro `empresa`. Cada empresa do grupo e uma
+// SUBCONTA (location) diferente do mesmo GHL, e o token do GHL e escopado por location:
+// conferido em 26/08, o token da Nitron responde 403 "The token does not have access to this
+// location" na location da Teak. Mandar para a subconta errada cria contato no CRM errado.
+// Os dois sao passados como ARGUMENTO, nunca guardados em variavel de modulo: estado de modulo e
+// compartilhado pelo isolate, e duas requisicoes de empresas diferentes ao mesmo tempo poderiam
+// trocar o valor no meio da operacao.
+// O loader esta repetido nas funcoes que precisam dele de proposito: cada Edge Function e um
+// deploy independente, e um import compartilhado significaria redeployar todas juntas.
+type EmpGhl = { loc: string; tok: string };
+const empGhlCache: Record<string, { at: number; v: EmpGhl }> = {};
+async function empresaGhl(id: string): Promise<EmpGhl> {
+  const hit = empGhlCache[id];
+  if (hit && Date.now() - hit.at < 300000) return hit.v;
+  const base = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, ""); const k = srvKey();
+  if (!base || !k) throw new Error("sem SUPABASE_URL/chave de servico para ler o cadastro de empresa");
+  const r = await fetch(`${base}/rest/v1/empresa?painel_id=eq.${encodeURIComponent(id)}&select=ghl_location,ghl_token_env`, { headers: { apikey: k, Authorization: "Bearer " + k } });
+  if (!r.ok) throw new Error("cadastro de empresa: HTTP " + r.status);
+  const rows = await r.json().catch(() => []);
+  const row = Array.isArray(rows) ? rows[0] : null;
+  const loc = row?.ghl_location ? String(row.ghl_location) : "";
+  if (!loc) throw new Error(`empresa "${id}" sem ghl_location no cadastro — operacao recusada`);
+  const tokEnv = String(row?.ghl_token_env || "GHL_TOKEN");
+  const tok = Deno.env.get(tokEnv) || Deno.env.get("GHL_TOKEN") || "";
+  if (!tok) throw new Error(`sem token do GHL para "${id}": o secret ${tokEnv} nao existe nas Edge Functions`);
+  const v: EmpGhl = { loc, tok };
+  empGhlCache[id] = { at: Date.now(), v };
+  return v;
 }
-async function acharPorFone(fone: string): Promise<any> {
+// O id do campo personalizado tambem e POR LOCATION — o "Codigo Parceiro" da Teak, por exemplo,
+// e 5ZfLRhefBnUyAys0BOGU, outro id. Mandar o id da Nitron para outra subconta faria o GHL aceitar
+// calado e gravar no campo errado. Vem do cadastro, junto com location e token.
+async function campoCodparc(id: string): Promise<string | null> {
+  const base = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, ""); const k = srvKey();
+  if (!base || !k) return null;
+  const r = await fetch(`${base}/rest/v1/empresa?painel_id=eq.${encodeURIComponent(id)}&select=campos`, { headers: { apikey: k, Authorization: "Bearer " + k } });
+  if (!r.ok) return null;
+  const rows = await r.json().catch(() => []);
+  const c = Array.isArray(rows) && rows[0]?.campos ? rows[0].campos : null;
+  return (c && typeof c === "object" && c.codparc) ? String(c.codparc) : null;
+}
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146.0 Safari/537.36";
+function ghl(tok: string, method: string, path: string, body?: any) {
+  return fetch(API + path, { method, headers: { "Authorization": "Bearer " + tok, "Version": "2021-07-28", "Content-Type": "application/json", "Accept": "application/json", "User-Agent": UA }, body: body ? JSON.stringify(body) : undefined });
+}
+async function acharPorFone(g: EmpGhl, fone: string): Promise<any> {
   for (const v of variantes(fone)) {
     for (const q of [e164(v), v]) {
       try {
-        const r = await ghl("GET", `/contacts/?locationId=${LOC}&query=${encodeURIComponent(q)}&limit=1`);
+        const r = await ghl(g.tok, "GET", `/contacts/?locationId=${g.loc}&query=${encodeURIComponent(q)}&limit=1`);
         if (!r.ok) continue;
         const d = await r.json();
         const c = (d?.contacts || [])[0];
@@ -75,10 +114,15 @@ Deno.serve(async (req) => {
     const acao = String(b.acao || "").trim();
     const seco = b.seco === true;
     const campanha = b.campanha ? String(b.campanha) : null;
+    // empresa primeiro: sem location resolvida esta funcao nao fala com o GHL.
+    const empId = String(b.empresa || "nitron");
+    const g = await empresaGhl(empId);
     const sb = createClient(Deno.env.get("SUPABASE_URL")!, srvKey());
 
     // a instancia de campanha e a de escopo cliente, ativa
-    const { data: instCli } = await sb.from("instancia_ghl").select("instancia,usuario_ghl_id").eq("ativa", true).eq("escopo", "cliente").order("instancia").limit(1).maybeSingle();
+    // .eq(empresa): instancia_ghl passou a ter dono. Sem o filtro, a instancia de campanha de OUTRA
+    // empresa poderia virar a dona dos contatos desta — e o numero de saida seria o da outra.
+    const { data: instCli } = await sb.from("instancia_ghl").select("instancia,usuario_ghl_id").eq("ativa", true).eq("escopo", "cliente").eq("empresa", empId).order("instancia").limit(1).maybeSingle();
     if (!instCli?.usuario_ghl_id) return j({ ok: false, erro: "nenhuma instancia de escopo 'cliente' ativa com usuario_ghl_id no cadastro" }, 400);
     const alvo = String(instCli.usuario_ghl_id);
 
@@ -92,13 +136,14 @@ Deno.serve(async (req) => {
       const out: any[] = [];
       for (const it of itens) {
         const f = it.fone;
-        const c = await acharPorFone(f);
+        const c = await acharPorFone(g, f);
         if (!c?.id) {
           if (!criar) { out.push({ fone: f, acao: "nao_achei_no_crm" }); continue; }
           if (seco) { out.push({ fone: f, acao: "criaria", nome: it.nome || null }); continue; }
-          const campos: any = { locationId: LOC, phone: e164(f), firstName: it.nome || ("Cliente " + e164(f)), assignedTo: alvo };
-          if (it.codparc) campos.customFields = [{ id: FID_CODPARC, value: String(it.codparc) }];
-          const rc = await ghl("POST", "/contacts/upsert", campos);
+          const campos: any = { locationId: g.loc, phone: e164(f), firstName: it.nome || ("Cliente " + e164(f)), assignedTo: alvo };
+          const fidCodparc = await campoCodparc(empId);
+          if (it.codparc && fidCodparc) campos.customFields = [{ id: fidCodparc, value: String(it.codparc) }];
+          const rc = await ghl(g.tok, "POST", "/contacts/upsert", campos);
           const dc = await rc.json().catch(() => ({}));
           const id = dc?.contact?.id || null;
           if (!id) { out.push({ fone: f, acao: "erro", motivo: "upsert " + rc.status }); continue; }
@@ -120,7 +165,7 @@ Deno.serve(async (req) => {
           { onConflict: "contact_id,campanha", ignoreDuplicates: false },
         );
         if (eReg2) { out.push({ fone: f, contato: c.id, acao: "erro", motivo: "nao consegui registrar o dono anterior, nada foi trocado: " + (eReg2.message || eReg2) }); continue; }
-        const r = await ghl("PUT", `/contacts/${c.id}`, { assignedTo: alvo });
+        const r = await ghl(g.tok, "PUT", `/contacts/${c.id}`, { assignedTo: alvo });
         if (!r.ok) {
           // desfaz o registro, senao fica dizendo que tomou emprestado algo que nao tomou
           // campanha pode ser nula; eq(null) nao filtra o que se espera, entao usa is()
@@ -143,7 +188,7 @@ Deno.serve(async (req) => {
         if (seco) { out.push({ contato: e.contact_id, acao: "devolveria", para: e.dono_antes }); continue; }
         // sem dono anterior nao ha para onde devolver sem inventar; a varredura resolve pelo ERP
         if (!e.dono_antes) { out.push({ contato: e.contact_id, acao: "sem_dono_anterior" }); continue; }
-        const r = await ghl("PUT", `/contacts/${e.contact_id}`, { assignedTo: e.dono_antes });
+        const r = await ghl(g.tok, "PUT", `/contacts/${e.contact_id}`, { assignedTo: e.dono_antes });
         if (!r.ok) { out.push({ contato: e.contact_id, acao: "erro", motivo: "PUT " + r.status }); continue; }
         await sb.from("campanha_dono_emprestado").update({ devolvido_em: new Date().toISOString(), devolvido_para: e.dono_antes }).eq("id", e.id);
         out.push({ contato: e.contact_id, acao: "devolvido", para: e.dono_antes });
@@ -154,7 +199,7 @@ Deno.serve(async (req) => {
 
     if (acao === "varrer") {
       // conversas da instancia de campanha cuja ULTIMA mensagem e de ENTRADA = cliente respondeu
-      const r = await ghl("GET", `/conversations/search?locationId=${LOC}&assignedTo=${alvo}&lastMessageDirection=inbound&limit=100`);
+      const r = await ghl(g.tok, "GET", `/conversations/search?locationId=${g.loc}&assignedTo=${alvo}&lastMessageDirection=inbound&limit=100`);
       if (!r.ok) return j({ ok: false, erro: "conversations/search " + r.status + ": " + (await r.text()).slice(0, 200) }, 502);
       const d = await r.json().catch(() => ({}));
       const convs = d?.conversations || [];
@@ -177,7 +222,7 @@ Deno.serve(async (req) => {
         if (!cid) continue;
         const dest = proximo();
         if (seco) { out.push({ contato: cid, acao: "iria_para", para: dest.nome }); conta[dest.usuario_ghl_id]++; continue; }
-        const r2 = await ghl("PUT", `/contacts/${cid}`, { assignedTo: dest.usuario_ghl_id });
+        const r2 = await ghl(g.tok, "PUT", `/contacts/${cid}`, { assignedTo: dest.usuario_ghl_id });
         if (!r2.ok) { out.push({ contato: cid, acao: "erro", motivo: "PUT " + r2.status }); continue; }
         conta[dest.usuario_ghl_id]++;
         await sb.from("campanha_dono_emprestado").update({ devolvido_em: new Date().toISOString(), devolvido_para: dest.usuario_ghl_id }).eq("contact_id", cid).is("devolvido_em", null);

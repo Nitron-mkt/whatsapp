@@ -1,4 +1,7 @@
-// campanhas-listar (v14) — devolve o catalogo de campanhas (para a tela montar tudo).
+// campanhas-listar (v15) — devolve o catalogo de campanhas DE UMA EMPRESA (para a tela montar tudo).
+// v15: filtra por empresa. Sem isso, no minuto em que a Teak ganhou catalogo proprio (9 campanhas
+//      de lead/teca), o painel da Nitron passaria a listar campanha de madeira junto com Clube e
+//      voucher. Default 'nitron' porque o painel antigo chama sem parametro.
 // v14: a chave de servico vem de srvKey(). Desde 23/08 a plataforma injeta em
 // SUPABASE_SERVICE_ROLE_KEY uma chave sb_secret_ que o Data API recusa (PGRST303
 // "JWT issued at future"). SRV_JWT guarda o JWT legado de service_role, que segue
@@ -24,11 +27,13 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
     const sb = createClient(Deno.env.get("SUPABASE_URL")!, srvKey());
+    const empresa = new URL(req.url).searchParams.get("empresa") || "nitron";
     const { data, error } = await sb.from("campanhas")
-      .select("codigo,nome,pipe,objetivo,publico,canais,cadencia,status_dados,ativa,prioridade")
+      .select("codigo,nome,pipe,objetivo,publico,canais,cadencia,status_dados,ativa,prioridade,observacao,empresa")
+      .eq("empresa", empresa)
       .order("prioridade", { ascending: true });
     if (error) throw error;
-    return new Response(JSON.stringify({ campanhas: data || [] }), { headers: { ...cors, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ empresa, campanhas: data || [] }), { headers: { ...cors, "Content-Type": "application/json" } });
   } catch (e) {
     console.error("campanhas-listar falhou:", detalhar(e));
     return new Response(JSON.stringify({ erro: detalhar(e) }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });

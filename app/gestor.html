@@ -32,6 +32,27 @@
   .mv .arte{display:flex;gap:8px;align-items:center;margin-bottom:10px;font-size:12px;color:var(--soft);flex-wrap:wrap}
   .mv .arte input{flex:1;min-width:180px;border:1px solid var(--line);border-radius:7px;padding:6px 9px;font:inherit;font-size:12px}
   .mv .hint{font-size:12px;color:var(--faint);margin-bottom:8px}
+  /* Painel de empresa que roda pelo CRM (Roga Village). O funil e desenhado estagio a estagio
+     de proposito: estagio vazio fica apagado em vez de sumir, porque "ninguem passa por aqui" e
+     justamente o diagnostico — some com a coluna e o buraco no meio do funil fica invisivel. */
+  .mv .pipe{border:1px solid var(--line);border-radius:10px;margin-bottom:10px;overflow:hidden}
+  .mv .pipe-h{background:#f7faf9;padding:8px 12px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+  .mv .pipe-h b{font-size:13px}
+  .mv .stg{display:flex;overflow-x:auto}
+  .mv .st{flex:1;min-width:98px;padding:9px 8px;border-right:1px solid var(--line);text-align:center}
+  .mv .st:last-child{border-right:none}
+  .mv .st.z{background:#fbfcfc}.mv .st.z .stn{color:#c3ccc8}
+  .mv .stn{font-size:17px;font-weight:750;line-height:1}
+  .mv .stl{font-size:10.5px;color:var(--soft);line-height:1.25;margin-top:4px}
+  .mv .stx{font-size:10px;margin-top:3px}
+  .mv .trava{border-left:3px solid var(--warn);background:#fdf8ef;padding:9px 12px;border-radius:0 8px 8px 0;margin-bottom:8px;font-size:12.5px;line-height:1.55}
+  .mv .trava.crit{border-left-color:var(--crit);background:#fdf1ef}
+  .mv .trava b{color:var(--ink)}
+  .mv .pub{display:flex;align-items:center;gap:8px;padding:5px 2px;border-bottom:1px dashed var(--line);font-size:12.5px}
+  .mv .pub:last-child{border-bottom:none}
+  .mv .pub .pn{margin-left:auto;font-weight:700}
+  .mv .pub.vazio{opacity:.5}
+  .mv .sec{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:700;margin:14px 0 7px}
   .mv .btn{border:none;border-radius:8px;padding:6px 12px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--chip);color:var(--soft)}
   .mv .btn.big{padding:10px 16px;font-size:14px}.mv .btn.ok{background:var(--ok);color:#fff}.mv .btn.wpp{background:#1a8a4a;color:#fff}.mv .btn.mail{background:var(--info);color:#fff}.mv .btn.out{background:var(--panel);border:1px solid var(--line);color:var(--ink)}
   .mv .btn:disabled{opacity:.5;cursor:default}
@@ -282,15 +303,107 @@
     {id:"teak",nome:"Teak Brazil",codemp:[8,21],pronto:false},
     {id:"mood",nome:"Mood Fruits",codemp:[16,9],pronto:false},
     {id:"hyak",nome:"Hyak Internacional",codemp:[5,7],pronto:false},
-    {id:"roga",nome:"Roga Village",codemp:[12],pronto:false}
+    {id:"roga",nome:"Roga Village",codemp:[12],pronto:false,fonte:"crm",emp:"ROGA"}
   ];
   var EMPRESA="nitron";
   function empAtual(){for(var i=0;i<EMPRESAS.length;i++)if(EMPRESAS[i].id===EMPRESA)return EMPRESAS[i];return EMPRESAS[0];}
   function popEmpresas(){var s=$("empresa");if(!s)return;s.innerHTML="";EMPRESAS.forEach(function(e){var o=document.createElement("option");o.value=e.id;o.textContent=e.nome+(e.pronto?"":" (a configurar)");s.appendChild(o);});s.value=EMPRESA;}
   function trocarEmpresa(){EMPRESA=$("empresa").value;var e=empAtual();var sub=$("subEmpresa");if(sub)sub.textContent=e.nome+" · Máquina de Vendas";
     if(e.pronto){$("catalogo").style.display="";document.querySelectorAll(".cc.sel").forEach(function(x){x.classList.remove("sel");});$("op").classList.remove("show");}
-    else{$("op").classList.remove("show");$("catalogo").style.display="none";var box=$("empAviso");if(!box){box=document.createElement("div");box.id="empAviso";box.className="op show";$("catalogo").parentNode.insertBefore(box,$("catalogo").nextSibling);}box.innerHTML='<div class="oh"><h3>'+esc(e.nome)+'</h3><p>CODEMP '+e.codemp.join(", ")+' · Sankhya↔GHL</p></div><div class="bd2"><div class="note" style="padding:16px;line-height:1.7">🏗️ Esta empresa ainda <b>não tem os dados sincronizados</b> para a Máquina de Vendas.<br>O fluxo (campanhas, contatos Sankhya+GHL, fila, Key Accounts) é <b>o mesmo</b> — falta gerar o snapshot desta empresa e mapear a subconta GHL dela. É só me pedir que eu configuro.</div></div>';box.style.display="";}
+    else{$("op").classList.remove("show");$("catalogo").style.display="none";var box=$("empAviso");if(!box){box=document.createElement("div");box.id="empAviso";box.className="op show";$("catalogo").parentNode.insertBefore(box,$("catalogo").nextSibling);}
+      /* Empresa cujo publico vive no CRM (Roga Village) nao recebe o aviso generico de "falta
+         sincronizar o snapshot": para ela nao existe snapshot a gerar. O ERP dela so tem compra,
+         entao a tela le o funil do GHL na hora. */
+      if(e.fonte==="crm"){renderCRM(e,box);return;}
+      box.innerHTML='<div class="oh"><h3>'+esc(e.nome)+'</h3><p>CODEMP '+e.codemp.join(", ")+' · Sankhya↔GHL</p></div><div class="bd2"><div class="note" style="padding:16px;line-height:1.7">🏗️ Esta empresa ainda <b>não tem os dados sincronizados</b> para a Máquina de Vendas.<br>O fluxo (campanhas, contatos Sankhya+GHL, fila, Key Accounts) é <b>o mesmo</b> — falta gerar o snapshot desta empresa e mapear a subconta GHL dela. É só me pedir que eu configuro.</div></div>';box.style.display="";}
     if(e.pronto){var av=$("empAviso");if(av)av.style.display="none";}}
+  /* ---------- Painel de empresa que roda pelo CRM ----------
+     A Máquina de Vendas da Nitron nasce no Sankhya. A Roga Village não tem venda no ERP — as 976
+     notas de 12 meses são todas de COMPRA e os 298 parceiros com movimento são FORNECEDORES do
+     hotel —, então o público dela está no GHL: o caminho inverso. Esta tela lê a função roga-crm,
+     que consulta o GHL ao vivo. Nada aqui é chumbado: número errado em tela de campanha vira
+     disparo errado. Ver seção 9 de docs/nova-conta-como-comecar.md. */
+  var CRMCACHE={};
+  function nfmt(n){return (n==null)?"—":String(n).replace(/\B(?=(\d{3})+(?!\d))/g,".");}
+  function pctd(a,b){if(!a||!b)return "";return " ("+Math.round(a*100/b)+"%)";}
+  function renderCRM(e,box){
+    box.style.display="";
+    var cab='<div class="oh"><h3>'+esc(e.nome)+'</h3><p>CODEMP '+e.codemp.join(", ")+' · fonte: <b>CRM (GHL)</b>, não o ERP · hotel e eventos</p></div>';
+    if(CRMCACHE[e.emp]){pintarCRM(e,box,CRMCACHE[e.emp],cab);return;}
+    box.innerHTML=cab+'<div class="bd2"><div class="note" style="padding:14px">consultando o CRM da '+esc(e.nome)+'… <span style="opacity:.7">(o funil vem ao vivo, leva alguns segundos)</span></div></div>';
+    getJSON(SUPA+"/functions/v1/roga-crm?empresa="+encodeURIComponent(e.emp||"ROGA"),function(d){
+      CRMCACHE[e.emp]=d; pintarCRM(e,box,d,cab);
+    });
+  }
+  function pintarCRM(e,box,d,cab){
+    if(!d||d.erro||d.ok===false){
+      var msg=esc(String((d&&d.erro)||"não foi possível ler o CRM"));
+      var extra=(d&&d.precisa_token)?'<div class="note" style="margin-top:8px;line-height:1.6">O token do GHL que existe hoje é da subconta da <b>Nitron</b> — ele não enxerga a location da '+esc(e.nome)+'. Cada subconta precisa do seu. Assim que <code>'+esc(d.segredo||"")+'</code> estiver nos segredos da função, esta tela passa a mostrar o funil sozinha.</div>':"";
+      box.innerHTML=cab+'<div class="bd2"><div class="trava crit"><b>O CRM ainda não responde para esta empresa.</b><br><span class="note" style="color:var(--soft)">'+msg+'</span>'+extra+'</div></div>';
+      return;
+    }
+    var b=d.base||{},h=cab;
+    h+='<div class="kpis">'
+      +'<div class="kpi"><div class="n">'+nfmt(b.total)+'</div><div class="l">contatos no CRM</div></div>'
+      +'<div class="kpi"><div class="n">'+nfmt(b.com_fone)+'</div><div class="l">com telefone'+pctd(b.com_fone,b.total)+'</div></div>'
+      +'<div class="kpi"><div class="n">'+nfmt(b.com_email)+'</div><div class="l">com e-mail'+pctd(b.com_email,b.total)+'</div></div>'
+      +'<div class="kpi s"><div class="n">'+nfmt(b.com_tag)+'</div><div class="l">com tag'+pctd(b.com_tag,b.total)+'</div></div>'
+      +'<div class="kpi s"><div class="n">'+nfmt(b.com_dono)+'</div><div class="l">com dono'+pctd(b.com_dono,b.total)+'</div></div>'
+      +'</div>';
+    h+='<div class="bd2">';
+
+    /* As travas vêm ANTES do funil de propósito: são o que impede disparar. Quem abre a tela
+       precisa bater o olho nelas antes de se animar com o tamanho da base. */
+    h+='<div class="sec">O que impede disparar hoje</div>';
+    if((b.com_dono||0)*20 < (b.total||0)){
+      h+='<div class="trava crit"><b>'+nfmt(b.com_dono)+' de '+nfmt(b.total)+' contatos têm dono no CRM'+pctd(b.com_dono,b.total)+'.</b> '
+        +'O número de saída do WhatsApp é o do <b>proprietário</b> do contato — <code>fromNumber</code> não funciona, já foi testado. Sem dono, a mensagem <b>não sai</b>.</div>';
+    }
+    h+='<div class="trava"><b>Não há instância de WhatsApp desta empresa.</b> Os usuários da subconta são pessoas; não existe um usuário de campanhas como o da Nitron. '
+      +'E <code>instancia_ghl</code> ainda não separa empresa: cadastrar a instância daqui hoje faria <b>a Nitron disparar por este número</b>.</div>';
+    if((b.em_dnd||0)===0){
+      h+='<div class="trava">Nenhum contato marcado como <b>não perturbe</b> na base inteira — não há higiene de opt-out. Há também contatos de <b>teste</b> com tag de produção. Filtrar isso é pré-requisito do primeiro envio.</div>';
+    }
+
+    h+='<div class="sec">Funil no CRM — ao vivo</div>';
+    var fun=(d.funil||[]).slice().sort(function(a,c){return (c.total||0)-(a.total||0);});
+    fun.forEach(function(f){
+      var meio=(f.estagios||[]).length?(f.estagios_vazios+"/"+f.estagios.length+" estágios sem ninguém"):"";
+      h+='<div class="pipe"><div class="pipe-h"><b>'+esc(f.nome)+'</b>'
+        +'<span class="note">'+nfmt(f.total)+' oportunidade(s)'
+        +(f.total?(' · '+nfmt(f.aberto)+' aberta(s) · '+nfmt(f.ganho)+' ganha(s) · '+nfmt(f.perdido)+' perdida(s)'):"")
+        +(f.valor_ganho?(' · R$ '+nfmt(Math.round(f.valor_ganho))+' ganho'):"")
+        +'</span>'
+        +(meio?'<span class="note" style="margin-left:auto;color:var(--warn)">'+meio+'</span>':"")
+        +(f.distribuicao_parcial?'<span class="note" style="color:var(--crit)">⚠ distribuição parcial</span>':"")
+        +'</div><div class="stg">';
+      (f.estagios||[]).forEach(function(st){
+        var z=(st.total||0)===0, det="";
+        if(!z){var ps=[];if(st.aberto)ps.push(st.aberto+" ab");if(st.ganho)ps.push(st.ganho+" ganho");if(st.perdido)ps.push(st.perdido+" perd");det=ps.join(" · ");}
+        h+='<div class="st'+(z?" z":"")+'"><div class="stn">'+(st.total||0)+'</div><div class="stl">'+esc(st.nome)+'</div>'
+          +(det?'<div class="stx" style="color:'+((st.perdido&&!st.ganho)?"var(--crit)":"var(--ok)")+'">'+det+'</div>':"")
+          +'</div>';
+      });
+      h+='</div></div>';
+    });
+
+    h+='<div class="sec">Públicos que existem hoje (tag no CRM)</div>';
+    var pubs=(d.publicos||[]).slice().sort(function(a,c){return (c.contatos||0)-(a.contatos||0);});
+    pubs.forEach(function(x){
+      h+='<div class="pub'+((x.contatos||0)===0?" vazio":"")+'"><code>'+esc(x.tag)+'</code>'
+        +((x.contatos||0)===0?'<span class="note">tag criada, ninguém alimenta</span>':"")
+        +'<span class="pn">'+nfmt(x.contatos)+'</span></div>';
+    });
+
+    h+='<div class="note" style="margin-top:12px">Lido do GHL '+esc(tempoDesde(d.atualizado)||"agora")
+      +' · location <code>'+esc((d.empresa&&d.empresa.ghl_location)||"")+'</code>'
+      +' · '+nfmt(d.oportunidades_lidas)+' oportunidade(s) percorrida(s)'
+      +(d.truncado?' · <b style="color:var(--crit)">leitura truncada: a distribuição por estágio está incompleta, os totais não</b>':"")
+      +' <button class="btn" style="margin-left:8px" onclick="recarregarCRM()">↻ atualizar</button></div>';
+    h+='</div>';
+    box.innerHTML=h;
+  }
+  function recarregarCRM(){var e=empAtual();delete CRMCACHE[e.emp];var box=$("empAviso");if(box)renderCRM(e,box);}
   var CUR="clube_saldo", DRAFTS=[], CLIENTES={}, SOMA=true, REPDATA={}, REPSEL={}, ATUALIZADO=null, ASSIST={}, CLICHK={}, POR_REP=[];
   var CLIFLAT=[], CLISEL={}, CLICT={}, CLIFLAT_LOADED=false, TAB="rep", KAMSG={};
   function digits(s){return String(s||"").replace(/\D/g,"");}

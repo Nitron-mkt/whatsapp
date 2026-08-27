@@ -467,3 +467,75 @@ a fase 1 trabalha demanda nova, não recompra de hóspede.
 > claramente falsos (`+5511789456123`, `+5511988887777`). Existe até uma tag `reserva-teste`. Numa
 > base de 33 leads de reserva, um teste é 3% do disparo. Filtrar isso é pré-requisito do primeiro
 > envio, não capricho.
+
+### 9.8 A tela da Roga é outra coisa — e por quê
+
+Decidido em 27/08 com o gestor: a Roga **não vai esperar o ERP**. A tela dela lê o CRM.
+
+Isso não é um ajuste de configuração, é outra arquitetura. Nas cinco empresas de ERP o caminho é
+`Sankhya → snap_* → view → fila`. Na Roga não há o que sincronizar: o passo 2 da §4 (trocar o CODEMP
+do `cache-refresh`) devolveria zero linha, e o `trocar()` abortaria — corretamente. Então:
+
+**`supabase/functions/roga-crm`** lê o GHL ao vivo e devolve funil, base e públicos. Duas decisões
+que valem para quem copiar isto para outra empresa:
+
+- **A location não é chumbada.** Vem de `public.empresa.ghl_location` pelo `?empresa=`. As outras 5
+  funções têm `const LOC` no fonte (pendência 5); o cadastro que resolveria isso já existia e só não
+  era lido. Esta lê. Serve para qualquer empresa da tabela — `?empresa=NITRON` funciona.
+- **Total e distribuição vêm de fontes diferentes, de propósito.** O total de cada pipeline sai do
+  `meta.total` do GHL; a distribuição por estágio sai da leitura paginada.
+
+  Essa separação não é preciosismo — **foi um bug real, pego no teste.** A primeira versão agregava
+  tudo da paginação. Rodando contra a Nitron (que tem +11 mil oportunidades), a leitura estourou o
+  teto e a tela reportou `Entregas: 3.832`. O número certo é **11.441**. Pior: `Clube —
+  Acompanhamento` aparecia com **0**, e tem 16 — eu quase registrei aqui que o pipeline estava
+  vazio. Subcontagem de 3× que passaria por dado bom. É a §5.7 outra vez, e agora tem freio: quando
+  a soma dos estágios não fecha com o total do GHL, o campo `distribuicao_parcial` marca, e a tela
+  escreve em vermelho que a distribuição está incompleta **e os totais não**.
+
+**No painel** (`app/gestor.html`), a empresa marcada `fonte:"crm"` não recebe mais o aviso genérico
+de "falta sincronizar". Recebe o painel do CRM, nesta ordem deliberada:
+
+1. **As travas primeiro.** Antes de qualquer número bonito. Quem abre a tela precisa ver o que
+   impede disparar antes de se animar com 10 mil contatos.
+2. **O funil ao vivo**, estágio a estágio. Estágio vazio fica **apagado, não sumido** — "ninguém
+   passa por aqui" é o diagnóstico principal desta conta, e esconder a coluna esconderia o buraco.
+3. **Os públicos por tag**, com as tags vazias visíveis e marcadas "tag criada, ninguém alimenta".
+
+### 9.9 O que o CRM da Roga está dizendo (medido em 26–27/08)
+
+**O funil existe no papel e não é percorrido.** As 61 oportunidades de Hospedagem Lazer estão em
+**dois** estágios: 36 na entrada (Solicitação de Reserva) e 25 no último (Pós Vendas). Os cinco do
+meio — Primeiro Contato, Cotação Enviada, Follow up, Reserva Confirmada, Hospedado — estão **zerados**.
+Em Eventos Corporativos, 33 das 36 estão em Lead Novo. Ou seja: o lead entra e para, ou é despejado
+no fim. Ninguém trabalha o meio.
+
+E o fim é ruim: em Hospedagem, **22 perdidas contra 3 ganhas**. Os três pipelines criados em 19/08
+(Eventos Sociais, Business Club, Retorno do Hóspede) continuam com zero.
+
+**Há um agente de IA atendendo, e ele funciona.** Os contatos trazem `Observacao do Lead` com resumo
+de conversa escrito por IA ("*buscava organizar um jantar romântico surpresa... encaminhando os dados
+para a equipe especializada*") e `Objetivo do Lead` preenchido ("Restaurante: almoço/day use"). As
+tags `stop bot` e `transferência humana` são desse fluxo. O gargalo **não é captação**: é o que
+acontece depois que o bot entrega o lead qualificado.
+
+**Só 94 dos 10.069 contatos têm dono** (0,9%) — e os que têm são justamente os que o bot transferiu.
+Isso é a trava dura, não um detalhe de higiene: o número de saída do WhatsApp é o do `assignedTo`
+(§3.4, e `fromNumber` já foi testado e não funciona). **Sem dono, a mensagem não sai.** Qualquer
+campanha da Roga precisa resolver propriedade antes de resolver conteúdo.
+
+**Entrada:** site `rogavillage.com.br`, formulário "Solicitacao de proposta", Instagram, e um quiz
+hospedado em `api.hyaksales.com.br` — infraestrutura da Hyak servindo a Roga. São 12 formulários,
+sendo 4 variações de Roga Business Club. A maior venda registrada (R$ 81.315) veio do quiz, com
+origem "Captacao de Membros".
+
+### 9.10 O token: o que falta para a tela acender
+
+A função está no ar e testada, mas para a Roga responde **403**: o `GHL_TOKEN` dos segredos é da
+subconta da **Nitron**, não da agência — não enxerga outra location. Por isso a função aceita
+`GHL_TOKEN_<EMPRESA>` com fallback para o global, e a tela, em vez de quebrar, mostra exatamente o
+que fazer.
+
+Para acender: gerar um **Private Integration token na subconta Roga Village** (escopos
+`opportunities.readonly`, `contacts.readonly`, `locations/customFields.readonly`) e gravar como
+segredo `GHL_TOKEN_ROGA` nas Edge Functions. Nada mais precisa mudar — nem a função, nem o painel.

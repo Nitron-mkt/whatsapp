@@ -44,7 +44,9 @@
   .tk .aviso b{font-weight:700}
   .tk .aviso code{background:rgba(0,0,0,.06);padding:1px 5px;border-radius:4px;font-size:11.5px}
   .tk .sec{margin-top:18px}
-  .tk .sec h2{margin:0 0 7px;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--soft);border-bottom:1px solid var(--line);padding-bottom:5px}
+  .tk .orig{margin:0 0 8px;font-size:11.5px;color:var(--faint);line-height:1.5}
+  .tk .orig b{color:var(--soft)}
+  .tk .sec h2{margin:0 0 3px;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--soft);border-bottom:1px solid var(--line);padding-bottom:5px}
   /* funil: os estagios do pipeline Novos Clientes, na ordem que a Teak desenhou */
   .tk .funil{display:flex;gap:6px;flex-wrap:wrap}
   .tk .fs{flex:1;min-width:118px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 11px}
@@ -98,14 +100,17 @@
 
   <div id="avisos"></div>
 
-  <div class="sec" id="secFunil" style="display:none">
-    <h2>Funil — Novos Clientes</h2>
-    <div class="funil" id="funil"></div>
+  <div class="sec">
+    <h2>Sankhya · clientes da Teak</h2>
+    <p class="orig" id="origErp">CODEMP 8 e 21 — só as notas faturadas por estas duas empresas.</p>
+    <div class="cards" id="cardsErp"></div>
   </div>
 
   <div class="sec">
-    <h2>O que está esperando</h2>
-    <div class="cards" id="cards"></div>
+    <h2>CRM · leads da Teak</h2>
+    <p class="orig" id="origCrm">Subconta própria da Teak no GHL — nenhum contato de outra conta.</p>
+    <div class="funil" id="funil" style="margin-bottom:9px"></div>
+    <div class="cards" id="cardsCrm"></div>
   </div>
 
   <div class="op" id="op"></div>
@@ -146,6 +151,16 @@
   };
   var ESPERA={}, CAMPS=[], CUR=null, ESTAGIOS=[], METAS={};
 
+  /* De qual BASE vem o público de cada campanha. O painel separa por isso, e não por pipe:
+     dado do ERP e dado do CRM são coisas diferentes, vêm de sincronismos diferentes e erram de
+     formas diferentes — juntar os dois numa lista só esconde qual dos dois está velho. */
+  var BASE_DE={
+    teak_recompra_giro:"erp", teak_primeiro_pedido:"erp",
+    teak_lead_aguardando:"crm", teak_lead_qualificado_proposta:"crm", teak_proposta_sem_retorno:"crm",
+    teak_lead_feira_retomar:"crm", teak_base_dormente:"crm", teak_dado_telefone:"crm",
+    teak_rep_recrutar:"crm", teak_ka_revisao:"crm"
+  };
+
   function init(){
     getJSON(SUPA+"/rest/v1/empresa?painel_id=eq."+EMP+"&select=nome,codemp,ghl_location,pronto,fonte_publico,universo",function(d){
       if(d && d.length){var e=d[0];
@@ -154,7 +169,7 @@
     });
     getJSON(SUPA+"/rest/v1/cache_meta?chave=in.(snapshot:teak,leads:teak)&select=chave,atualizado,detalhe",function(d){
       if(Array.isArray(d))d.forEach(function(r){METAS[r.chave]=r;});
-      pintarAvisos(); pintarFoot();
+      pintarAvisos(); pintarOrigens(); pintarFoot();
     });
     getJSON(SUPA+"/rest/v1/snap_pipeline?empresa=eq."+EMP+"&pipeline=eq.Novos%20Clientes&select=stage,posicao&order=posicao",function(d){
       if(Array.isArray(d)&&d.length){ESTAGIOS=d;carregarFunil();}
@@ -172,7 +187,6 @@
   /* Funil por estagio. Conta no banco, uma consulta por estagio com count exact — nao conta as
      primeiras N linhas e chama de total (secao 5.7 do doc). */
   function carregarFunil(){
-    $("secFunil").style.display="";
     var html="";ESTAGIOS.forEach(function(s){html+='<div class="fs" id="fs_'+s.posicao+'"><div class="n">…</div><div class="l">'+esc(s.stage)+'</div></div>';});
     $("funil").innerHTML=html;
     ESTAGIOS.forEach(function(s){
@@ -220,6 +234,20 @@
     });
   }
 
+  function cartao(c){
+    var e=ESPERA[c.codigo]||{};
+    var n=(e.esperando==null)?"—":e.esperando;
+    var interno=(c.publico||[]).indexOf("interno")>=0;
+    var off=!c.ativa;
+    return '<div class="cc'+(off?" off":"")+'" data-cod="'+esc(c.codigo)+'">'+
+      '<span class="qt'+(Number(n)?"":" zero")+'">'+esc(n)+'</span>'+
+      '<div class="nm">'+esc(c.nome)+'</div>'+
+      '<div class="ob">'+esc(c.objetivo||"")+'</div>'+
+      (interno?'<span class="tg t-int">interno · não envia</span>':"")+
+      (off?'<span class="tg t-off">desligada de propósito</span>':"")+
+      (c.codigo==="teak_base_dormente"?'<span class="tg t-div">disparar em lote grande derruba o número</span>':"")+
+      '</div>';
+  }
   function renderCards(){
     var PIPES=[
       {id:"novos_clientes",nome:"Novos Clientes"},
@@ -227,27 +255,16 @@
       {id:"recrutamento",  nome:"Recrutamento de Força de Vendas"},
       {id:"key_accounts",  nome:"Key Accounts"}
     ];
-    var html="";
-    PIPES.forEach(function(p){
-      var lista=CAMPS.filter(function(c){return c.pipe===p.id;});
-      if(!lista.length)return;
-      html+='<div style="grid-column:1/-1;margin-top:4px;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--faint)">'+esc(p.nome)+'</div>';
-      lista.forEach(function(c){
-        var e=ESPERA[c.codigo]||{};
-        var n=(e.esperando==null)?"—":e.esperando;
-        var interno=(c.publico||[]).indexOf("interno")>=0;
-        var off=!c.ativa;
-        html+='<div class="cc'+(off?" off":"")+'" data-cod="'+esc(c.codigo)+'">'+
-              '<span class="qt'+(Number(n)?"":" zero")+'">'+esc(n)+'</span>'+
-              '<div class="nm">'+esc(c.nome)+'</div>'+
-              '<div class="ob">'+esc(c.objetivo||"")+'</div>'+
-              (interno?'<span class="tg t-int">interno · não envia</span>':"")+
-              (off?'<span class="tg t-off">desligada de propósito</span>':"")+
-              (c.codigo==="teak_base_dormente"?'<span class="tg t-div">disparar em lote grande derruba o número</span>':"")+
-              '</div>';
+    ["erp","crm"].forEach(function(base){
+      var html="";
+      PIPES.forEach(function(p){
+        var lista=CAMPS.filter(function(c){return c.pipe===p.id && (BASE_DE[c.codigo]||"crm")===base;});
+        if(!lista.length)return;
+        html+='<div style="grid-column:1/-1;margin-top:4px;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--faint)">'+esc(p.nome)+'</div>';
+        lista.forEach(function(c){ html+=cartao(c); });
       });
+      $(base==="erp"?"cardsErp":"cardsCrm").innerHTML=html||'<div class="ob">nada aqui.</div>';
     });
-    $("cards").innerHTML=html;
     Array.prototype.forEach.call(document.querySelectorAll(".tk .cc"),function(el){
       if(el.className.indexOf("off")>=0)return;
       el.onclick=function(){abrir(el.getAttribute("data-cod"));};
@@ -314,6 +331,20 @@
          '</tr>';
     });
     return h+'</tbody></table></div>';
+  }
+
+  /* Cada bloco mostra o tamanho e a idade da PRÓPRIA base. É o que responde "esse número está
+     velho?" sem precisar olhar o rodapé — e os dois sincronismos são independentes. */
+  function pintarOrigens(){
+    var s=METAS["snapshot:teak"], l=METAS["leads:teak"];
+    function det(m){ try{ return m?JSON.parse(m.detalhe||"{}"):{}; }catch(e){ return {}; } }
+    var de=det(s), dl=det(l);
+    $("origErp").innerHTML="CODEMP <b>8 e 21</b> — só as notas faturadas por estas duas empresas. "+
+      "<b>"+esc(de.parceiros==null?"—":de.parceiros)+"</b> clientes no snapshot · atualizado "+
+      esc(s?tempoDesde(s.atualizado):"nunca")+".";
+    $("origCrm").innerHTML="Subconta <b>própria</b> da Teak no GHL — nenhum contato de outra conta. "+
+      "<b>"+esc(dl.leads==null?"—":dl.leads)+"</b> contatos espelhados · atualizado "+
+      esc(l?tempoDesde(l.atualizado):"nunca")+".";
   }
 
   function pintarFoot(){

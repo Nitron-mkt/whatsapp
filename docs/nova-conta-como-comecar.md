@@ -12,6 +12,35 @@
 
 ---
 
+## 0. A regra da casa: um cérebro, dados isolados
+
+A **inteligência é uma só** e vale para todas as contas do grupo: as mesmas Edge Functions, as
+mesmas travas, o mesmo aprendizado. O que é isolado é o **dado**.
+
+Em termos práticos:
+
+- **Quando o assunto é uma empresa, só aparece dado dela.** O painel da Teak mostra Teak; o da
+  Nitron mostra Nitron. Nunca "substituir" o dado de uma empresa pelo de outra, nunca somar as duas
+  numa mesma tela.
+- **Um chat por conta.** Cada conversa de configuração trata de uma empresa. Não misture.
+- **Melhoria de mecanismo é para todos; dado nunca.** Se você conserta uma trava, ela passa a valer
+  para as cinco. Se você mexe em dado, mexe no de uma.
+
+Como as tabelas são compartilhadas e discriminadas pela coluna `empresa`, esse isolamento depende
+de **toda leitura ter o filtro**. Isso não é confiável na base da memória — em 26/08 quatro funções
+da Nitron estavam lendo linha da Teak, e uma ia sair num rascunho no dia seguinte. Por isso existe:
+
+```bash
+python3 scripts/conferir_isolamento.py     # sai com erro se achar leitura sem filtro
+```
+
+**Rode antes de qualquer deploy.** Ele percorre todas as Edge Functions, acha leitura das tabelas
+multi-empresa e cobra o `.eq("empresa", ...)`. Sabe ignorar `insert`/`upsert` (ali a empresa vai
+dentro da linha) e alteração de uma linha já identificada por `id`. O `deno check` não acha nada
+disso, e nenhum teste de unidade acha.
+
+---
+
 ## 1. O que existe hoje
 
 Uma máquina de campanhas que roda **duas empresas**: o Grupo Nitron (Plásticos) e a Teak Brazil.
@@ -328,7 +357,17 @@ Uma lista vazia porque a ingestão falhou parece uma lista vazia porque não há
 Teak diz qual dos dois é, e `ghl-leads-refresh` devolve `paginacao_incompleta` comparando com o
 total que o próprio GHL informa.
 
-### 5.9 Parâmetro que a assinatura recebe e o corpo ignora
+### 5.9 Filtrar as views não basta
+
+Quando uma tabela vira multi-empresa, o instinto é ajustar as views — e é o que eu fiz primeiro.
+Mas **toda função que lê a tabela direto continua sendo um ponto de vazamento**, e são muitas: de
+149 tabelas do banco, 13 têm coluna `empresa`; as outras 136 são da Nitron e não têm noção de
+empresa nenhuma. Em 26/08 quatro funções da Nitron liam linha da Teak (`campanhas-disparar` em três
+pontos, `campanhas-retorno` em dois, `campanhas-roteiro` em dois), e `rep_sem_comprar` — que roda
+sexta — ia gerar rascunho com cliente da Teak na lista de um rep da Nitron. É por isso que existe
+o `scripts/conferir_isolamento.py` da seção 0: essa classe de defeito não aparece em teste.
+
+### 5.10 Parâmetro que a assinatura recebe e o corpo ignora
 
 `function ghl(tok, ...)` recebendo o token e o header continuando com `Deno.env.get("GHL_TOKEN")`:
 compila, passa no `deno check`, e só quebra na location de outra empresa. Achado em duas funções ao
@@ -372,6 +411,11 @@ ler o arquivo inteiro antes do deploy.
 | ~~14~~ | ~~Sem cron de refresh para a Teak~~ — **fechada em 26/08**: `cache-refresh-teak-3h` (5 */3) e `ghl-leads-refresh-teak-2h` (38 */2), em `supabase/cron/teak.sql` |
 | 15 | `crm-resposta-roteia` ainda usa `GHL_TOKEN` direto (é da Nitron; parametrizar quando outra empresa precisar) |
 | 16 | Teak: 8 contatos **sem dono** no CRM e 498 com problema de telefone — lista em `teak_lead_dado` |
+| 18 | **13 leituras sem filtro de empresa**, apontadas por `scripts/conferir_isolamento.py`. Nenhuma causa dano hoje (a Teak tem 0 linhas em `fila_envio`), mas é o que bloqueia a Teak de enviar: `fila-processar` (5), `fila-enfileirar` (2), `agenda-api` (4), `crm-resposta-roteia` (1), `instancia_ghl` em `fila-processar` (1) |
+| 19 | `fila_config` tem **uma linha só** (`id=1`): uma cadência para todas as empresas. A Teak precisa da dela |
+| 20 | `fila-processar` marca como **erro** toda linha de WhatsApp sem instância. A Teak não tem instância (canal nativo do GHL), então a fila **rejeitaria 100% dos envios dela**. Precisa entender `empresa.canal_wpp` |
+| 21 | `campanhas-disparar` só sabe montar público de **carteira** (clube, voucher, giro, motor). Não sabe montar público de **lead** — a Teak precisa do equivalente |
+| 22 | `instancia_alias` não tem coluna `empresa` |
 
 ---
 

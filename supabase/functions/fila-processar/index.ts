@@ -1,4 +1,11 @@
-// fila-processar (v19) — cron (1/min). Le fila_config: email em lote (email_lote) se email_ativo; WhatsApp 1 por instancia a cada wpp_intervalo_seg se wpp_ativo. Chama campanhas-enviar (passa merge).
+// fila-processar (v20) — cron (1/min). Le fila_config: email em lote (email_lote) se email_ativo; WhatsApp 1 por instancia a cada wpp_intervalo_seg se wpp_ativo. Chama campanhas-enviar (passa merge).
+// v20: TETO POR MINUTO, POR INSTANCIA (fila_config.wpp_max_min, padrao 2). A vazao era emergente:
+//      cron de 1x/min + portao de wpp_intervalo_seg + margem 0 na rajada davam 1,9 msg/min no lote de
+//      26/08. Funcionou por acidente — mudar qualquer uma das tres constantes mudava a vazao sem
+//      ninguem perceber, e "no maximo 2 por minuto" nao estava escrito em lugar nenhum. Agora a
+//      rodada conta quantas ESTA instancia mandou nos ultimos 60s e corta a rajada no teto. Por
+//      instancia porque o limite que protege de bloqueio e o do NUMERO: duas assistentes a 2/min cada
+//      nao aumentam o risco de nenhuma das duas.
 // BILINGUE: drena tanto as linhas do GESTOR (status='pendente', texto em `corpo`, com assunto)
 // quanto as do MOTOR (status='agendado', texto em `mensagem`, sem assunto). texto = corpo||mensagem.
 // v13: chave de servico via srvKey(). Desde 23/08 a plataforma injeta em
@@ -46,6 +53,8 @@ Deno.serve(async (req) => {
     if (eCfg) throw eCfg;   // antes o erro era engolido e a fila parecia vazia
     const WPP_INTERVALO_MS = Math.max(30, Number(cfg?.wpp_intervalo_seg ?? 120)) * 1000;
     const BURST = Math.max(1, Math.min(500, Number(cfg?.wpp_burst ?? 1)));
+    // 0 ou ausente = sem teto (comportamento antigo); qualquer valor >0 e limite duro
+    const MAX_MIN = Math.max(0, Number(cfg?.wpp_max_min ?? 0));
     const BURST_MIN_MS = Math.max(0, Number(cfg?.wpp_burst_min_seg ?? 0)) * 1000;
     const BURST_MAX_MS = Math.max(BURST_MIN_MS, Number(cfg?.wpp_burst_max_seg ?? 0) * 1000);
     const sorteio = () => BURST_MIN_MS + Math.floor(Math.random() * (BURST_MAX_MS - BURST_MIN_MS + 1));
@@ -71,7 +80,7 @@ Deno.serve(async (req) => {
     }
     async function enviar(m: any, rajada = false) {
       const texto = m.corpo || m.mensagem || "";
-      if (!texto) { await sb.from("fila_envio").update({ status: "erro", resultado: "sem texto (corpo/mensagem vazios)" }).eq("id", m.id); return false; }
+      if (!texto) { await sb.from("fila_envio").update({ status: "erro", resultado: "sem texto (corpo/mensagem vazios)" }).eq("id", m.id); return { ok: false, caiu: false }; }
       const assunto = m.assunto || ("Nitron — " + (m.nome || "")).trim();
       const body = m.canal === "email"
         ? { canal: "email", email: m.email, nome: m.nome, assunto, texto, templateId: m.template_id || undefined, merge: m.merge || undefined, codparc: m.codparc || undefined, campos: m.campos || undefined }
@@ -80,14 +89,15 @@ Deno.serve(async (req) => {
         // Nas de REPRESENTANTE nao: divergir do organograma e um aviso para a gestao, e a linha fica
         // com erro dizendo de quem o contato e — melhor do que mandar em nome de quem nao mandou.
         : { canal: "whatsapp", fone: m.fone, nome: m.nome, instancia: m.instancia, texto, codparc: m.codparc || undefined, campos: m.campos || undefined, usar_dono: m.publico === "cliente", margem_ms: rajada ? 0 : undefined, exigir_confirmacao: rajada ? false : undefined };
-      let ok = false, resumo = "";
+      let ok = false, resumo = "", caiu = false;
       try {
         const r = await fetch(url + "/functions/v1/campanhas-enviar", { method: "POST", headers: { "Authorization": "Bearer " + key, "Content-Type": "application/json" }, body: JSON.stringify(body) });
         const d = await r.json().catch(() => ({}));
-        ok = !!d.ok; resumo = ok ? ("ok " + (d.via || "") + (d.instancia_pedida ? (" · saiu pela " + d.instancia + " (dona do contato), nao pela " + d.instancia_pedida) : "")) : (d.motivo || d.erro || ("status " + r.status));
+        ok = !!d.ok; caiu = !!d.instancia_caiu;
+        resumo = ok ? ("ok " + (d.via || "") + (d.instancia_pedida ? (" · saiu pela " + d.instancia + " (dona do contato), nao pela " + d.instancia_pedida) : "")) : (d.motivo || d.erro || ("status " + r.status));
       } catch (e) { resumo = String(e); }
       await sb.from("fila_envio").update({ status: ok ? "enviado" : "erro", enviado_em: new Date().toISOString(), tentativas: (m.tentativas || 0) + 1, resultado: resumo.slice(0, 300) }).eq("id", m.id);
-      return ok;
+      return { ok, caiu };
     }
     let emails = 0;
     if (EMAIL_ATIVO) {
@@ -100,7 +110,7 @@ Deno.serve(async (req) => {
         await enviar(m); emails++;
       }
     }
-    let whatsapp = 0; let bloqueados = 0;
+    let whatsapp = 0; let bloqueados = 0; let estourou = 0; const caiuInst: string[] = [];
     if (WPP_ATIVO) {
       const { data: wRows, error } = await sb.from("fila_envio").select("*").in("status", PEND).eq("canal", "whatsapp").order("id");
       if (error) throw error;
@@ -115,7 +125,17 @@ Deno.serve(async (req) => {
           const { data: last } = await sb.from("fila_envio").select("enviado_em").eq("canal", "whatsapp").eq("instancia", inst).eq("status", "enviado").order("enviado_em", { ascending: false }).limit(1).maybeSingle();
           const lastMs = last?.enviado_em ? new Date(last.enviado_em).getTime() : 0;
           if (now - lastMs < WPP_INTERVALO_MS) return;   // essa instancia ainda esta no intervalo
-          const quantas = Math.min(BURST, lote.length);
+          // Quantas ESTA instancia ja mandou nos ultimos 60s. O teto vale sobre a janela movel, e
+          // nao sobre a rodada: sem isso duas rodadas sobrepostas somariam 2 + 2 no mesmo minuto.
+          let teto = BURST;
+          if (MAX_MIN > 0) {
+            const desde = new Date(now - 60000).toISOString();
+            const { count } = await sb.from("fila_envio").select("id", { count: "exact", head: true })
+              .eq("canal", "whatsapp").eq("instancia", inst).eq("status", "enviado").gte("enviado_em", desde);
+            teto = Math.max(0, MAX_MIN - (count || 0));
+            if (teto === 0) { estourou++; return; }   // ja bateu o teto neste minuto
+          }
+          const quantas = Math.min(BURST, teto, lote.length);
           for (let i = 0; i < quantas; i++) {
             if (Date.now() - t0 > BURST_JANELA_MS) break;   // o proximo tick continua
             if (i > 0) await dormir(sorteio());             // espera sorteada entre uma e outra
@@ -123,14 +143,19 @@ Deno.serve(async (req) => {
             const { data: presa } = await sb.from("fila_envio").update({ status: "enviando", enviado_em: new Date().toISOString() })
               .eq("id", lote[i].id).in("status", PEND).select("id");
             if (!presa || !presa.length) continue;          // outra rodada pegou primeiro
-            await enviar(lote[i], BURST > 1);
+            const r = await enviar(lote[i], BURST > 1);
             whatsapp++;
+            // INSTANCIA CAIU: para o lote desta instancia agora. Em 26/08 o lote seguiu com a
+            // instancia desconectada e oito linhas viraram "enviado" sem nada chegar. As demais
+            // continuam pendentes e saem quando a instancia voltar — nao ha nada a ganhar
+            // insistindo, e cada tentativa a mais e uma linha marcada errada.
+            if (r && r.caiu) { caiuInst.push(inst); break; }
           }
         })());
       }
       await Promise.all(tarefas);   // uma instancia lenta nao segura as outras
     }
-    return j({ ok: true, emails, whatsapp, bloqueados_por_instancia: bloqueados, instancias_ativas: INST_OK.size, cfg: { wpp_seg: WPP_INTERVALO_MS / 1000, email_lote: EMAIL_LOTE, wpp_ativo: WPP_ATIVO, email_ativo: EMAIL_ATIVO, burst: BURST, burst_seg: [BURST_MIN_MS / 1000, BURST_MAX_MS / 1000] } });
+    return j({ ok: true, emails, whatsapp, bloqueados_por_instancia: bloqueados, instancias_ativas: INST_OK.size, instancias_no_teto: estourou, instancias_caidas: caiuInst.length ? [...new Set(caiuInst)] : undefined, cfg: { wpp_seg: WPP_INTERVALO_MS / 1000, email_lote: EMAIL_LOTE, wpp_ativo: WPP_ATIVO, email_ativo: EMAIL_ATIVO, burst: BURST, burst_seg: [BURST_MIN_MS / 1000, BURST_MAX_MS / 1000], max_min: MAX_MIN } });
   } catch (e: any) {
     const msg = [e?.message, e?.details, e?.hint, e?.code].filter(Boolean).join(" · ") || String(e);
     console.error("fila-processar falhou:", msg);

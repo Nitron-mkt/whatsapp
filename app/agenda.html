@@ -181,6 +181,7 @@
   <div id="painelTrav" style="display:none">
     <div class="barra">
       <b style="font-size:15px">O que não saiu — e o que resolve</b>
+      <span class="msg" style="font-size:11.5px">horários de São Paulo</span>
       <button class="btn" onclick="carregaTravas()">↻ atualizar</button>
       <span class="msg" id="msgTrav"></span>
     </div>
@@ -267,6 +268,21 @@ function hojeSP(){
   try { return new Intl.DateTimeFormat("en-CA",{timeZone:"America/Sao_Paulo",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date()); }
   catch(e){ return new Date().toISOString().slice(0,10); }
 }
+/* O banco guarda tudo em UTC (timestamptz) e a tela mostrava a string crua: "16:45" quando aqui
+   eram 13:45. A operacao e de Sao Paulo, entao a hora exibida tem de ser a de Sao Paulo.
+   Fixo em America/Sao_Paulo de proposito, e NAO no fuso do navegador: quem abrir de outro pais
+   precisa ver a hora da operacao, nao a dele — senao dois gestores olham o mesmo envio e
+   discordam de quando ele saiu. */
+function hl(iso, comData){
+  if(!iso)return "";
+  try{
+  var d=new Date(iso);
+  if(isNaN(d.getTime()))return String(iso);
+  var o={timeZone:"America/Sao_Paulo",hour:"2-digit",minute:"2-digit"};
+  if(comData!==false){o.day="2-digit";o.month="2-digit";}
+  return new Intl.DateTimeFormat("pt-BR",o).format(d).replace(",","");
+  }catch(e){return String(iso);}
+  }
 function segDa(iso){ return mais(iso, 1 - dowIso(iso)); }
 function curto(iso){ var d = dt(iso); return d.getUTCDate() + " " + MES[d.getUTCMonth()]; }
 
@@ -780,7 +796,7 @@ function travExp(t){
       var h = '<table><thead><tr><th>Quando</th><th>Destinatário</th><th>Destino</th><th>Campanha</th><th>Resposta crua</th></tr></thead><tbody>';
       rs.forEach(function(r){
         var c = porCod(r.campanha);
-        h += '<tr><td>' + esc(String(r.criado_em||"").slice(5,16).replace("T"," ")) + '</td>'
+        h += '<tr><td>' + esc(hl(r.criado_em)) + '</td>'
           +  '<td>' + esc(r.nome||"—") + (r.codparc?(' <span style="color:var(--tinta2)">#'+r.codparc+'</span>'):"") + '</td>'
           +  '<td>' + esc(r.fone || r.email || "—") + '</td>'
           +  '<td>' + esc(c?c.nome:r.campanha) + ' · ' + esc(r.publico||"") + '</td>'

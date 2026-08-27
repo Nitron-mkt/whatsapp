@@ -215,7 +215,7 @@
       </div><!--/opFlow-->
       <div id="filaPanel" style="margin-top:12px;border:1px solid var(--line);border-radius:10px;overflow:hidden">
         <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:#f4f8f6;border-bottom:1px solid var(--line);flex-wrap:wrap">
-          <b style="font-size:13px">📬 Fila de envios</b>
+          <b style="font-size:13px" title="Todos os horários desta tela são de São Paulo (America/Sao_Paulo)">📬 Fila de envios</b>
           <span class="note" id="filaDe" style="font-weight:600"></span>
           <span class="note" id="filaResumo">—</span>
           <button class="btn" style="margin-left:auto" onclick="filaCancelarPend()" title="Só desta campanha: marca como cancelada toda linha dela que ainda não saiu. Não mexe em outras campanhas nem no que já foi enviado.">✖ Cancelar pendentes <b id="filaCancN"></b> desta campanha</button>
@@ -234,6 +234,7 @@
           <div class="note">Controla o ritmo do robô que envia a fila (roda a cada 1 min). Vale para todas as campanhas.</div>
           <div class="cfgrow"><label class="lbl"><input type="checkbox" id="cfgWppAtivo"> Enviar <b>WhatsApp</b></label></div>
           <div class="cfgrow"><span class="lbl" style="padding-left:8px">Intervalo entre WhatsApp <span class="note">(por instância, anti-ban)</span></span><input class="ei" type="number" id="cfgWppSeg" min="30" max="3600"> <span class="note">seg</span></div>
+          <div class="note" style="padding:2px 8px 8px 8px;line-height:1.6">🚦 <b>Teto de 2 mensagens por minuto, por instância</b> — limite duro no processador da fila (<code>fila_config.wpp_max_min</code>). Ele conta quantas aquela instância mandou nos últimos 60s e corta a rodada, independente de intervalo e rajada. A rajada solta 2 com 2–3s entre elas (sorteado, para não parecer metrônomo) e então espera o minuto fechar.</div>
           <div class="cfgrow"><label class="lbl"><input type="checkbox" id="cfgEmailAtivo"> Enviar <b>e-mail</b></label></div>
           <div class="cfgrow"><span class="lbl" style="padding-left:8px">E-mails por rodada <span class="note">(a cada 1 min)</span></span><input class="ei" type="number" id="cfgEmailLote" min="1" max="200"></div>
           <div class="dbtns" style="margin-top:16px;justify-content:flex-end"><button class="btn out" onclick="fecharCfg()">Cancelar</button><button class="btn big ok" onclick="salvarCfg()">Salvar</button><span class="note" id="cfgStat"></span></div>
@@ -626,6 +627,21 @@
   var CUR="clube_saldo", DRAFTS=[], CLIENTES={}, SOMA=true, REPDATA={}, REPSEL={}, ATUALIZADO=null, ASSIST={}, CLICHK={}, POR_REP=[];
   var CLIFLAT=[], CLISEL={}, CLICT={}, CLIFLAT_LOADED=false, TAB="rep", KAMSG={};
   function digits(s){return String(s||"").replace(/\D/g,"");}
+  /* O banco guarda tudo em UTC (timestamptz) e a tela mostrava a string crua: "16:45" quando aqui
+     eram 13:45. A operacao e de Sao Paulo, entao a hora exibida tem de ser a de Sao Paulo.
+     Fixo em America/Sao_Paulo de proposito, e NAO no fuso do navegador: quem abrir de outro pais
+     precisa ver a hora da operacao, nao a dele — senao dois gestores olham o mesmo envio e
+     discordam de quando ele saiu. */
+  function hl(iso, comData){
+    if(!iso)return "";
+    try{
+      var d=new Date(iso);
+      if(isNaN(d.getTime()))return String(iso);
+      var o={timeZone:"America/Sao_Paulo",hour:"2-digit",minute:"2-digit"};
+      if(comData!==false){o.day="2-digit";o.month="2-digit";}
+      return new Intl.DateTimeFormat("pt-BR",o).format(d).replace(",","");
+    }catch(e){return String(iso);}
+  }
   function tempoDesde(iso){if(!iso)return "";var s=Math.floor((Date.now()-new Date(iso).getTime())/1000);if(s<90)return "agora";if(s<5400)return "há "+Math.round(s/60)+" min";if(s<172800)return "há "+Math.round(s/3600)+"h";return "há "+Math.round(s/86400)+"d";}
   function getJSON(u,cb){var x=new XMLHttpRequest();x.open("GET",u,true);for(var k in H)x.setRequestHeader(k,H[k]);x.onreadystatechange=function(){if(x.readyState===4){try{cb(x.status>=200&&x.status<300?JSON.parse(x.responseText):{erro:"status "+x.status});}catch(e){cb({erro:String(e)});}}};x.send();}
   function postJSON(u,b,cb){var x=new XMLHttpRequest();x.open("POST",u,true);for(var k in H)x.setRequestHeader(k,H[k]);x.onreadystatechange=function(){if(x.readyState===4){try{cb(x.status>=200&&x.status<300?JSON.parse(x.responseText):{erro:"status "+x.status});}catch(e){cb({erro:String(e)});}}};x.send(JSON.stringify(b));}
@@ -1542,7 +1558,7 @@
     var res=$("filaResumo");if(res)res.innerHTML='<b>'+(c.pendente||0)+'</b> a sair ('+(c.whatsapp_pendente||0)+' wpp · '+(c.email_pendente||0)+' email) · <b style="color:#1a7f4b">'+(c.enviado||0)+'</b> enviados'+((c.erro||0)?(' · <b style="color:#c0392b">'+c.erro+'</b> erro'):'')+((c.cancelado||0)?(' · <b style="color:#6a7f78">'+c.cancelado+'</b> cancelado'):'')+' <span class="note">— total '+(c.total||0)+' nesta campanha</span>';
     var lista=$("filaLista");if(lista){var its=c.itens||[];if(!its.length){lista.innerHTML='<div class="note" style="padding:14px">Fila vazia. Marque os destinatários e clique <b>Criar fila e enviar</b>.</div>';}
       else{var h='<table class="ftab"><thead><tr><th>Quando</th><th>Público</th><th>Canal</th><th>Destinatário</th><th>Status</th><th></th></tr></thead><tbody>';
-        its.forEach(function(r){var dest=r.canal==="email"?(r.email||""):(r.fone||"");var inst=r.instancia?(" · 📲 "+r.instancia):"";var arte=r.template_id?" 🎨arte":"";var stc=r.status==="enviado"?"#1a7f4b":(r.status==="erro"?"#c0392b":"#b7791f");var when=String(r.enviado_em||r.criado_em||"").replace("T"," ").slice(5,16);
+        its.forEach(function(r){var dest=r.canal==="email"?(r.email||""):(r.fone||"");var inst=r.instancia?(" · 📲 "+r.instancia):"";var arte=r.template_id?" 🎨arte":"";var stc=r.status==="enviado"?"#1a7f4b":(r.status==="erro"?"#c0392b":"#b7791f");var when=hl(r.enviado_em||r.criado_em);
           /* uma linha por vez: cancelar o que ainda nao saiu, reenviar o que falhou. 'enviado' nao
              ganha botao nenhum — nao ha o que desfazer. */
           var ac=(r.status==="pendente"||r.status==="agendado"||r.status==="enviando")

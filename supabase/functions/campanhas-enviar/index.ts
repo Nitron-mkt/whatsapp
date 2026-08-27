@@ -1,4 +1,4 @@
-// campanhas-enviar (v28) — email com ARTE + {{...}}. Garante contato. WhatsApp via SMS+#contact_instance. Recusa WhatsApp para telefone FIXO (10 digitos). ?diag mostra rate-limit.
+// campanhas-enviar (v29) — email com ARTE + {{...}}. Garante contato. WhatsApp via SMS+#contact_instance. Recusa WhatsApp para telefone FIXO (10 digitos). ?diag mostra rate-limit.
 // v22: TRAVA DE INSTANCIA. Antes, sem instancia ele mandava o texto SEM amarrar — a mensagem saia pela ultima instancia
 //      a que aquele contato ficou preso (de outro assunto, de outro mes), e o cliente recebia algo desconexo.
 //      Agora WhatsApp sem instancia e RECUSADO, e o token e conferido contra o cadastro instancia_ghl (cache de 5 min).
@@ -42,6 +42,18 @@
 //      MESMA tabela (CAMPO), e o valor vem do mesmo `campos` que e gravado no contato.
 //      Junto vem `previa: true`: devolve a arte preenchida pelo mesmo caminho do envio, sem mandar
 //      nada, e lista as tags que ficaram sem valor. A tela mostra o resultado real antes do disparo.
+// v29: POS-CHECAGEM DE ENTREGA. Em 26/08 oito mensagens foram marcadas "enviado" e NENHUMA chegou: a
+//      instancia "Campanhas Nitron" estava desconectada. O GHL aceitou o POST (status sent) e quem
+//      avisou foi o ZaptosWPP, escrevendo NA CONVERSA "[System]: <instancia> - The instance is
+//      disconnected." — 2 a 8s depois do envio. Ninguem lia essa linha, entao "aceito pelo GHL" virava
+//      "enviado" no banco. Nao ha outro sinal: a instancia nao aparece como campo do contato nem como
+//      status no CRM (conferido), so essa mensagem de sistema.
+//      Agora, depois de mandar o texto, a funcao fica lendo a conversa por ENTREGA_CHECK_MS (12s) a
+//      procura dessa linha com dateAdded posterior ao envio. Se aparecer, a linha vira ERRO com o
+//      motivo, em vez de "enviado" — e a fila_trava ja classifica isso como instancia_desconectada,
+//      com "reconectar e reenviar" como acao.
+//      Custa 12s por mensagem. A 2 por minuto isso nao aperta a vazao, e o preco de nao ter era um
+//      lote inteiro marcado como entregue sem ter saido.
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type, apikey", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const j = (o: unknown, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -82,6 +94,8 @@ const numEnv = (nome: string, padrao: number) => { const v = Number(Deno.env.get
 const BIND_ESPERA_MS = numEnv("BIND_ESPERA_MS", 25000);
 const BIND_POLL_MS = numEnv("BIND_POLL_MS", 1500);
 const BIND_MARGEM_MS = numEnv("BIND_MARGEM_MS", 20000);
+// janela de pos-checagem: quanto tempo esperar a queda da instancia aparecer na conversa
+const ENTREGA_CHECK_MS = numEnv("ENTREGA_CHECK_MS", 12000);
 function ghl(method: string, path: string, body: any, version = "2021-07-28") {
   return fetch(API + path, { method, headers: { "Authorization": "Bearer " + Deno.env.get("GHL_TOKEN"), "Version": version, "Content-Type": "application/json", "Accept": "application/json", "User-Agent": UA }, body: body ? JSON.stringify(body) : undefined });
 }
@@ -197,6 +211,8 @@ async function sms(contactId: string, message: string, toNumber?: string) {
 }
 // ---- confirmacao da troca de instancia ----
 const ehAck = (m: any) => /contact\s+instance\s+updated/i.test(String(m?.body || ""));
+// ---- aviso de queda da instancia, escrito pelo ZaptosWPP na propria conversa ----
+const ehQueda = (m: any) => /instance\s+is\s+disconnected|instancia\s+desconectada/i.test(String(m?.body || ""));
 async function lerConversa(cid: string): Promise<{ http: number; msgs: any[] }> {
   const r = await ghl("GET", `/conversations/${cid}/messages?limit=20`, null, "2021-04-15");
   if (!r.ok) return { http: r.status, msgs: [] };
@@ -220,6 +236,19 @@ async function esperarTroca(cid: string, bindId: string, janelaMs: number) {
     await sleep(BIND_POLL_MS);
   }
   return { confirmado: false, ms: Date.now() - t0, http, motivo: "o app nao confirmou a troca em " + Math.round(janelaMs / 1000) + "s" };
+}
+// Espera a linha de queda aparecer. Nao ha como perguntar ao app se a instancia esta de pe: o unico
+// sinal observavel e essa mensagem de sistema na conversa, depois da tentativa.
+async function esperarQueda(cid: string, desdeMs: number, janelaMs: number) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < janelaMs) {
+    await sleep(BIND_POLL_MS);
+    const lida = await lerConversa(cid);
+    if (lida.http !== 200) continue;
+    const q = lida.msgs.find((m: any) => ehQueda(m) && m?.dateAdded && new Date(m.dateAdded).getTime() >= desdeMs);
+    if (q) return { caiu: true, em: q.dateAdded, texto: String(q.body || "").replace(/\s+/g, " ").slice(0, 160) };
+  }
+  return { caiu: false };
 }
 async function enviarMsg(contactId: string, canal: string, texto: string, assunto?: string, templateId?: string, instancia?: string, fone?: string, nome?: string, merge?: any, opts?: any) {
   if (canal === "email") {
@@ -247,7 +276,19 @@ async function enviarMsg(contactId: string, canal: string, texto: string, assunt
   // 3) margem de acomodacao: a confirmacao diz que o app processou, nao que a sessao de envio ja pegou a troca
   const esperaTotal = troca.confirmado === true ? margem : Math.max(margem, janela - (troca.ms || 0));
   await sleep(esperaTotal);
+  const enviadoAs = Date.now();
   const res = await sms(contactId, texto, to);
+  // 4) o GHL aceitar nao e o cliente receber. Se o ZaptosWPP disser na conversa que a instancia caiu,
+  //    esta linha e ERRO — melhor uma linha para reenviar do que um lote marcado como entregue.
+  //    A margem de 3s para tras cobre desencontro de relogio entre o isolate e o GHL.
+  if (res.status >= 200 && res.status < 300 && cid && opts?.checar_entrega !== false) {
+    const q = await esperarQueda(cid, enviadoAs - 3000, Number(opts?.checar_ms) > 0 ? Number(opts.checar_ms) : ENTREGA_CHECK_MS);
+    if (q.caiu) {
+      return { ...res, status: 0, bind, troca: { ...troca, margem_ms: esperaTotal },
+        recusado: "instancia desconectada — o GHL aceitou mas o ZaptosWPP nao entregou: " + q.texto,
+        instancia_caiu: true, queda: q };
+    }
+  }
   return { ...res, bind, troca: { ...troca, margem_ms: esperaTotal } };
 }
 Deno.serve(async (req) => {
@@ -260,7 +301,7 @@ Deno.serve(async (req) => {
       for (const kk of ["x-ratelimit-limit-daily", "x-ratelimit-daily-remaining", "x-ratelimit-interval-milliseconds", "x-ratelimit-max", "x-ratelimit-remaining", "retry-after"]) { const v = r.headers.get(kk); if (v != null) hdr[kk] = v; }
       const body = (await r.text()).slice(0, 200);
       const set = await instanciasValidas();
-      return j({ diag: true, status: r.status, headers: hdr, body, instancias_cadastradas: set ? [...set] : null, bind: { espera_ms: BIND_ESPERA_MS, poll_ms: BIND_POLL_MS, margem_ms: BIND_MARGEM_MS } });
+      return j({ diag: true, status: r.status, headers: hdr, body, instancias_cadastradas: set ? [...set] : null, bind: { espera_ms: BIND_ESPERA_MS, poll_ms: BIND_POLL_MS, margem_ms: BIND_MARGEM_MS }, entrega_check_ms: ENTREGA_CHECK_MS });
     }
     const canal = b.canal || "whatsapp";
     const texto = b.texto || "";
@@ -333,8 +374,8 @@ Deno.serve(async (req) => {
       if (re.test(texto)) { textoUsado = texto.replace(re, instUsada); textoAjustado = true; }
     }
     const mergeUsado = (instUsada !== instancia && b.merge && typeof b.merge === "object") ? { ...b.merge, instancia: instUsada, assistente: instUsada } : b.merge;
-    const res: any = await enviarMsg(contactId, canal, textoUsado, b.assunto, b.templateId, instUsada || undefined, b.fone, b.nome, mergeUsado, { espera_ms: b.espera_ms, margem_ms: b.margem_ms, exigir_confirmacao: b.exigir_confirmacao, campos: b.campos });
+    const res: any = await enviarMsg(contactId, canal, textoUsado, b.assunto, b.templateId, instUsada || undefined, b.fone, b.nome, mergeUsado, { espera_ms: b.espera_ms, margem_ms: b.margem_ms, exigir_confirmacao: b.exigir_confirmacao, campos: b.campos, checar_entrega: b.checar_entrega, checar_ms: b.checar_ms });
     const ok = res.status >= 200 && res.status < 300;
-    return j({ ok, contactId, via, criado, canal, instancia: instUsada || null, instancia_pedida: instUsada !== instancia ? instancia : undefined, texto_ajustado: textoAjustado || undefined, campos_gravados: camposGravados || undefined, dono_crm: dono, arte: !!b.templateId, arte_ok: res.arte_ok, motivo: ok ? undefined : (res.recusado || ("GHL " + res.status + ": " + res.body)), bind_nao_confirmado: res.recusado ? true : undefined, resultado: res, teste: !!b.test });
+    return j({ ok, contactId, via, criado, canal, instancia: instUsada || null, instancia_pedida: instUsada !== instancia ? instancia : undefined, texto_ajustado: textoAjustado || undefined, campos_gravados: camposGravados || undefined, dono_crm: dono, arte: !!b.templateId, arte_ok: res.arte_ok, motivo: ok ? undefined : (res.recusado || ("GHL " + res.status + ": " + res.body)), bind_nao_confirmado: res.recusado ? true : undefined, instancia_caiu: res.instancia_caiu || undefined, resultado: res, teste: !!b.test });
   } catch (e) { return j({ ok: false, erro: String(e) }, 500); }
 });

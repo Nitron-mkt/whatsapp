@@ -123,6 +123,13 @@ painel ──► fila-enfileirar (POST) ──► fila_envio (status pendente)
 `campanhas-enviar` é a **única porta** para o WhatsApp. Toda trava vive nela. Mas o caminho depende
 de `empresa.canal_wpp`:
 
+> **Quem dispara sozinho:** só o `campanhas-cron` (todo dia útil às 08:00 BRT), e ele varre
+> **apenas a Nitron** — filtro explícito desde 26/08. Antes ele lia `campanhas` só por
+> `ativa = true`: as campanhas da Teak entraram nessa varredura no minuto em que existiram, e não
+> dispararam apenas porque nasceram sem `cadencia`. Bastava alguém preencher esse campo para uma
+> campanha da Teak sair sozinha no dia seguinte. **Empresa nova não ganha agendador de graça** — é
+> uma decisão, não um efeito colateral.
+
 **`zaptos` (Nitron).** Manda `type: "SMS"` com o texto `#contact_instance:<instancia>`, espera o app
 confirmar a troca na conversa, e só então manda o texto. Várias instâncias, uma por assistente.
 
@@ -350,7 +357,8 @@ ler o arquivo inteiro antes do deploy.
 |---|---|
 | 1 | Pós-checagem de entrega: ler a resposta do ZaptosWPP na conversa e marcar erro em vez de `enviado` |
 | 2 | Pré-checagem: não gastar linha se a instância estiver desconectada |
-| 3 | `ghl-contatos-sync` ainda tem chave de serviço **chumbada no fonte** — tirar |
+| 3 | `ghl-contatos-sync` ainda tem chave de serviço **chumbada no fonte** — tirar. Em 26/08 o `campanhas-cron` tinha o mesmo problema e foi corrigido; vale varrer as outras |
+| 17 | **O repo não tem todas as funções que estão no ar.** `campanhas-cron` estava deployado e ausente do repositório — foi trazido em 26/08. Fazer o inventário completo de deployado × repo |
 | 4 | `BIND_MARGEM_MS` em 20s por mensagem (sobra de diagnóstico descartado) |
 | ~~5~~ | ~~`LOC` chumbado em 5 funções~~ — **fechada em 26/08**: sai do cadastro `empresa` |
 | 6 | P0: revogar escrita do `anon` + RLS + login no painel (ver 6) |

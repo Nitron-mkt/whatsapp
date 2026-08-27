@@ -1,3 +1,9 @@
+// fila-processar (v21) — QUEDA DE INSTANCIA DESLIGA A FILA DE WHATSAPP. Na v20 a queda parava so a
+// rajada daquela instancia, e a rodada seguinte do cron tentava de novo: em 27/08 a Juliete caiu e
+// as tres linhas dela viraram erro uma por rodada, em vez de uma so. Numa campanha de 134 linhas
+// isso queima a campanha inteira a 2/min sem ninguem olhando. Agora a primeira queda desliga
+// wpp_ativo: quem reconecta a instancia religa em Cadencia. E deliberado que isso pare TAMBEM as
+// outras instancias — perder throughput e barato, perder o controle de um envio em massa nao e.
 // fila-processar (v20) — cron (1/min). Le fila_config: email em lote (email_lote) se email_ativo; WhatsApp 1 por instancia a cada wpp_intervalo_seg se wpp_ativo. Chama campanhas-enviar (passa merge).
 // v20: TETO POR MINUTO, POR INSTANCIA (fila_config.wpp_max_min, padrao 2). A vazao era emergente:
 //      cron de 1x/min + portao de wpp_intervalo_seg + margem 0 na rajada davam 1,9 msg/min no lote de
@@ -147,15 +153,21 @@ Deno.serve(async (req) => {
             whatsapp++;
             // INSTANCIA CAIU: para o lote desta instancia agora. Em 26/08 o lote seguiu com a
             // instancia desconectada e oito linhas viraram "enviado" sem nada chegar. As demais
-            // continuam pendentes e saem quando a instancia voltar — nao ha nada a ganhar
-            // insistindo, e cada tentativa a mais e uma linha marcada errada.
+            // ficam pendentes e a chave e desligada logo abaixo — nao ha nada a ganhar insistindo,
+            // e cada tentativa a mais e uma linha marcada errada.
             if (r && r.caiu) { caiuInst.push(inst); break; }
           }
         })());
       }
       await Promise.all(tarefas);   // uma instancia lenta nao segura as outras
+      // A rajada parar nao basta: sem desligar a chave, a rodada seguinte tenta a mesma instancia
+      // caida e marca mais linhas como erro, uma rodada por vez, ate acabar a campanha. Desligar
+      // devolve a decisao para a pessoa, que e quem sabe se a instancia ja voltou.
+      if (caiuInst.length) {
+        await sb.from("fila_config").update({ wpp_ativo: false, atualizado: new Date().toISOString() }).eq("id", 1);
+      }
     }
-    return j({ ok: true, emails, whatsapp, bloqueados_por_instancia: bloqueados, instancias_ativas: INST_OK.size, instancias_no_teto: estourou, instancias_caidas: caiuInst.length ? [...new Set(caiuInst)] : undefined, cfg: { wpp_seg: WPP_INTERVALO_MS / 1000, email_lote: EMAIL_LOTE, wpp_ativo: WPP_ATIVO, email_ativo: EMAIL_ATIVO, burst: BURST, burst_seg: [BURST_MIN_MS / 1000, BURST_MAX_MS / 1000], max_min: MAX_MIN } });
+    return j({ ok: true, emails, whatsapp, bloqueados_por_instancia: bloqueados, instancias_ativas: INST_OK.size, instancias_no_teto: estourou, instancias_caidas: caiuInst.length ? [...new Set(caiuInst)] : undefined, wpp_desligado_por_queda: caiuInst.length > 0, cfg: { wpp_seg: WPP_INTERVALO_MS / 1000, email_lote: EMAIL_LOTE, wpp_ativo: WPP_ATIVO, email_ativo: EMAIL_ATIVO, burst: BURST, burst_seg: [BURST_MIN_MS / 1000, BURST_MAX_MS / 1000], max_min: MAX_MIN } });
   } catch (e: any) {
     const msg = [e?.message, e?.details, e?.hint, e?.code].filter(Boolean).join(" · ") || String(e);
     console.error("fila-processar falhou:", msg);

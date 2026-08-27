@@ -1,4 +1,9 @@
-// campanhas-disparar (v47) — chave de servico via srvKey(). Desde 23/08 a plataforma injeta
+// campanhas-disparar (v48) — filtro de empresa nas leituras de snap_rep, snap_giro e campanhas.
+// As tabelas snap_* passaram a ter mais de uma empresa, e CODVEND/CODPARC sao GLOBAIS no Sankhya:
+// sem o filtro, cliente e representante da Teak entravam nos rascunhos da Nitron. Ver as notas no
+// corpo. Este disparador e da Nitron: ele sabe montar publico de carteira (clube, voucher, giro,
+// motor), nao de lead de CRM.
+// (v47) — chave de servico via srvKey(). Desde 23/08 a plataforma injeta
 // em SUPABASE_SERVICE_ROLE_KEY uma chave sb_secret_ que o Data API recusa (PGRST303
 // "JWT issued at future"); SRV_JWT guarda o JWT legado, que segue valido.
 // (v46) — trava umaListaSo(): se a IA escrever [LISTA] duas vezes, a lista
@@ -118,7 +123,9 @@ Deno.serve(async (req) => {
     const reps: number[] = Array.isArray(body.reps) ? body.reps.map((x: any) => Number(x)) : [];
     const clientesSel: any[] = Array.isArray(body.clientes) ? body.clientes : [];
     const sb = createClient(Deno.env.get("SUPABASE_URL")!, srvKey());
-    const { data: camp } = await sb.from("campanhas").select("*").eq("codigo", codigo).maybeSingle();
+    // codigo e unico global (os da Teak tem prefixo teak_), mas o filtro deixa explicito que
+    // este disparador e da Nitron: ele so sabe montar publico de carteira, nao de lead.
+    const { data: camp } = await sb.from("campanhas").select("*").eq("empresa", "nitron").eq("codigo", codigo).maybeSingle();
     if (!camp) return j({ erro: `campanha '${codigo}' nao encontrada` }, 404);
     const isClube = codigo === "clube_saldo"; const isVoucher = codigo === "voucher_empurrar"; const isGiro = !!GIRO[codigo]; const isMotor = !!MOTOR[codigo];
     if (!isClube && !isVoucher && !isGiro && !isMotor) return j({ campanha: camp.nome, aviso: "gatilho ainda nao mapeado" });
@@ -146,13 +153,19 @@ Deno.serve(async (req) => {
     let giroByRep: Record<string, any[]> = {}; let motorByRep: Record<string, any[]> = {};
     if (isMotor) {
       const rowsM = (await motorFetch(sb, codigo)).filter((c: any) => !inad.has(Number(c.codparc)));
-      const { data: sreps } = await sb.from("snap_rep").select("codvend,rep"); const nameMap: Record<string, number> = {}; (sreps || []).forEach((s: any) => { if (s.rep) nameMap[String(s.rep).toUpperCase()] = Number(s.codvend); });
+      // .eq(empresa): esta funcao e da Nitron e as tabelas snap_* passaram a ter mais de uma
+      // empresa. CODVEND e CODPARC sao GLOBAIS no Sankhya (a Teak usa os CODVEND 67, 109, 153 e
+      // 214, que tambem existem aqui), entao sem o filtro linha da outra empresa entra na campanha.
+      const { data: sreps } = await sb.from("snap_rep").select("codvend,rep").eq("empresa", "nitron"); const nameMap: Record<string, number> = {}; (sreps || []).forEach((s: any) => { if (s.rep) nameMap[String(s.rep).toUpperCase()] = Number(s.codvend); });
       const tmp: Record<string, Record<string, any[]>> = {};
       rowsM.forEach((c: any) => { const cv = nameMap[String(c.rep || "").toUpperCase()]; if (cv == null) return; const g = gk(mtz, c.codparc); (tmp[cv] = tmp[cv] || {}); (tmp[cv][g] = tmp[cv][g] || []).push(c); });
       Object.keys(tmp).forEach((cv) => { motorByRep[cv] = Object.keys(tmp[cv]).map((g) => { const ms = tmp[cv][g]; const sede = ms.find((x) => Number(x.codparc) === Number(g)) || ms.slice().sort((a, b) => (Number(b.ticket) || 0) - (Number(a.ticket) || 0))[0]; return { ...sede, ticket: ms.reduce((a, b) => a + (Number(b.ticket) || 0), 0), lojas: ms.length }; }); });
       repList = Object.keys(motorByRep).map((k) => ({ codvend: Number(k), rep: String((motorByRep[k][0] || {}).rep || "") }));
     } else if (isGiro) {
-      const { data: gr } = await sb.from("snap_giro").select("codvend,rep,codparc,nomeparc,dias,fat12m").in("bucket", GIRO[codigo]).eq("inadimp", false);
+      // .eq(empresa): esta funcao e da Nitron e as tabelas snap_* passaram a ter mais de uma
+      // empresa. CODVEND e CODPARC sao GLOBAIS no Sankhya (a Teak usa os CODVEND 67, 109, 153 e
+      // 214, que tambem existem aqui), entao sem o filtro linha da outra empresa entra na campanha.
+      const { data: gr } = await sb.from("snap_giro").select("codvend,rep,codparc,nomeparc,dias,fat12m").eq("empresa", "nitron").in("bucket", GIRO[codigo]).eq("inadimp", false);
       const grF = (gr || []).filter((r: any) => !inad.has(Number(r.codparc)));
       const codpsG = Array.from(new Set(grF.map((r: any) => Number(r.codparc))));
       const teBy: Record<string, any> = {};

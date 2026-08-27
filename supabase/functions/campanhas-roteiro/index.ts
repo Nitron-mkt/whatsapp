@@ -72,7 +72,8 @@ Deno.serve(async (req) => {
       if (!cvs.length) return j({ erro: "lote vazio" }, 400);
       const geo = await loadGeo(sb);
       const cli: any[] = []; { let f = 0; while (true) { const { data } = await sb.from("roteiro_cliente_apto").select("*").in("codvend", cvs).range(f, f + 999); (data || []).forEach((r: any) => cli.push(r)); if (!data || data.length < 1000) break; f += 1000; } }
-      const { data: srs } = await sb.from("snap_rep").select("*").in("codvend", cvs);
+      // .eq(empresa): ver a nota em campanhas-disparar — CODVEND e global no Sankhya.
+      const { data: srs } = await sb.from("snap_rep").select("*").eq("empresa", "nitron").in("codvend", cvs);
       const srBy: Record<string, any> = {}; (srs || []).forEach((s: any) => srBy[String(s.codvend)] = s);
       const { data: ris } = await sb.from("rep_instancia").select("codvend,instancia,instancia_erp,divergente").in("codvend", cvs);
       const riBy: Record<string, any> = {}; (ris || []).forEach((x: any) => riBy[String(x.codvend)] = x);
@@ -93,7 +94,7 @@ Deno.serve(async (req) => {
     const geo = await loadGeo(sb);
     const todas: any[] = []; { let f = 0; while (true) { const { data } = await sb.from("roteiro_cliente_apto").select("*").eq("codvend", rep).range(f, f + 999); (data || []).forEach((r: any) => todas.push(r)); if (!data || data.length < 1000) break; f += 1000; } }
     const rows = todas.filter((c: any) => !intra.has(Number(c.codparc)));
-    const { data: sr } = await sb.from("snap_rep").select("*").eq("codvend", rep).maybeSingle();
+    const { data: sr } = await sb.from("snap_rep").select("*").eq("empresa", "nitron").eq("codvend", rep).maybeSingle();
     const { data: ri } = await sb.from("rep_instancia").select("codvend,instancia,instancia_erp,divergente").eq("codvend", rep).maybeSingle();
     return j(montar(rep, rows, sr, geo, ri));
   } catch (e) { return j({ erro: String(e) }, 500); }

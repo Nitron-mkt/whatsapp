@@ -15,7 +15,9 @@ async function matrizMap(sb: any): Promise<Map<number, number>> { const m = new 
 const gk = (mtz: Map<number, number>, cp: any) => mtz.get(Number(cp)) || Number(cp);
 async function claude(sys: string, user: string): Promise<string | null> { const key = Deno.env.get("ANTHROPIC_API_KEY"); if (!key) return null; try { const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" }, body: JSON.stringify({ model: MODELO, max_tokens: 600, temperature: 0.7, system: sys, messages: [{ role: "user", content: user }] }) }); if (!r.ok) return null; return (await r.json())?.content?.[0]?.text || null; } catch { return null; } }
 function pushCanal(out: any[], seen: any, canal: string, valor: any, funcao: string, origem: string) { const v = String(valor || "").trim(); if (!v) return; const k = canal + "|" + (canal === "email" ? v.toLowerCase() : digits(v).replace(/^0+/, "").replace(/^55/, "")); if (seen[k]) return; seen[k] = 1; out.push({ canal, valor: v, funcao, origem }); }
-async function contatosRede(sb: any, memArr: number[], out: any[], seen: any) { const { data: sc } = await sb.from("snap_contato").select("*").in("codparc", memArr); const { data: gc } = await sb.from("ghl_contato").select("nome,fone,email").in("codparc", memArr); (sc || []).forEach((ct: any) => { pushCanal(out, seen, "whatsapp", ct.fone, ct.funcao || "Contato", "Sankhya"); pushCanal(out, seen, "email", ct.email, ct.funcao || "Contato", "Sankhya"); }); (gc || []).forEach((g: any) => { pushCanal(out, seen, "whatsapp", g.fone, "CRM", "CRM"); pushCanal(out, seen, "email", g.email, "CRM", "CRM"); }); }
+// .eq(empresa): esta funcao e da Nitron e snap_contato passou a ter mais de uma empresa. CODPARC e
+// GLOBAL no Sankhya — o 1 e o 78701, por exemplo, existem na Nitron E na Teak.
+async function contatosRede(sb: any, memArr: number[], out: any[], seen: any) { const { data: sc } = await sb.from("snap_contato").select("*").eq("empresa", "nitron").in("codparc", memArr); const { data: gc } = await sb.from("ghl_contato").select("nome,fone,email").in("codparc", memArr); (sc || []).forEach((ct: any) => { pushCanal(out, seen, "whatsapp", ct.fone, ct.funcao || "Contato", "Sankhya"); pushCanal(out, seen, "email", ct.email, ct.funcao || "Contato", "Sankhya"); }); (gc || []).forEach((g: any) => { pushCanal(out, seen, "whatsapp", g.fone, "CRM", "CRM"); pushCanal(out, seen, "email", g.email, "CRM", "CRM"); }); }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -38,7 +40,7 @@ Deno.serve(async (req) => {
       const valTot = membros.reduce((a: number, b: any) => a + (Number(b.valor) || 0), 0);
       const notas = membros.slice().sort((a: any, b: any) => Number(b.valor) - Number(a.valor)).map((c: any) => ({ nunota: c.nunota, loja: c.cliente, valor: Math.round(c.valor), valor_fmt: brl(c.valor), motivo: c.motivo, data: c.data_retorno }));
       const bd = notas.map((n: any) => `• ${n.loja} — NF ${n.nunota} (${n.data || ""}) ${n.valor_fmt}${n.motivo ? " · " + n.motivo : ""}`);
-      let repRow: any = null; if (sede.codvend != null) { const { data: rr } = await sb.from("snap_rep").select("*").eq("codvend", sede.codvend).maybeSingle(); repRow = rr; }
+      let repRow: any = null; if (sede.codvend != null) { const { data: rr } = await sb.from("snap_rep").select("*").eq("empresa", "nitron").eq("codvend", sede.codvend).maybeSingle(); repRow = rr; }
       // A instancia vem da view rep_instancia (proprietario no CRM, com o organograma do Sankhya por
       // ID como fallback). snap_rep.assistente e nome casado por nome do organograma: dizia quem
       // DEVERIA atender, nao por qual numero a mensagem sai.

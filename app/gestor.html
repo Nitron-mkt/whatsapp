@@ -32,6 +32,27 @@
   .mv .arte{display:flex;gap:8px;align-items:center;margin-bottom:10px;font-size:12px;color:var(--soft);flex-wrap:wrap}
   .mv .arte input{flex:1;min-width:180px;border:1px solid var(--line);border-radius:7px;padding:6px 9px;font:inherit;font-size:12px}
   .mv .hint{font-size:12px;color:var(--faint);margin-bottom:8px}
+  /* Painel de empresa que roda pelo CRM (Roga Village). O funil e desenhado estagio a estagio
+     de proposito: estagio vazio fica apagado em vez de sumir, porque "ninguem passa por aqui" e
+     justamente o diagnostico — some com a coluna e o buraco no meio do funil fica invisivel. */
+  .mv .pipe{border:1px solid var(--line);border-radius:10px;margin-bottom:10px;overflow:hidden}
+  .mv .pipe-h{background:#f7faf9;padding:8px 12px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+  .mv .pipe-h b{font-size:13px}
+  .mv .stg{display:flex;overflow-x:auto}
+  .mv .st{flex:1;min-width:98px;padding:9px 8px;border-right:1px solid var(--line);text-align:center}
+  .mv .st:last-child{border-right:none}
+  .mv .st.z{background:#fbfcfc}.mv .st.z .stn{color:#c3ccc8}
+  .mv .stn{font-size:17px;font-weight:750;line-height:1}
+  .mv .stl{font-size:10.5px;color:var(--soft);line-height:1.25;margin-top:4px}
+  .mv .stx{font-size:10px;margin-top:3px}
+  .mv .trava{border-left:3px solid var(--warn);background:#fdf8ef;padding:9px 12px;border-radius:0 8px 8px 0;margin-bottom:8px;font-size:12.5px;line-height:1.55}
+  .mv .trava.crit{border-left-color:var(--crit);background:#fdf1ef}
+  .mv .trava b{color:var(--ink)}
+  .mv .pub{display:flex;align-items:center;gap:8px;padding:5px 2px;border-bottom:1px dashed var(--line);font-size:12.5px}
+  .mv .pub:last-child{border-bottom:none}
+  .mv .pub .pn{margin-left:auto;font-weight:700}
+  .mv .pub.vazio{opacity:.5}
+  .mv .sec{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:700;margin:14px 0 7px}
   .mv .btn{border:none;border-radius:8px;padding:6px 12px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--chip);color:var(--soft)}
   .mv .btn.big{padding:10px 16px;font-size:14px}.mv .btn.ok{background:var(--ok);color:#fff}.mv .btn.wpp{background:#1a8a4a;color:#fff}.mv .btn.mail{background:var(--info);color:#fff}.mv .btn.out{background:var(--panel);border:1px solid var(--line);color:var(--ink)}
   .mv .btn:disabled{opacity:.5;cursor:default}
@@ -279,17 +300,211 @@
   var EMPRESAS=[
     {id:"nitron",nome:"Grupo Nitron (Plásticos)",codemp:[1,2,14],pronto:true},
     {id:"mundo_ud",nome:"Mundo UD",codemp:[4],pronto:false},
-    {id:"teak",nome:"Teak Brazil",codemp:[8,21],pronto:false},
+    {id:"teak",nome:"Teak Brazil",codemp:[8,21],pronto:false,fonte:"teak",emp:"teak",rotulo:" (leitura)"},
     {id:"mood",nome:"Mood Fruits",codemp:[16,9],pronto:false},
-    {id:"hyak",nome:"Hyak Internacional",codemp:[5,7],pronto:false}
+    {id:"hyak",nome:"Hyak Internacional",codemp:[5,7],pronto:false},
+    {id:"roga",nome:"Roga Village",codemp:[12],pronto:false,fonte:"crm",emp:"ROGA"}
   ];
   var EMPRESA="nitron";
   function empAtual(){for(var i=0;i<EMPRESAS.length;i++)if(EMPRESAS[i].id===EMPRESA)return EMPRESAS[i];return EMPRESAS[0];}
-  function popEmpresas(){var s=$("empresa");if(!s)return;s.innerHTML="";EMPRESAS.forEach(function(e){var o=document.createElement("option");o.value=e.id;o.textContent=e.nome+(e.pronto?"":" (a configurar)");s.appendChild(o);});s.value=EMPRESA;}
+  function popEmpresas(){var s=$("empresa");if(!s)return;s.innerHTML="";EMPRESAS.forEach(function(e){var o=document.createElement("option");o.value=e.id;o.textContent=e.nome+(e.pronto?"":(e.rotulo||" (a configurar)"));s.appendChild(o);});s.value=EMPRESA;}
   function trocarEmpresa(){EMPRESA=$("empresa").value;var e=empAtual();var sub=$("subEmpresa");if(sub)sub.textContent=e.nome+" · Máquina de Vendas";
     if(e.pronto){$("catalogo").style.display="";document.querySelectorAll(".cc.sel").forEach(function(x){x.classList.remove("sel");});$("op").classList.remove("show");}
-    else{$("op").classList.remove("show");$("catalogo").style.display="none";var box=$("empAviso");if(!box){box=document.createElement("div");box.id="empAviso";box.className="op show";$("catalogo").parentNode.insertBefore(box,$("catalogo").nextSibling);}box.innerHTML='<div class="oh"><h3>'+esc(e.nome)+'</h3><p>CODEMP '+e.codemp.join(", ")+' · Sankhya↔GHL</p></div><div class="bd2"><div class="note" style="padding:16px;line-height:1.7">🏗️ Esta empresa ainda <b>não tem os dados sincronizados</b> para a Máquina de Vendas.<br>O fluxo (campanhas, contatos Sankhya+GHL, fila, Key Accounts) é <b>o mesmo</b> — falta gerar o snapshot desta empresa e mapear a subconta GHL dela. É só me pedir que eu configuro.</div></div>';box.style.display="";}
+    else{$("op").classList.remove("show");$("catalogo").style.display="none";var box=$("empAviso");if(!box){box=document.createElement("div");box.id="empAviso";box.className="op show";$("catalogo").parentNode.insertBefore(box,$("catalogo").nextSibling);}
+      /* Empresa cujo publico vive no CRM (Roga Village) nao recebe o aviso generico de "falta
+         sincronizar o snapshot": para ela nao existe snapshot a gerar. O ERP dela so tem compra,
+         entao a tela le o funil do GHL na hora. */
+      if(e.fonte==="crm"){renderCRM(e,box);return;}
+      /* A Teak tem os dois lados: cliente no ERP (CODEMP 8 e 21) e lead no CRM (subconta
+         propria). Por isso painel proprio, e nao o aviso de "falta sincronizar" — ela ja esta
+         sincronizada. Ver renderTeak. */
+      if(e.fonte==="teak"){renderTeak(e,box);return;}
+      box.innerHTML='<div class="oh"><h3>'+esc(e.nome)+'</h3><p>CODEMP '+e.codemp.join(", ")+' · Sankhya↔GHL</p></div><div class="bd2"><div class="note" style="padding:16px;line-height:1.7">🏗️ Esta empresa ainda <b>não tem os dados sincronizados</b> para a Máquina de Vendas.<br>O fluxo (campanhas, contatos Sankhya+GHL, fila, Key Accounts) é <b>o mesmo</b> — falta gerar o snapshot desta empresa e mapear a subconta GHL dela. É só me pedir que eu configuro.</div></div>';box.style.display="";}
     if(e.pronto){var av=$("empAviso");if(av)av.style.display="none";}}
+  /* ---------- Painel de empresa que roda pelo CRM ----------
+     A Máquina de Vendas da Nitron nasce no Sankhya. A Roga Village não tem venda no ERP — as 976
+     notas de 12 meses são todas de COMPRA e os 298 parceiros com movimento são FORNECEDORES do
+     hotel —, então o público dela está no GHL: o caminho inverso. Esta tela lê a função roga-crm,
+     que consulta o GHL ao vivo. Nada aqui é chumbado: número errado em tela de campanha vira
+     disparo errado. Ver seção 9 de docs/nova-conta-como-comecar.md. */
+  var CRMCACHE={};
+  function nfmt(n){return (n==null)?"—":String(n).replace(/\B(?=(\d{3})+(?!\d))/g,".");}
+  function pctd(a,b){if(!a||!b)return "";return " ("+Math.round(a*100/b)+"%)";}
+  function renderCRM(e,box){
+    box.style.display="";
+    var cab='<div class="oh"><h3>'+esc(e.nome)+'</h3><p>CODEMP '+e.codemp.join(", ")+' · fonte: <b>CRM (GHL)</b>, não o ERP · hotel e eventos</p></div>';
+    if(CRMCACHE[e.emp]){pintarCRM(e,box,CRMCACHE[e.emp],cab);return;}
+    box.innerHTML=cab+'<div class="bd2"><div class="note" style="padding:14px">consultando o CRM da '+esc(e.nome)+'… <span style="opacity:.7">(o funil vem ao vivo, leva alguns segundos)</span></div></div>';
+    getJSON(SUPA+"/functions/v1/roga-crm?empresa="+encodeURIComponent(e.emp||"ROGA"),function(d){
+      CRMCACHE[e.emp]=d; pintarCRM(e,box,d,cab);
+    });
+  }
+  function pintarCRM(e,box,d,cab){
+    if(!d||d.erro||d.ok===false){
+      var msg=esc(String((d&&d.erro)||"não foi possível ler o CRM"));
+      var extra=(d&&d.precisa_token)?'<div class="note" style="margin-top:8px;line-height:1.6">O token do GHL que existe hoje é da subconta da <b>Nitron</b> — ele não enxerga a location da '+esc(e.nome)+'. Cada subconta precisa do seu. Assim que <code>'+esc(d.segredo||"")+'</code> estiver nos segredos da função, esta tela passa a mostrar o funil sozinha.</div>':"";
+      box.innerHTML=cab+'<div class="bd2"><div class="trava crit"><b>O CRM ainda não responde para esta empresa.</b><br><span class="note" style="color:var(--soft)">'+msg+'</span>'+extra+'</div></div>';
+      return;
+    }
+    var b=d.base||{},h=cab;
+    h+='<div class="kpis">'
+      +'<div class="kpi"><div class="n">'+nfmt(b.total)+'</div><div class="l">contatos no CRM</div></div>'
+      +'<div class="kpi"><div class="n">'+nfmt(b.com_fone)+'</div><div class="l">com telefone'+pctd(b.com_fone,b.total)+'</div></div>'
+      +'<div class="kpi"><div class="n">'+nfmt(b.com_email)+'</div><div class="l">com e-mail'+pctd(b.com_email,b.total)+'</div></div>'
+      +'<div class="kpi s"><div class="n">'+nfmt(b.com_tag)+'</div><div class="l">com tag'+pctd(b.com_tag,b.total)+'</div></div>'
+      +'<div class="kpi s"><div class="n">'+nfmt(b.com_dono)+'</div><div class="l">com dono'+pctd(b.com_dono,b.total)+'</div></div>'
+      +'</div>';
+    h+='<div class="bd2">';
+
+    /* As travas vêm ANTES do funil de propósito: são o que impede disparar. Quem abre a tela
+       precisa bater o olho nelas antes de se animar com o tamanho da base. */
+    h+='<div class="sec">O que impede disparar hoje</div>';
+    if((b.com_dono||0)*20 < (b.total||0)){
+      h+='<div class="trava crit"><b>'+nfmt(b.com_dono)+' de '+nfmt(b.total)+' contatos têm dono no CRM'+pctd(b.com_dono,b.total)+'.</b> '
+        +'O número de saída do WhatsApp é o do <b>proprietário</b> do contato — <code>fromNumber</code> não funciona, já foi testado. Sem dono, a mensagem <b>não sai</b>.</div>';
+    }
+    h+='<div class="trava"><b>Não há instância de WhatsApp desta empresa.</b> Os usuários da subconta são pessoas; não existe um usuário de campanhas como o da Nitron. '
+      +'E <code>instancia_ghl</code> ainda não separa empresa: cadastrar a instância daqui hoje faria <b>a Nitron disparar por este número</b>.</div>';
+    if((b.em_dnd||0)===0){
+      h+='<div class="trava">Nenhum contato marcado como <b>não perturbe</b> na base inteira — não há higiene de opt-out. Há também contatos de <b>teste</b> com tag de produção. Filtrar isso é pré-requisito do primeiro envio.</div>';
+    }
+
+    h+='<div class="sec">Funil no CRM — ao vivo</div>';
+    var fun=(d.funil||[]).slice().sort(function(a,c){return (c.total||0)-(a.total||0);});
+    fun.forEach(function(f){
+      var meio=(f.estagios||[]).length?(f.estagios_vazios+"/"+f.estagios.length+" estágios sem ninguém"):"";
+      h+='<div class="pipe"><div class="pipe-h"><b>'+esc(f.nome)+'</b>'
+        +'<span class="note">'+nfmt(f.total)+' oportunidade(s)'
+        +(f.total?(' · '+nfmt(f.aberto)+' aberta(s) · '+nfmt(f.ganho)+' ganha(s) · '+nfmt(f.perdido)+' perdida(s)'):"")
+        +(f.valor_ganho?(' · R$ '+nfmt(Math.round(f.valor_ganho))+' ganho'):"")
+        +'</span>'
+        +(meio?'<span class="note" style="margin-left:auto;color:var(--warn)">'+meio+'</span>':"")
+        +(f.distribuicao_parcial?'<span class="note" style="color:var(--crit)">⚠ distribuição parcial</span>':"")
+        +'</div><div class="stg">';
+      (f.estagios||[]).forEach(function(st){
+        var z=(st.total||0)===0, det="";
+        if(!z){var ps=[];if(st.aberto)ps.push(st.aberto+" ab");if(st.ganho)ps.push(st.ganho+" ganho");if(st.perdido)ps.push(st.perdido+" perd");det=ps.join(" · ");}
+        h+='<div class="st'+(z?" z":"")+'"><div class="stn">'+(st.total||0)+'</div><div class="stl">'+esc(st.nome)+'</div>'
+          +(det?'<div class="stx" style="color:'+((st.perdido&&!st.ganho)?"var(--crit)":"var(--ok)")+'">'+det+'</div>':"")
+          +'</div>';
+      });
+      h+='</div></div>';
+    });
+
+    h+='<div class="sec">Públicos que existem hoje (tag no CRM)</div>';
+    var pubs=(d.publicos||[]).slice().sort(function(a,c){return (c.contatos||0)-(a.contatos||0);});
+    pubs.forEach(function(x){
+      h+='<div class="pub'+((x.contatos||0)===0?" vazio":"")+'"><code>'+esc(x.tag)+'</code>'
+        +((x.contatos||0)===0?'<span class="note">tag criada, ninguém alimenta</span>':"")
+        +'<span class="pn">'+nfmt(x.contatos)+'</span></div>';
+    });
+
+    h+='<div class="note" style="margin-top:12px">Lido do GHL '+esc(tempoDesde(d.atualizado)||"agora")
+      +' · location <code>'+esc((d.empresa&&d.empresa.ghl_location)||"")+'</code>'
+      +' · '+nfmt(d.oportunidades_lidas)+' oportunidade(s) percorrida(s)'
+      +(d.truncado?' · <b style="color:var(--crit)">leitura truncada: a distribuição por estágio está incompleta, os totais não</b>':"")
+      +' <button class="btn" style="margin-left:8px" onclick="recarregarCRM()">↻ atualizar</button></div>';
+    h+='</div>';
+    box.innerHTML=h;
+  }
+  /* ---------- Painel da Teak Brazil ----------
+     A Teak e o primeiro caso com os DOIS lados: cliente no ERP e lead no CRM. E os dois vem de
+     sincronismos independentes, com idades diferentes, entao a tela os separa em dois blocos em
+     vez de somar numa lista — num balaio unico, numero velho do ERP fica indistinguivel de
+     numero fresco do CRM.
+     Tudo aqui sai de view (teak_espera, teak_lead*, teak_cliente*): a tela nao recalcula regra
+     nenhuma, porque regra propria de tela mente. */
+  var TEAK={};
+  function teakCount(url,cb){
+    var x=new XMLHttpRequest();x.open("GET",url,true);
+    for(var k in H)x.setRequestHeader(k,H[k]);
+    x.setRequestHeader("Prefer","count=exact");x.setRequestHeader("Range","0-0");
+    x.onreadystatechange=function(){if(x.readyState===4){
+      var cr=x.getResponseHeader("Content-Range")||"";var n=cr.split("/")[1];
+      cb((n==null||n==="*")?null:Number(n));}};
+    x.send();
+  }
+  function renderTeak(e,box){
+    box.style.display="";
+    var cab='<div class="oh"><h3>Teak Brazil</h3><p>CODEMP 8 e 21 · subconta própria do GHL · teca: painéis, revestimentos, madeira serrada</p></div>';
+    box.innerHTML=cab+'<div class="bd2"><div class="note" style="padding:14px">carregando os dados da Teak…</div></div>';
+    var falta=4;
+    function pronto(){ if(--falta<=0) pintarTeak(e,box,cab); }
+    getJSON(SUPA+"/rest/v1/teak_espera?select=campanha_codigo,esperando,regra",function(d){
+      TEAK.espera={}; if(Array.isArray(d))d.forEach(function(r){TEAK.espera[r.campanha_codigo]=r;}); pronto();});
+    getJSON(SUPA+"/functions/v1/campanhas-listar?empresa=teak",function(d){
+      TEAK.camps=(d&&d.campanhas)||[]; pronto();});
+    getJSON(SUPA+"/rest/v1/cache_meta?chave=in.(snapshot:teak,leads:teak)&select=chave,atualizado,detalhe",function(d){
+      TEAK.meta={}; if(Array.isArray(d))d.forEach(function(r){TEAK.meta[r.chave]=r;}); pronto();});
+    getJSON(SUPA+"/rest/v1/snap_pipeline?empresa=eq.teak&pipeline=eq.Novos%20Clientes&select=stage,posicao&order=posicao",function(d){
+      TEAK.estagios=Array.isArray(d)?d:[]; TEAK.porEstagio={};
+      if(!TEAK.estagios.length){pronto();return;}
+      var f=TEAK.estagios.length;
+      TEAK.estagios.forEach(function(st){
+        teakCount(SUPA+"/rest/v1/teak_lead?stage=eq."+encodeURIComponent(st.stage)+"&select=ghl_id",function(n){
+          TEAK.porEstagio[st.stage]=n; if(--f<=0)pronto();});
+      });
+    });
+  }
+  /* Quais campanhas leem o ERP e quais leem o CRM. E o que decide em qual bloco cada uma aparece. */
+  var TEAK_BASE={teak_recompra_giro:"erp",teak_primeiro_pedido:"erp"};
+  function teakCard(c){
+    var e=TEAK.espera[c.codigo]||{};
+    var n=(e.esperando==null)?"—":e.esperando;
+    var interno=(c.publico||[]).indexOf("interno")>=0;
+    return '<div class="cc"><div class="nm">'+esc(c.nome)+' <span style="float:right;font-size:15px;font-weight:750;color:'+(Number(n)?"var(--accent)":"var(--faint)")+'">'+esc(n)+'</span></div>'
+      +'<div class="ob">'+esc(c.objetivo||"")+'</div>'
+      +(interno?'<span class="tg t-need">interno · não envia</span>':"")
+      +(!c.ativa?'<span class="tg" style="background:var(--chip);color:var(--faint)">desligada de propósito</span>':"")
+      +'</div>';
+  }
+  function pintarTeak(e,box,cab){
+    function det(m){try{return m?JSON.parse(m.detalhe||"{}"):{};}catch(x){return {};}}
+    var sm=TEAK.meta["snapshot:teak"], lm=TEAK.meta["leads:teak"];
+    var ds=det(sm), dl=det(lm);
+    var h=cab+'<div class="bd2">';
+
+    /* Trava antes de numero, como no painel da Roga: quem abre precisa saber o que impede
+       disparar ANTES de se animar com o tamanho da base. */
+    h+='<div class="sec">O que impede disparar hoje</div>';
+    h+='<div class="trava"><b>A fila ainda não é por empresa.</b> <code>fila_config</code> tem uma linha só (uma cadência para todas as contas) e o <code>fila-processar</code> marca erro em toda linha de WhatsApp sem instância. A Teak não tem instância — ela usa o WhatsApp <b>nativo do GHL</b> — então a fila hoje recusaria 100% dos envios dela.</div>';
+    h+='<div class="trava"><b>Janela de 24h da Meta.</b> O canal da Teak é a API da Meta pelo GHL: texto livre só sai dentro de 24h desde a última mensagem do cliente. Nas listas antigas (feira, base dormente) isso vale para quase todo mundo — o primeiro toque precisa de template aprovado, ou vai por e-mail.</div>';
+    var semDono=(TEAK.espera["teak_dado_telefone"]||{}).esperando;
+    if(semDono)h+='<div class="trava"><b>'+esc(semDono)+' contatos com problema de dado</b> (sem telefone, telefone a revisar, ou sem dono no CRM). Sem dono o número de saída fica indefinido, então eles ficam fora das listas de envio e aparecem na lista de conserto.</div>';
+
+    // ---------- bloco 1: ERP ----------
+    h+='<div class="sec" style="margin-top:16px">Sankhya · clientes da Teak</div>';
+    h+='<div class="note" style="margin-bottom:8px">CODEMP <b>8 e 21</b> — só as notas faturadas por estas duas empresas. Nenhum dado da Nitron entra aqui. Atualizado '+esc(sm?tempoDesde(sm.atualizado):"nunca")+'.</div>';
+    h+='<div class="kpis" style="padding-left:0;padding-right:0">'
+      +'<div class="kpi"><div class="n">'+nfmt(ds.parceiros)+'</div><div class="l">clientes faturados 12m</div></div>'
+      +'<div class="kpi"><div class="n">'+nfmt(ds.contatos)+'</div><div class="l">contatos</div></div>'
+      +'<div class="kpi s"><div class="n">'+nfmt(ds.giro)+'</div><div class="l">no ciclo de recompra</div></div>'
+      +'<div class="kpi"><div class="n">'+nfmt(ds.reps)+'</div><div class="l">vendedores</div></div>'
+      +'</div>';
+    var erp=TEAK.camps.filter(function(c){return TEAK_BASE[c.codigo]==="erp";});
+    h+='<div class="cards">'+(erp.length?erp.map(teakCard).join(""):'<div class="note">nada aqui.</div>')+'</div>';
+
+    // ---------- bloco 2: CRM ----------
+    h+='<div class="sec" style="margin-top:18px">CRM · leads da Teak</div>';
+    h+='<div class="note" style="margin-bottom:8px">Subconta <b>própria</b> da Teak no GHL — nenhum contato de outra conta. <b>'+nfmt(dl.leads)+'</b> contatos espelhados, '+nfmt(dl.sem_fone)+' sem telefone. Atualizado '+esc(lm?tempoDesde(lm.atualizado):"nunca")+'.</div>';
+    if((TEAK.estagios||[]).length){
+      h+='<div class="pipe"><div class="pipe-h"><b>Novos Clientes</b><span class="note">funil do CRM da Teak</span></div><div class="stg">';
+      TEAK.estagios.forEach(function(st){
+        var n=TEAK.porEstagio[st.stage]; var z=!n;
+        h+='<div class="st'+(z?" z":"")+'"><div class="stn">'+(n==null?"—":n)+'</div><div class="stl">'+esc(st.stage)+'</div></div>';
+      });
+      h+='</div></div>';
+    }
+    var crm=TEAK.camps.filter(function(c){return TEAK_BASE[c.codigo]!=="erp";});
+    h+='<div class="cards">'+(crm.length?crm.map(teakCard).join(""):'<div class="note">nada aqui.</div>')+'</div>';
+
+    h+='<div class="note" style="margin-top:14px">Toda contagem desta tela sai de view (<code>teak_espera</code>, <code>teak_lead*</code>, <code>teak_cliente*</code>) — a mesma fonte que o envio usa. '
+      +'<button class="btn" style="margin-left:8px" onclick="recarregarTeak()">↻ atualizar</button></div>';
+    h+='</div>';
+    box.innerHTML=h;
+  }
+  function recarregarTeak(){var e=empAtual();var box=$("empAviso");if(box)renderTeak(e,box);}
+  function recarregarCRM(){var e=empAtual();delete CRMCACHE[e.emp];var box=$("empAviso");if(box)renderCRM(e,box);}
   var CUR="clube_saldo", DRAFTS=[], CLIENTES={}, SOMA=true, REPDATA={}, REPSEL={}, ATUALIZADO=null, ASSIST={}, CLICHK={}, POR_REP=[];
   var CLIFLAT=[], CLISEL={}, CLICT={}, CLIFLAT_LOADED=false, TAB="rep", KAMSG={};
   function digits(s){return String(s||"").replace(/\D/g,"");}

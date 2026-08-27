@@ -188,8 +188,11 @@ Storage (bucket `app`), servidas pela função `gestor` por caminho.
 - `app/gestor.html` — Nitron. "Escolher campanha → montar fila → disparar", para 17 mil clientes com
   Clube, saldo e voucher.
 - `app/agenda.html` — agenda de campanhas da Nitron.
-- `app/teak.html` — Teak. **Não é o gestor com outra cor**: é um funil + caixa de entrada,
-  organizado nos 4 pipelines que a própria Teak desenhou no CRM.
+- `app/teak.html` — Teak, versão de página inteira. **Não é o gestor com outra cor**: é um funil +
+  caixa de entrada, organizado nos 4 pipelines que a própria Teak desenhou no CRM.
+- O **mesmo conteúdo da Teak também vive dentro do `gestor.html`**, no filtro de empresa: escolher
+  "Teak Brazil" abre o painel dela (`renderTeak`), ao lado do da Roga Village (`renderCRM`). É o
+  caminho normal de uso — o gestor é a porta de entrada e o filtro é onde se troca de conta.
 
 ```bash
 # publicar (o path vai na QUERY, o corpo é o HTML CRU — não JSON)
@@ -407,7 +410,7 @@ ler o arquivo inteiro antes do deploy.
 | 10 | 8 representantes com problema de dado (telefone compartilhado, duplicados, sem contato no CRM) |
 | 11 | 3 clientes com **dois e-mails colados** num campo do Sankhya |
 | 12 | Ticket no Supabase sobre `SUPABASE_SERVICE_ROLE_KEY` vir como `sb_secret_` |
-| 13 | `gestor.html` publicado **diverge** do repo. Resolver antes de publicar o painel da Nitron |
+| ~~13~~ | ~~`gestor.html` publicado diverge do repo~~ — **fechada em 26/08**: o publicado era o mais NOVO (tinha o painel da Roga Village, que le o funil do CRM ao vivo, e nao estava no repo). O repo adotou o publicado como base e o painel da Teak foi enxertado nele |
 | ~~14~~ | ~~Sem cron de refresh para a Teak~~ — **fechada em 26/08**: `cache-refresh-teak-3h` (5 */3) e `ghl-leads-refresh-teak-2h` (38 */2), em `supabase/cron/teak.sql` |
 | 15 | `crm-resposta-roteia` ainda usa `GHL_TOKEN` direto (é da Nitron; parametrizar quando outra empresa precisar) |
 | 16 | Teak: 8 contatos **sem dono** no CRM e 498 com problema de telefone — lista em `teak_lead_dado` |

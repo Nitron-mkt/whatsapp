@@ -48,6 +48,14 @@ renomear exigiria migrar linhas e funções sem ganho para quem lê a tela.
 - **Publicar o painel:** `POST host-upload?path=gestor.html` com o **HTML cru no corpo** e o caminho
   na query — não JSON. **Confira o md5 publicado antes de subir:** há outro chat editando o mesmo
   arquivo, e sobrescrever o trabalho dele já aconteceu.
+- **Contato de teste em `rep_contato_extra` sai caro.** Números e e-mails internos foram cadastrados
+  a mão (`rotulo='manual'`) em 11–24/08 e ficaram ativos: toda campanha ao rep mandava também para
+  eles. Em 27/08, 6 dos 10 Zaptos e 4 dos 11 e-mails do Clube a vencer foram para contato interno.
+  Regra que os identifica: **o mesmo valor em mais de um rep não é contato daquele rep.** Todos os
+  manuais estão desligados desde 28/08.
+- **A fila barra duplicidade** (`fila-enfileirar` v18): mesmo `(campanha, canal, destino)` no mesmo
+  pedido, ou já pendente/entregue nas últimas `ANTI_DUP_HORAS` (12). O destino é normalizado —
+  `11970399053` e `+5511970399053` são o mesmo WhatsApp. Antes, três cliques mandavam três vezes.
 - **Parâmetro de negócio mora no banco, não em constante.** Janela do Clube a vencer:
   `campanhas.filtros_padrao->>'clube_venc_dias'`. Textos de trava: tabela `fila_trava_motivo`.
   Motivo: mudaram duas vezes num dia, e duplicar em duas funções deixa tela e disparo discordando.

@@ -1122,6 +1122,19 @@
       ?('vai sair para <b>'+cs.length+' cliente'+(cs.length>1?'s':'')+'</b> = <b>'+(w+e)+' linha'+((w+e)>1?'s':'')+'</b> ('+e+' e-mail · '+w+' Zaptos) — <b>nada</b> vai para representante'
         +(semCanal>0?(' <span style="color:#b7791f">· '+semCanal+' marcado(s) sem contato, fora</span>'):''))
       :'<span style="color:#b7791f">nenhum cliente com contato marcado</span>';}
+  /* "Marquei 30 e entraram 27" tem de estar escrito na tela. A trava de duplicidade do
+     fila-enfileirar barra destino repetido no pedido e destino que ja esta na fila ou recebeu nas
+     ultimas horas — se a tela mostrasse so o total enfileirado, a diferenca viraria mais uma
+     divergencia de numeros sem explicacao. */
+  function textoEnfileirou(r){
+    var h="<b>\u2713 "+(r.enfileirados||0)+" na fila</b>";
+    var pd=r.duplicados_no_pedido||0, pf=r.duplicados_na_fila||0, sd=r.sem_destino||0;
+    var pt=[];
+    if(pd)pt.push(pd+" repetido(s) na seleção");
+    if(pf)pt.push(pf+" que já está(ão) na fila ou recebeu(ram) nas últimas "+(r.anti_dup_horas||12)+"h");
+    if(sd)pt.push(sd+" sem contato");
+    if(pt.length)h+=' <span class="note" style="color:#b7791f">· fora: '+pt.join(" · ")+"</span>";
+    return h;}
   function agendarFila(){
     /* rascunho na tela manda: nunca regerar por cima do que a pessoa editou */
     if(DRAFTS.length)return agendarTodos();
@@ -1138,7 +1151,7 @@
     var repTpl={whatsapp:$("mrep_wpp").value,email_assunto:$("mrep_ass").value,email_corpo:$("mrep_corpo").value};
     var cliTpl={whatsapp:$("mcli_wpp").value,email_assunto:$("mcli_ass").value,email_corpo:$("mcli_corpo").value};
     var tid=arteSel();var itens=[];var pend=0;
-    function fin(){pend--;if(pend<=0){if(!itens.length){st.textContent="nada para enfileirar (marque contatos do rep/cliente)";btn.disabled=false;btn.textContent="📅 Criar fila e enviar";return;}postJSON(SUPA+"/functions/v1/fila-enfileirar",{itens:itens},function(r){btn.disabled=false;btn.textContent="📅 Criar fila e enviar";if(r.ok){st.innerHTML="<b>✓ "+r.enfileirados+" na fila</b>";if(FILATIMER)clearInterval(FILATIMER);statusFila();FILATIMER=setInterval(statusFila,15000);}else{st.textContent="✗ "+(r.erro||"falha");}});}}
+    function fin(){pend--;if(pend<=0){if(!itens.length){st.textContent="nada para enfileirar (marque contatos do rep/cliente)";btn.disabled=false;btn.textContent="📅 Criar fila e enviar";return;}postJSON(SUPA+"/functions/v1/fila-enfileirar",{itens:itens},function(r){btn.disabled=false;btn.textContent="📅 Criar fila e enviar";if(r.ok){st.innerHTML=textoEnfileirou(r);if(FILATIMER)clearInterval(FILATIMER);statusFila();FILATIMER=setInterval(statusFila,15000);}else{st.textContent="✗ "+(r.erro||"falha");}});}}
     if(reps.length){pend++;postJSON(SUPA+"/functions/v1/campanhas-disparar",{codigo:CUR,publico:"rep",reps:reps,modeloRep:repTpl},function(d){(d.itens||[]).forEach(function(it){var rs=REPSEL[it.codvend]||{tel:[],email:[]};var inst=instDe(it.codvend,(REPDATA[it.codvend]||{}).assistente);(rs.tel||[]).forEach(function(f){itens.push({campanha:CUR,publico:"rep",canal:"whatsapp",fone:f,instancia:inst,corpo:it.whatsapp,nome:it.rep});});(rs.email||[]).forEach(function(e){itens.push({campanha:CUR,publico:"rep",canal:"email",email:e,assunto:it.email_assunto,corpo:it.email_corpo,template_id:tid||null,nome:it.rep,merge:{rep:it.rep}});});});fin();});}
     if(clientes.length){pend++;postJSON(SUPA+"/functions/v1/campanhas-disparar",{codigo:CUR,publico:"cliente",clientes:clientes.map(cliPayload),modeloCliente:cliTpl},function(d){(d.itens||[]).forEach(function(it,idx){var c=clientes[idx]||{};(c.chans||[]).forEach(function(ch){if(ch.canal==="email"){itens.push({campanha:CUR,publico:"cliente",canal:"email",email:ch.valor,assunto:it.email_assunto,corpo:it.email_corpo,template_id:tid||null,nome:c.nome,codparc:c.codparc,merge:c.merge,campos:camposCrm(c)});}else{itens.push({campanha:CUR,publico:"cliente",canal:"whatsapp",fone:ch.valor,instancia:c.instancia,corpo:it.whatsapp,nome:c.nome,codparc:c.codparc,campos:camposCrm(c)});}});});fin();});}}
   function abrirKA(cod){var foco={ka_cross_sell:"Foco cross-sell — ampliar mix/ticket na conta",ka_ruptura_rede:"Foco ruptura — item de alto giro parado na rede",ka_revisao_trimestral:"Revisão trimestral — pauta estratégica"}[cod]||"Briefing";$("op-nome").textContent="Key Accounts — grandes contas";$("op-meta").textContent="Tratamento humano · dossiê do CRM · não dispara nada · "+foco;$("op-kpis").innerHTML="";var ai=$("atuInfo");if(ai)ai.textContent="";

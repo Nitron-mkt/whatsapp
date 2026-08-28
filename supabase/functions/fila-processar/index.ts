@@ -1,9 +1,11 @@
-// fila-processar (v21) — QUEDA DE INSTANCIA DESLIGA A FILA DE WHATSAPP. Na v20 a queda parava so a
-// rajada daquela instancia, e a rodada seguinte do cron tentava de novo: em 27/08 a Juliete caiu e
-// as tres linhas dela viraram erro uma por rodada, em vez de uma so. Numa campanha de 134 linhas
-// isso queima a campanha inteira a 2/min sem ninguem olhando. Agora a primeira queda desliga
-// wpp_ativo: quem reconecta a instancia religa em Cadencia. E deliberado que isso pare TAMBEM as
-// outras instancias — perder throughput e barato, perder o controle de um envio em massa nao e.
+// fila-processar (v22) — QUEDA PAUSA A INSTANCIA, NAO A FILA. A v21 desligava fila_config.wpp_ativo
+// na primeira queda. Protegia a campanha de queimar (o problema real da v20: o cron tentava a mesma
+// instancia caida rodada apos rodada, e em 27/08 as tres linhas da Juliete viraram erro uma por
+// rodada), mas pagava caro por isso — parava as outras instancias e transformava a chave geral em
+// ferramenta de diagnostico. Agora a queda escreve instancia_ghl.pausada_em: a fila segue ligada, as
+// outras instancias seguem enviando, e so as linhas da instancia caida esperam. Sai da pausa quem
+// reconectou: fila-acao retomar (canal whatsapp/ambos) limpa, ou um UPDATE na coluna.
+// v21: (revertido) queda desligava a fila de Zaptos inteira.
 // fila-processar (v20) — cron (1/min). Le fila_config: email em lote (email_lote) se email_ativo; WhatsApp 1 por instancia a cada wpp_intervalo_seg se wpp_ativo. Chama campanhas-enviar (passa merge).
 // v20: TETO POR MINUTO, POR INSTANCIA (fila_config.wpp_max_min, padrao 2). A vazao era emergente:
 //      cron de 1x/min + portao de wpp_intervalo_seg + margem 0 na rajada davam 1,9 msg/min no lote de
@@ -75,7 +77,10 @@ Deno.serve(async (req) => {
     const { data: instRows, error: eInst } = await sb.from("instancia_ghl").select("instancia").eq("ativa", true);
     if (eInst) throw eInst;
     const INST_OK = new Set((instRows || []).map((x: any) => String(x.instancia)));
-    if (!INST_OK.size) throw new Error("instancia_ghl sem instancia ativa — abortado para nao mandar WhatsApp sem amarrar");
+    if (!INST_OK.size) throw new Error("instancia_ghl sem instancia ativa — abortado para nao mandar Zaptos sem amarrar");
+    // instancias pausadas por queda: ficam de fora desta rodada sem parar as outras
+    const { data: pausRows } = await sb.from("instancia_ghl").select("instancia,pausada_em").not("pausada_em", "is", null);
+    const PAUSADAS = new Set((pausRows || []).map((x: any) => String(x.instancia)));
     // rodada anterior pode ter morrido no meio e deixado linha reservada; devolve para a fila
     {
       // a reserva estampa enviado_em, entao e por ele que se sabe QUANDO a linha foi reservada.
@@ -116,7 +121,7 @@ Deno.serve(async (req) => {
         await enviar(m); emails++;
       }
     }
-    let whatsapp = 0; let bloqueados = 0; let estourou = 0; const caiuInst: string[] = [];
+    let whatsapp = 0; let bloqueados = 0; let estourou = 0; let pausadas = 0; const caiuInst: string[] = [];
     if (WPP_ATIVO) {
       const { data: wRows, error } = await sb.from("fila_envio").select("*").in("status", PEND).eq("canal", "whatsapp").order("id");
       if (error) throw error;
@@ -125,8 +130,10 @@ Deno.serve(async (req) => {
       const tarefas: Promise<void>[] = [];
       for (const inst of Object.keys(porInst)) {
         const lote = porInst[inst];
-        if (!inst) { for (const m of lote) { await sb.from("fila_envio").update({ status: "erro", resultado: "sem instancia (WhatsApp nao roteavel)" }).eq("id", m.id); bloqueados++; } continue; }
+        if (!inst) { for (const m of lote) { await sb.from("fila_envio").update({ status: "erro", resultado: "sem instancia (Zaptos nao roteavel)" }).eq("id", m.id); bloqueados++; } continue; }
         if (!INST_OK.has(inst)) { for (const m of lote) { await sb.from("fila_envio").update({ status: "erro", resultado: "instancia '" + inst + "' fora do cadastro instancia_ghl" }).eq("id", m.id); bloqueados++; } continue; }
+        // pausada por queda: as linhas FICAM PENDENTES (nao viram erro) e saem quando ela voltar
+        if (PAUSADAS.has(inst)) { pausadas++; continue; }
         tarefas.push((async () => {
           const { data: last } = await sb.from("fila_envio").select("enviado_em").eq("canal", "whatsapp").eq("instancia", inst).eq("status", "enviado").order("enviado_em", { ascending: false }).limit(1).maybeSingle();
           const lastMs = last?.enviado_em ? new Date(last.enviado_em).getTime() : 0;
@@ -153,21 +160,24 @@ Deno.serve(async (req) => {
             whatsapp++;
             // INSTANCIA CAIU: para o lote desta instancia agora. Em 26/08 o lote seguiu com a
             // instancia desconectada e oito linhas viraram "enviado" sem nada chegar. As demais
-            // ficam pendentes e a chave e desligada logo abaixo — nao ha nada a ganhar insistindo,
-            // e cada tentativa a mais e uma linha marcada errada.
+            // ficam pendentes e a instancia e pausada logo abaixo — nao ha nada a ganhar
+            // insistindo, e cada tentativa a mais e uma linha marcada errada.
             if (r && r.caiu) { caiuInst.push(inst); break; }
           }
         })());
       }
       await Promise.all(tarefas);   // uma instancia lenta nao segura as outras
-      // A rajada parar nao basta: sem desligar a chave, a rodada seguinte tenta a mesma instancia
-      // caida e marca mais linhas como erro, uma rodada por vez, ate acabar a campanha. Desligar
-      // devolve a decisao para a pessoa, que e quem sabe se a instancia ja voltou.
-      if (caiuInst.length) {
-        await sb.from("fila_config").update({ wpp_ativo: false, atualizado: new Date().toISOString() }).eq("id", 1);
+      // A rajada parar nao basta: sem marcar, a rodada seguinte tenta a mesma instancia caida e
+      // marca mais linhas como erro, uma rodada por vez, ate acabar a campanha. Pausar A INSTANCIA
+      // resolve isso sem tirar do ar as outras nem mexer na chave geral da fila.
+      for (const inst of [...new Set(caiuInst)]) {
+        await sb.from("instancia_ghl").update({
+          pausada_em: new Date().toISOString(),
+          pausada_motivo: "queda detectada no envio: o GHL aceitou e o ZaptosWPP respondeu que a instancia estava desconectada",
+        }).eq("instancia", inst);
       }
     }
-    return j({ ok: true, emails, whatsapp, bloqueados_por_instancia: bloqueados, instancias_ativas: INST_OK.size, instancias_no_teto: estourou, instancias_caidas: caiuInst.length ? [...new Set(caiuInst)] : undefined, wpp_desligado_por_queda: caiuInst.length > 0, cfg: { wpp_seg: WPP_INTERVALO_MS / 1000, email_lote: EMAIL_LOTE, wpp_ativo: WPP_ATIVO, email_ativo: EMAIL_ATIVO, burst: BURST, burst_seg: [BURST_MIN_MS / 1000, BURST_MAX_MS / 1000], max_min: MAX_MIN } });
+    return j({ ok: true, emails, whatsapp, bloqueados_por_instancia: bloqueados, instancias_ativas: INST_OK.size, instancias_no_teto: estourou, instancias_pausadas: pausadas || undefined, instancias_caidas: caiuInst.length ? [...new Set(caiuInst)] : undefined, pausadas_agora: caiuInst.length ? [...new Set(caiuInst)] : undefined, cfg: { wpp_seg: WPP_INTERVALO_MS / 1000, email_lote: EMAIL_LOTE, wpp_ativo: WPP_ATIVO, email_ativo: EMAIL_ATIVO, burst: BURST, burst_seg: [BURST_MIN_MS / 1000, BURST_MAX_MS / 1000], max_min: MAX_MIN } });
   } catch (e: any) {
     const msg = [e?.message, e?.details, e?.hint, e?.code].filter(Boolean).join(" · ") || String(e);
     console.error("fila-processar falhou:", msg);

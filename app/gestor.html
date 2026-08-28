@@ -181,7 +181,7 @@
           <input id="cliBusca" class="ei" style="max-width:280px" placeholder="🔎 buscar cliente, rep…" oninput="renderCliFlat()">
           <button class="btn" onclick="selFlat(true)">Marcar todos</button>
           <button class="btn" onclick="selFlat(false)">Nenhum</button>
-          <label class="lbl" style="font-size:12px;gap:5px"><input type="checkbox" id="cliSoEmail" onchange="cliSoEmailMudou()"> só <b>e-mail</b> <span class="note">(não manda WhatsApp para cliente)</span></label>
+          <label class="lbl" style="font-size:12px;gap:5px"><input type="checkbox" id="cliSoEmail" onchange="cliSoEmailMudou()"> só <b>e-mail</b> <span class="note">(não manda Zaptos para cliente)</span></label>
           <span class="note" id="cliCount" style="margin-left:auto"></span>
         </div>
         <div id="cliValBar" style="display:none;margin:0 0 10px"></div>
@@ -191,14 +191,14 @@
         <div style="display:flex;gap:9px;align-items:center;margin-bottom:8px;flex-wrap:wrap"><b style="font-size:13.5px" id="msgTitulo">✍️ Mensagens da campanha</b><button class="btn" onclick="fetchModelos()">🔄 Gerar modelo com IA</button><span class="note" id="modstat"></span></div>
         <div class="draft" id="msgRep">
           <div class="dh">📱 Mensagem ao REPRESENTANTE <span class="note" style="font-weight:400">· variáveis: <code>[REP]</code> nome · <code>[LISTA]</code> lista de clientes (entra sozinha)</span></div>
-          <div class="lab">WhatsApp</div><textarea id="mrep_wpp" rows="6" oninput="previewModelo()"></textarea>
+          <div class="lab">Zaptos</div><textarea id="mrep_wpp" rows="6" oninput="previewModelo()"></textarea>
           <div class="lab">Email — assunto</div><input class="ei" id="mrep_ass" oninput="previewModelo()">
           <div class="lab">Email — corpo</div><textarea id="mrep_corpo" rows="6"></textarea>
           <div class="note" id="prev_rep" style="margin-top:6px"></div>
         </div>
         <div class="draft climsg" id="msgCli">
           <div class="dh">🏢 Mensagem ao CLIENTE <span class="note" style="font-weight:400">· variáveis: <code>[CLIENTE]</code> nome · <code>[VALOR]</code> saldo/%/dias</span></div>
-          <div class="lab">WhatsApp</div><textarea id="mcli_wpp" rows="4" oninput="previewModelo()"></textarea>
+          <div class="lab">Zaptos</div><textarea id="mcli_wpp" rows="4" oninput="previewModelo()"></textarea>
           <div class="lab">Email — assunto</div><input class="ei" id="mcli_ass" oninput="previewModelo()">
           <div class="lab" id="labCliCorpo">Email — corpo</div><textarea id="mcli_corpo" rows="4"></textarea>
           <div class="note" id="notaCliCorpo" style="margin-top:4px"></div>
@@ -232,8 +232,8 @@
         <div class="card">
           <h3>⚙ Cadência de disparo</h3>
           <div class="note">Controla o ritmo do robô que envia a fila (roda a cada 1 min). Vale para todas as campanhas.</div>
-          <div class="cfgrow"><label class="lbl"><input type="checkbox" id="cfgWppAtivo"> Enviar <b>WhatsApp</b></label></div>
-          <div class="cfgrow"><span class="lbl" style="padding-left:8px">Intervalo entre WhatsApp <span class="note">(por instância, anti-ban)</span></span><input class="ei" type="number" id="cfgWppSeg" min="30" max="3600"> <span class="note">seg</span></div>
+          <div class="cfgrow"><label class="lbl"><input type="checkbox" id="cfgWppAtivo"> Enviar <b>Zaptos</b></label></div>
+          <div class="cfgrow"><span class="lbl" style="padding-left:8px">Intervalo entre Zaptos <span class="note">(por instância, anti-ban)</span></span><input class="ei" type="number" id="cfgWppSeg" min="30" max="3600"> <span class="note">seg</span></div>
           <div class="note" style="padding:2px 8px 8px 8px;line-height:1.6">🚦 <b>Teto de 2 mensagens por minuto, por instância</b> — limite duro no processador da fila (<code>fila_config.wpp_max_min</code>). Ele conta quantas aquela instância mandou nos últimos 60s e corta a rodada, independente de intervalo e rajada. A rajada solta 2 com 2–3s entre elas (sorteado, para não parecer metrônomo) e então espera o minuto fechar.</div>
           <div class="cfgrow"><label class="lbl"><input type="checkbox" id="cfgEmailAtivo"> Enviar <b>e-mail</b></label></div>
           <div class="cfgrow"><span class="lbl" style="padding-left:8px">E-mails por rodada <span class="note">(a cada 1 min)</span></span><input class="ei" type="number" id="cfgEmailLote" min="1" max="200"></div>
@@ -375,9 +375,9 @@
     h+='<div class="sec">O que impede disparar hoje</div>';
     if((b.com_dono||0)*20 < (b.total||0)){
       h+='<div class="trava crit"><b>'+nfmt(b.com_dono)+' de '+nfmt(b.total)+' contatos têm dono no CRM'+pctd(b.com_dono,b.total)+'.</b> '
-        +'O número de saída do WhatsApp é o do <b>proprietário</b> do contato — <code>fromNumber</code> não funciona, já foi testado. Sem dono, a mensagem <b>não sai</b>.</div>';
+        +'O número de saída do Zaptos é o do <b>proprietário</b> do contato — <code>fromNumber</code> não funciona, já foi testado. Sem dono, a mensagem <b>não sai</b>.</div>';
     }
-    h+='<div class="trava"><b>Não há instância de WhatsApp desta empresa.</b> Os usuários da subconta são pessoas; não existe um usuário de campanhas como o da Nitron. '
+    h+='<div class="trava"><b>Não há instância de Zaptos desta empresa.</b> Os usuários da subconta são pessoas; não existe um usuário de campanhas como o da Nitron. '
       +'E <code>instancia_ghl</code> ainda não separa empresa: cadastrar a instância daqui hoje faria <b>a Nitron disparar por este número</b>.</div>';
     if((b.em_dnd||0)===0){
       h+='<div class="trava">Nenhum contato marcado como <b>não perturbe</b> na base inteira — não há higiene de opt-out. Há também contatos de <b>teste</b> com tag de produção. Filtrar isso é pré-requisito do primeiro envio.</div>';
@@ -396,7 +396,7 @@
           +'<div class="cmp-p">'+esc(c.pq)+'</div>'
           +(c.falta?'<div class="cmp-f">⚠ falta: '+c.falta+'</div>':"")
           +'</div>'
-          +'<span class="cmp-ch '+(c.canal==="WhatsApp"?"w":"m")+'">'+esc(c.canal)+'</span>'
+          +'<span class="cmp-ch '+(c.canal==="Zaptos"?"w":"m")+'">'+esc(c.canal)+'</span>'
           +'</div>';
       });
     }
@@ -514,7 +514,7 @@
     /* Trava antes de numero, como no painel da Roga: quem abre precisa saber o que impede
        disparar ANTES de se animar com o tamanho da base. */
     h+='<div class="sec">O que impede disparar hoje</div>';
-    h+='<div class="trava"><b>A fila ainda não é por empresa.</b> <code>fila_config</code> tem uma linha só (uma cadência para todas as contas) e o <code>fila-processar</code> marca erro em toda linha de WhatsApp sem instância. A Teak não tem instância — ela usa o WhatsApp <b>nativo do GHL</b> — então a fila hoje recusaria 100% dos envios dela.</div>';
+    h+='<div class="trava"><b>A fila ainda não é por empresa.</b> <code>fila_config</code> tem uma linha só (uma cadência para todas as contas) e o <code>fila-processar</code> marca erro em toda linha de Zaptos sem instância. A Teak não tem instância — ela usa o WhatsApp <b>nativo do GHL</b> — então a fila hoje recusaria 100% dos envios dela.</div>';
     h+='<div class="trava"><b>Janela de 24h da Meta.</b> O canal da Teak é a API da Meta pelo GHL: texto livre só sai dentro de 24h desde a última mensagem do cliente. Nas listas antigas (feira, base dormente) isso vale para quase todo mundo — o primeiro toque precisa de template aprovado, ou vai por e-mail.</div>';
     var semDono=(TEAK.espera["teak_dado_telefone"]||{}).esperando;
     if(semDono)h+='<div class="trava"><b>'+esc(semDono)+' contatos com problema de dado</b> (sem telefone, telefone a revisar, ou sem dono no CRM). Sem dono o número de saída fica indefinido, então eles ficam fora das listas de envio e aparecem na lista de conserto.</div>';
@@ -563,16 +563,16 @@
     function pipe(nome){for(var i=0;i<fun.length;i++)if(fun[i].nome===nome)return fun[i];return null;}
     function est(p,nome){if(!p)return null;var e=p.estagios||[];for(var i=0;i<e.length;i++)if(e[i].nome===nome)return e[i];return null;}
     var semDono=(b.com_dono!=null&&b.total!=null&&b.com_dono*20<b.total);
-    /* A trava de dono vale para todo WhatsApp: o numero de saida e o do assignedTo e fromNumber
+    /* A trava de dono vale para todo Zaptos: o numero de saida e o do assignedTo e fromNumber
        nao funciona. Repetir em cada cartao e proposital — quem le um cartao isolado precisa ver. */
-    var travaWpp=semDono?"atribuir dono no CRM (sem dono o WhatsApp não sai) + instância da Roga":"instância de WhatsApp da Roga";
+    var travaWpp=semDono?"atribuir dono no CRM (sem dono o Zaptos não sai) + instância da Roga":"instância de Zaptos da Roga";
 
     // 1) Reserva parada na entrada do funil de hospedagem
     var hosp=pipe("Hospedagem Lazer"), ent=est(hosp,"Solicitacao de Reserva");
     if(ent&&ent.aberto>0){
       out.push({n:"Retomar reserva parada",alvo:ent.aberto,
         base:"abertas em <b>Solicitação de Reserva</b>"+(ent.parado_dias!=null?", a mais recente mexeu há "+ent.parado_dias+" d":""),
-        canal:"WhatsApp",quente:true,
+        canal:"Zaptos",quente:true,
         pq:"É o público mais quente da conta: pediu reserva e ninguém respondeu. Os estágios seguintes estão zerados, então ninguém está tratando esta fila.",
         falta:travaWpp});
     }
@@ -581,7 +581,7 @@
     if(lead&&lead.aberto>0){
       out.push({n:"Qualificar lead de evento corporativo",alvo:lead.aberto,
         base:"abertas em <b>Lead Novo</b>"+(lead.parado_dias!=null?", a mais recente mexeu há "+lead.parado_dias+" d":""),
-        canal:"WhatsApp",quente:true,
+        canal:"Zaptos",quente:true,
         pq:"Pediu proposta pelo site. O pipeline tem ticket alto — a maior venda registrada da conta veio daqui.",
         falta:travaWpp});
     }
@@ -590,7 +590,7 @@
     if(obj>0){
       out.push({n:"Follow-up por objetivo declarado",alvo:(objF!=null?objF:obj),
         base:"com <b>Objetivo do Lead</b> preenchido"+(objF!=null&&objF!==obj?" e telefone (de "+obj+" no total)":""),
-        canal:"WhatsApp",quente:true,
+        canal:"Zaptos",quente:true,
         pq:"O agente de IA já classificou a intenção (\"Restaurante: almoço/day use\", \"Eventos Corporativos\"). Dá para segmentar a mensagem por objetivo em vez de mandar texto único.",
         falta:(d.objetivo_sem_dono?d.objetivo_sem_dono+" destes estão sem dono · ":"")+travaWpp});
     }
@@ -608,7 +608,7 @@
     if(perd>0){
       out.push({n:"Reativar oportunidade perdida",alvo:perd,
         base:"marcadas como <b>perdidas</b> em todos os pipelines",
-        canal:"WhatsApp",quente:false,
+        canal:"Zaptos",quente:false,
         pq:"Em Hospedagem há mais perdidas que ganhas. Vale entender o motivo antes de reabordar — perdido sem motivo registrado pode ser só abandono de atendimento.",
         falta:"motivo da perda não está preenchido · "+travaWpp});
     }
@@ -617,7 +617,7 @@
     if(bc&&bc.total===0&&oqp>0){
       out.push({n:"Captação para o Business Club",alvo:oqp,
         base:"responderam <b>O que precisa?</b> no formulário do site",
-        canal:"WhatsApp",quente:false,
+        canal:"Zaptos",quente:false,
         pq:"O pipeline Business Club está zerado desde que foi criado, mas existem 4 formulários no ar e a maior venda da conta veio de um quiz de captação. A demanda existe e não está sendo colocada no funil.",
         falta:"definir a oferta e quem atende · "+travaWpp});
     }
@@ -659,9 +659,9 @@
   function instDe(cod,fallback){var r=RINST[cod];if(r)return r.instancia||null;return fallback||null;}
   function tagInst(cod,fallback){var r=RINST[cod];var inst=r?(r.instancia||null):(fallback||null);var erp=r?(r.instancia_erp||null):null;var h="";
     if(inst)h+='<span class="wtag" style="background:#e7e0f5;color:#5b3fa0">\uD83D\uDCF2 '+esc(inst)+'</span>';
-    else h+='<span class="wtag" style="background:#f7ecd6;color:#b7791f" title="Ninguém do cadastro ativo é proprietária deste contato no CRM, então o WhatsApp não sai.">sem instância</span>';
+    else h+='<span class="wtag" style="background:#f7ecd6;color:#b7791f" title="Ninguém do cadastro ativo é proprietária deste contato no CRM, então o Zaptos não sai.">sem instância</span>';
     if(r&&r.divergente&&erp)h+='<span class="wtag" style="background:#fdeee4;color:#b7791f" title="O organograma do Sankhya aponta outra assistente. Vale o CRM, que é quem decide o número de saída.">\u26A0 organograma: '+esc(erp)+'</span>';
-    else if(!inst&&erp)h+='<span class="wtag" style="background:#fdeee4;color:#b7791f" title="Pelo organograma do Sankhya quem atende agora é esta. Atribua o contato a ela no CRM para o WhatsApp poder sair.">\u2192 atribuir a '+esc(erp)+' no CRM</span>';
+    else if(!inst&&erp)h+='<span class="wtag" style="background:#fdeee4;color:#b7791f" title="Pelo organograma do Sankhya quem atende agora é esta. Atribua o contato a ela no CRM para o Zaptos poder sair.">\u2192 atribuir a '+esc(erp)+' no CRM</span>';
     return h;}
   /* Comunicacao para CLIENTE nao sai pelo numero de uma assistente. A instancia de escopo 'cliente'
      vem do cadastro; se nao houver nenhuma cadastrada e ativa, a tela nao deixa enfileirar — melhor
@@ -684,7 +684,7 @@
      Entao quando ha arte o campo passa a MOSTRAR o texto da propria arte, em leitura, e o que sobra
      para editar e o assunto. Sem arte, volta o texto da IA, guardado em MCLI_CORPO_IA. */
   var ARTETXT=null, MCLI_CORPO_IA=null, ARTETMR=null;
-  /* a previa real e uma ida ao servidor; digitando no assunto ou no WhatsApp isso viraria
+  /* a previa real e uma ida ao servidor; digitando no assunto ou no Zaptos isso viraria
      uma chamada por tecla. Espera a pessoa parar de digitar. */
   function verArteTarde(){if(ARTETMR)clearTimeout(ARTETMR);ARTETMR=setTimeout(verArte,600);}
   function arteEscolhida(){var s=$("arte");return !!(s&&s.value);}
@@ -794,7 +794,7 @@
   function repContatosHTML(cod){var rd=REPDATA[cod]||{telefones:[],emails:[]};var sel=REPSEL[cod]||{tel:[],email:[]};
     var delbtn=function(tipo,valor){return '<button class="btn" style="margin-left:auto;padding:1px 8px;color:#c0392b" title="excluir" onclick="event.preventDefault();event.stopPropagation();removeRepContato('+cod+',\''+tipo+'\',\''+esc(valor)+'\')">✕</button>';};
     var h='<div style="background:#eef4f1;border:1px solid #d9e0dc;border-radius:9px;padding:8px 10px;margin:2px 0 8px"><div style="font-size:11px;font-weight:700;color:#41564f;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">📲 Enviar ao rep — escolha os contatos</div>';
-    h+='<div style="font-size:11px;color:#6a7f78;margin-bottom:3px">WhatsApp</div>';
+    h+='<div style="font-size:11px;color:#6a7f78;margin-bottom:3px">Zaptos</div>';
     var seenT={},telN=(rd.telefones||[]).filter(function(t){var d=digits(t.valor);var kk=d.length>11?d.slice(-11):d;if(!kk||seenT[kk])return false;seenT[kk]=1;return true;});
     if(!telN.length)h+='<div class="note" style="margin-bottom:4px">nenhum telefone no Sankhya</div>';
     telN.forEach(function(t){var ck=sel.tel.indexOf(t.valor)>=0?"checked":"";var man=(t.rotulo==="manual");var fixo=(foneCel(t.valor)===false);h+='<label class="ctrow"><input type="checkbox" '+ck+' onchange="toggleRepSel('+cod+',\'tel\',this.value,this.checked)" value="'+esc(t.valor)+'"><span>'+(fixo?"☎":"📱")+' '+esc(t.valor)+'</span>'+(fixo?'<span class="cd" style="color:#b7791f">fixo — sem WhatsApp</span>':rotLabel(t.rotulo))+(man?delbtn("telefone",t.valor):'')+'</label>';});
@@ -810,7 +810,7 @@
       var inner=$("repct-"+cod);if(inner)inner.innerHTML=repContatosHTML(cod);}};x.send();}
   function toggleRepSel(cod,tipo,val,on){var s=REPSEL[cod]=REPSEL[cod]||{tel:[],email:[]};var arr=tipo==="tel"?s.tel:s.email;var i=arr.indexOf(val);if(on&&i<0)arr.push(val);if(!on&&i>=0)arr.splice(i,1);}
   function addRepContato(cod,tipo){var box=$("addbox-"+cod);if(!box)return;
-    box.innerHTML='<div style="display:flex;gap:6px;margin-top:6px;align-items:center"><input id="addin-'+cod+'" placeholder="'+(tipo==="telefone"?"WhatsApp com DDD (ex: 11 99999-9999)":"e-mail")+'" style="flex:1;border:1px solid #d9e0dc;border-radius:7px;padding:6px 9px;font:inherit;font-size:12px"><button class="btn ok" onclick="salvarRepContato('+cod+',\''+tipo+'\')">salvar</button><button class="btn" onclick="var e=document.getElementById(\'addbox-'+cod+'\');if(e)e.innerHTML=\'\';">✕</button></div><div class="note" id="adderr-'+cod+'"></div>';
+    box.innerHTML='<div style="display:flex;gap:6px;margin-top:6px;align-items:center"><input id="addin-'+cod+'" placeholder="'+(tipo==="telefone"?"Celular com DDD (ex: 11 99999-9999)":"e-mail")+'" style="flex:1;border:1px solid #d9e0dc;border-radius:7px;padding:6px 9px;font:inherit;font-size:12px"><button class="btn ok" onclick="salvarRepContato('+cod+',\''+tipo+'\')">salvar</button><button class="btn" onclick="var e=document.getElementById(\'addbox-'+cod+'\');if(e)e.innerHTML=\'\';">✕</button></div><div class="note" id="adderr-'+cod+'"></div>';
     var el=$("addin-"+cod);if(el){el.focus();el.onkeydown=function(ev){if(ev.key==="Enter")salvarRepContato(cod,tipo);};}}
   function salvarRepContato(cod,tipo){var el=$("addin-"+cod);if(!el)return;var v=(el.value||"").trim();var er=$("adderr-"+cod);if(!v){if(er)er.textContent="digite um valor";el.focus();return;}
     if(er){er.textContent="salvando…";er.style.color="#6a7f78";}
@@ -878,15 +878,15 @@
   function edTag(kind,key){return '<span id="ed-'+kind+'-'+key+'"></span>';}
   function renderDrafts(iaErro){if(!DRAFTS.length){$("drafts").innerHTML='<div class="note" style="margin-top:8px">nada gerado</div>';return;}
     var h='<div style="margin-top:8px;font-weight:700;font-size:13px">'+DRAFTS.length+' rascunho(s)'+(iaErro?' · modelo padrão':' · escrito pela IA')+'</div>';
-    h+='<div class="fila"><button class="btn big ok" id="btnAgendarD" onclick="agendarTodos()">📅 Agendar todos na fila</button><span class="note">manda exatamente o texto que está nos campos abaixo · WhatsApp: 1/instância a cada 2 min · e-mail em lote · roda sozinho</span><span class="fbig" id="filaStatusD" style="margin-left:auto"></span></div>';
-    DRAFTS.forEach(function(d,i){h+='<div class="draft'+(d.tipo==="cliente"?" cli":"")+'"><div class="dh">'+(d.tipo==="rep"?"👤 REP (WhatsApp) · ":"🏢 CLIENTE · ")+esc(d.titulo)+'</div>';
-      var itg=d.instancia?' <span class="wtag" style="background:#e7e0f5;color:#5b3fa0">📲 WhatsApp via '+esc(d.instancia)+'</span>':' <span class="wtag" style="background:#f7ecd6;color:#b7791f">sem instância</span>';
+    h+='<div class="fila"><button class="btn big ok" id="btnAgendarD" onclick="agendarTodos()">📅 Agendar todos na fila</button><span class="note">manda exatamente o texto que está nos campos abaixo · Zaptos: 1/instância a cada 2 min · e-mail em lote · roda sozinho</span><span class="fbig" id="filaStatusD" style="margin-left:auto"></span></div>';
+    DRAFTS.forEach(function(d,i){h+='<div class="draft'+(d.tipo==="cliente"?" cli":"")+'"><div class="dh">'+(d.tipo==="rep"?"👤 REP (Zaptos) · ":"🏢 CLIENTE · ")+esc(d.titulo)+'</div>';
+      var itg=d.instancia?' <span class="wtag" style="background:#e7e0f5;color:#5b3fa0">📲 Zaptos via '+esc(d.instancia)+'</span>':' <span class="wtag" style="background:#f7ecd6;color:#b7791f">sem instância</span>';
       if(d.tipo==="cliente"){h+='<div class="dest">Vai para: '+(d.contatos||[]).map(function(c){return esc(c.funcao)+" ("+(c.email?esc(c.email):esc(c.fone||"?"))+")";}).join(" · ")+itg+'</div>';}
       if(d.tipo==="rep"){var rs=REPSEL[d.codvend]||{tel:[],email:[]};var dd=(rs.tel||[]).map(function(t){return "📞 "+esc(t);}).concat((rs.email||[]).map(function(e){return "✉ "+esc(e);}));h+='<div class="dest">Vai para: '+(dd.length?dd.join(" · "):'<span style="color:#c0392b">nenhum contato marcado — abra o rep (▶) e escolha</span>')+itg+'</div>';}
-      h+='<div class="lab">WhatsApp'+edTag("draft",i)+'</div><textarea id="w-'+i+'" rows="5" oninput="edGuardar(\'draft\','+i+',\'wpp\',this)">'+esc(d.wpp)+'</textarea>';
+      h+='<div class="lab">Zaptos'+edTag("draft",i)+'</div><textarea id="w-'+i+'" rows="5" oninput="edGuardar(\'draft\','+i+',\'wpp\',this)">'+esc(d.wpp)+'</textarea>';
       h+='<div class="lab">Email — assunto</div><input class="ei" id="a-'+i+'" value="'+esc(d.assunto)+'" oninput="edGuardar(\'draft\','+i+',\'assunto\',this)"><div class="lab">Email — corpo</div><textarea id="c-'+i+'" rows="5" oninput="edGuardar(\'draft\','+i+',\'corpo\',this)">'+esc(d.corpo)+'</textarea>';
       h+='<div class="dbtns">';
-      if(d.tipo==="rep"){h+='<button class="btn wpp" onclick="enviarRep('+i+')">Enviar WhatsApp ao rep</button>';}
+      if(d.tipo==="rep"){h+='<button class="btn wpp" onclick="enviarRep('+i+')">Enviar Zaptos ao rep</button>';}
       else{h+='<button class="btn ok" onclick="enviarCliente('+i+')">Enviar aos contatos marcados</button>';}
       h+='<button class="btn out" onclick="testar('+i+')">Testar no meu nº</button><span class="note" id="s-'+i+'"></span></div></div>';});
     $("drafts").innerHTML=h;rotuloAgendar();}
@@ -1090,7 +1090,7 @@
   /* A ABA MANDA NO PUBLICO. Antes, "enviar" juntava o que estava marcado nas DUAS abas, e como todo
      representante nascia marcado, uma comunicacao ao CLIENTE saia tambem para os 98 reps sem
      ninguem ter pedido — foi o que aconteceu em 26/08 no Empurrar Voucher: 120 e-mails ao cliente
-     (o que se queria) mais 89 ao rep e 71 WhatsApp ao rep (que nao se queria; os 71 foram
+     (o que se queria) mais 89 ao rep e 71 Zaptos ao rep (que nao se queria; os 71 foram
      cancelados antes de sair). Agora o publico e o da aba aberta, e so dele. */
   function publicoAtivo(){return TAB==="cli"?"cliente":"rep";}
   function repsMarcados(){var r=[];document.querySelectorAll(".repchk:checked").forEach(function(c){r.push(parseInt(c.getAttribute("data-cod")));});return r;}
@@ -1119,7 +1119,7 @@
     cs.forEach(function(c){(c.chans||[]).forEach(function(x){if(x.canal==="email")e++;else w++;});});
     var semCanal=0;CLIFLAT.forEach(function(c){if(CLISEL[c.codparc])semCanal++;});semCanal-=cs.length;
     el.innerHTML=cs.length
-      ?('vai sair para <b>'+cs.length+' cliente'+(cs.length>1?'s':'')+'</b> = <b>'+(w+e)+' linha'+((w+e)>1?'s':'')+'</b> ('+e+' e-mail · '+w+' WhatsApp) — <b>nada</b> vai para representante'
+      ?('vai sair para <b>'+cs.length+' cliente'+(cs.length>1?'s':'')+'</b> = <b>'+(w+e)+' linha'+((w+e)>1?'s':'')+'</b> ('+e+' e-mail · '+w+' Zaptos) — <b>nada</b> vai para representante'
         +(semCanal>0?(' <span style="color:#b7791f">· '+semCanal+' marcado(s) sem contato, fora</span>'):''))
       :'<span style="color:#b7791f">nenhum cliente com contato marcado</span>';}
   function agendarFila(){
@@ -1190,7 +1190,7 @@
   var ROTSEL={}, ROTREPS=[];
   function rotBulkBar(){var h='<div class="kaCard" style="background:#eef4f1;border:1px solid #d9e0dc;margin-bottom:10px">';
     h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:13px">\u26a1 Envio em massa</b><button class="btn" onclick="rotSelAll(true)">Marcar todos</button><button class="btn" onclick="rotSelAll(false)">Limpar</button><span class="note" id="rotSelCount" style="margin-left:auto">0 selecionados</span></div>';
-    h+='<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:8px"><label class="ctopt" style="width:auto"><input type="checkbox" id="rotCanalW" checked> \ud83d\udcf1 WhatsApp</label><label class="ctopt" style="width:auto"><input type="checkbox" id="rotCanalE" checked> \u2709 E-mail</label><span class="note">cada rep recebe o roteiro dele, gerado na hora</span></div>';
+    h+='<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:8px"><label class="ctopt" style="width:auto"><input type="checkbox" id="rotCanalW" checked> \ud83d\udcf1 Zaptos</label><label class="ctopt" style="width:auto"><input type="checkbox" id="rotCanalE" checked> \u2709 E-mail</label><span class="note">cada rep recebe o roteiro dele, gerado na hora</span></div>';
     h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn big ok" id="rotBulkBtn" onclick="rotBulkFila()">\ud83d\udce5 Enfileirar selecionados</button><span class="note" id="rotBulkSt"></span></div>';
     h+='</div>';return h;}
   function rotSel(id,on){ROTSEL[id]=on;rotSelCount();}
@@ -1200,7 +1200,7 @@
   function rotBulkFila(){var st=$("rotBulkSt"),btn=$("rotBulkBtn");var ids=[];for(var k in ROTSEL)if(ROTSEL[k])ids.push(k);
     if(!ids.length){if(st)st.textContent="marque ao menos 1 representante";return;}
     var wOn=$("rotCanalW")?$("rotCanalW").checked:true, eOn=$("rotCanalE")?$("rotCanalE").checked:true;
-    if(!wOn&&!eOn){if(st)st.textContent="escolha WhatsApp e/ou e-mail";return;}
+    if(!wOn&&!eOn){if(st)st.textContent="escolha Zaptos e/ou e-mail";return;}
     if(btn){btn.disabled=true;btn.textContent="montando\u2026";}
     var lotes=[];for(var i=0;i<ids.length;i+=ROT_LOTE)lotes.push(ids.slice(i,i+ROT_LOTE));
     var itens=[],semct=0,feitos=0;
@@ -1247,7 +1247,7 @@
     h+='<div class="note" style="margin-top:4px;text-align:right"><span id="bulkFilaSt"></span></div>';
     h+='<div id="bulkTplBox" style="display:none;margin-top:8px"></div></div>';
     return h;}
-  function bulkTplHTML(){var t=(BULKTPL[BULK.pipe]||{})[BULK.pub]||{w:"",a:"",c:""};return '<div class="lab">Modelo WhatsApp — use <code>[NOME]</code> e <code>[LISTA]</code></div><textarea id="bulk-w" rows="5">'+esc(t.w)+'</textarea><div class="lab">E-mail — assunto</div><input class="ei" id="bulk-a" value="'+esc(t.a)+'"><div class="lab">E-mail — corpo</div><textarea id="bulk-c" rows="4">'+esc(t.c)+'</textarea>';}
+  function bulkTplHTML(){var t=(BULKTPL[BULK.pipe]||{})[BULK.pub]||{w:"",a:"",c:""};return '<div class="lab">Modelo Zaptos — use <code>[NOME]</code> e <code>[LISTA]</code></div><textarea id="bulk-w" rows="5">'+esc(t.w)+'</textarea><div class="lab">E-mail — assunto</div><input class="ei" id="bulk-a" value="'+esc(t.a)+'"><div class="lab">E-mail — corpo</div><textarea id="bulk-c" rows="4">'+esc(t.c)+'</textarea>';}
   function bulkMount(){bulkCount();}
   function bulkTpl(){var box=$("bulkTplBox");if(box&&!box.getAttribute("data-r")){box.innerHTML=bulkTplHTML();box.setAttribute("data-r","1");}}
   function bulkToggleTpl(){var box=$("bulkTplBox"),t=$("bulkTplToggle");if(!box)return;if(box.style.display==="none"){bulkTpl();box.style.display="";if(t)t.textContent="▲ Ocultar modelo";}else{box.style.display="none";if(t)t.textContent="✎ Editar modelo";}}
@@ -1371,9 +1371,9 @@
     if(PROSTIPO==="novo"){PROSFMIN="";PROSFMAX="";}else{PROSFMIN=(fmin!=null?fmin:180);PROSFMAX=(fmax!=null?fmax:"");}
     $("op-nome").textContent=(PROSTIPO==="novo")?"Prospecção — empresas novas (Motor)":"Enriquecimento da base (Motor)";
     $("op-meta").textContent=(PROSTIPO==="novo")?"Achar empresas NOVAS por texto (frio) · o Motor busca, valida contato e escreve a 1ª msg":"Revalida o contato de clientes que JÁ existem no Sankhya/GHL (contato velho → atual) · hoje: base de Reativação (adormecidos) · alimenta a campanha de Reativação";var ai=$("atuInfo");if(ai)ai.textContent="";$("op-kpis").innerHTML="";
-    var bar='<div class="hint">🎯 Contatos que o <b>Motor</b> achou. Escolha <b>um canal</b> (WhatsApp ou E-mail) — a lista mostra só os leads com esse canal, já com o melhor contato marcado. Ajuste o texto e <b>coloque na fila</b>.</div>'+
+    var bar='<div class="hint">🎯 Contatos que o <b>Motor</b> achou. Escolha <b>um canal</b> (Zaptos ou E-mail) — a lista mostra só os leads com esse canal, já com o melhor contato marcado. Ajuste o texto e <b>coloque na fila</b>.</div>'+
       '<div class="dbtns" style="margin:0 0 8px;flex-wrap:wrap;align-items:center"><span class="note">canal:</span>'+
-      '<button class="btn'+(PROSCANAL==="whatsapp"?" ok":"")+'" id="pcnl-whatsapp" onclick="prosCanal(\'whatsapp\')">📱 WhatsApp</button>'+
+      '<button class="btn'+(PROSCANAL==="whatsapp"?" ok":"")+'" id="pcnl-whatsapp" onclick="prosCanal(\'whatsapp\')">📱 Zaptos</button>'+
       '<button class="btn'+(PROSCANAL==="email"?" ok":"")+'" id="pcnl-email" onclick="prosCanal(\'email\')">✉ E-mail</button>'+
       '<input id="pros-q" placeholder="buscar nome/cidade…" style="flex:1;min-width:140px;padding:7px 10px;border:1px solid var(--line);border-radius:8px" onkeydown="if(event.key===\'Enter\'){PROSOFF=0;carregarPros(true)}">'+
       '<button class="btn" onclick="PROSOFF=0;carregarPros(true)">🔎</button></div>'+
@@ -1406,9 +1406,9 @@
   function carregarPros(reset){if(reset){PROSOFF=0;PROSDATA=[];$("pros-lista").innerHTML="";}var st=$("pros-st");st.textContent="carregando…";var qe=$("pros-q");var q=encodeURIComponent(qe?qe.value:"");
     getJSON(SUPA+"/functions/v1/motor-contatos?tipo="+PROSTIPO+"&canal="+PROSCANAL+"&limit=30&offset="+PROSOFF+"&q="+q+(PROSTIPO!=="novo"?("&dmin="+PROSFMIN+"&dmax="+PROSFMAX):""),function(d){if(d.erro||!d.itens){st.textContent="✗ "+((d&&d.erro)||"erro");return;}
       var ENR=(d.enriquecidos!=null?d.enriquecidos:d.total);
-      st.innerHTML=(PROSTIPO!=="novo"?("faixa "+PROSFMIN+"–"+(PROSFMAX||"∞")+" dias · "):"")+ENR+(PROSTIPO==="novo"?" no total":" enriquecidos")+" · <b style='color:#0f6e56'>"+d.total+"</b> "+(PROSCANAL==="email"?"com e-mail":"com WhatsApp")+(PROSCANAL==="email"?"":(INSTCLI?(' · <span class="wtag" style="background:#e7e0f5;color:#5b3fa0">📲 sai pela instância '+esc(INSTCLI)+'</span>'):' · <span class="wtag" style="background:#fdeee4;color:#b7791f">sem instância de cliente cadastrada</span>'));
-      if(PROSTIPO==="novo")$("op-kpis").innerHTML='<div class="kpi"><div class="n">'+ENR+'</div><div class="l">leads novos</div></div><div class="kpi s"><div class="n">'+d.total+'</div><div class="l">'+(PROSCANAL==="email"?"com e-mail":"com WhatsApp")+'</div></div>';
-      else{var ae=(d.faixa_clientes!=null?Math.max(0,d.faixa_clientes-ENR):null);$("op-kpis").innerHTML='<div class="kpi"><div class="n">'+ENR+'</div><div class="l">enriquecidos na faixa</div></div><div class="kpi s"><div class="n">'+d.total+'</div><div class="l">'+(PROSCANAL==="email"?"com e-mail":"com WhatsApp")+'</div></div>'+(d.faixa_clientes!=null?('<div class="kpi"><div class="n">'+ae+'</div><div class="l">a enriquecer</div></div>'):'');}
+      st.innerHTML=(PROSTIPO!=="novo"?("faixa "+PROSFMIN+"–"+(PROSFMAX||"∞")+" dias · "):"")+ENR+(PROSTIPO==="novo"?" no total":" enriquecidos")+" · <b style='color:#0f6e56'>"+d.total+"</b> "+(PROSCANAL==="email"?"com e-mail":"com Zaptos")+(PROSCANAL==="email"?"":(INSTCLI?(' · <span class="wtag" style="background:#e7e0f5;color:#5b3fa0">📲 sai pela instância '+esc(INSTCLI)+'</span>'):' · <span class="wtag" style="background:#fdeee4;color:#b7791f">sem instância de cliente cadastrada</span>'));
+      if(PROSTIPO==="novo")$("op-kpis").innerHTML='<div class="kpi"><div class="n">'+ENR+'</div><div class="l">leads novos</div></div><div class="kpi s"><div class="n">'+d.total+'</div><div class="l">'+(PROSCANAL==="email"?"com e-mail":"com Zaptos")+'</div></div>';
+      else{var ae=(d.faixa_clientes!=null?Math.max(0,d.faixa_clientes-ENR):null);$("op-kpis").innerHTML='<div class="kpi"><div class="n">'+ENR+'</div><div class="l">enriquecidos na faixa</div></div><div class="kpi s"><div class="n">'+d.total+'</div><div class="l">'+(PROSCANAL==="email"?"com e-mail":"com Zaptos")+'</div></div>'+(d.faixa_clientes!=null?('<div class="kpi"><div class="n">'+ae+'</div><div class="l">a enriquecer</div></div>'):'');}
       var base=PROSDATA.length;(d.itens||[]).forEach(function(it){PROSDATA.push(it);});
       var h="";(d.itens||[]).forEach(function(it,k){h+=cardPros(it,base+k);});
       if(!(d.itens||[]).length&&reset)h='<div class="note" style="padding:16px;color:#b7791f">Nenhum contato'+(PROSTIPO==="novo"?" novo pronto ainda — rode a prospecção fria no Motor pra popular aqui.":" com esse filtro.")+'</div>';
@@ -1418,7 +1418,7 @@
     var st=[];if(it.envios)st.push('<span class="kaTag" style="background:#e7f3ec;color:#1a7f4b">✓ contatado '+it.envios+'x</span>');if(it.na_fila)st.push('<span class="kaTag" style="background:#fff4e0;color:#b7791f">⏳ na fila</span>');
     var h='<div class="kaCard"><div class="kaHead"><b>'+esc(it.nome||"")+'</b>'+(it.cidade?'<span class="kaTag">'+esc(it.cidade)+'/'+esc(it.uf||"")+'</span>':'')+(it.score!=null?'<span class="kaTag">score '+it.score+'</span>':'')+(it.inadimplente?'<span class="kaTag" style="background:#fbeaea;color:#b03636">inadimplente</span>':'')+st.join("")+'</div>';
     if(it.gancho)h+='<div class="note" style="padding:3px 0 0 2px">🪝 '+esc(it.gancho)+'</div>';
-    h+='<div style="margin:6px 0">';cts.forEach(function(c,idx){var jj=it.contatos.indexOf(c);var val=(PROSCANAL==="email")?esc(c.valor):esc(foneBonito(c.valor));var ic=(PROSCANAL==="email")?"✉":"📱";var tag=(PROSCANAL==="email")?("e-mail"+(c.validado?" ✓":"")):("WhatsApp"+(c.whatsapp_conf?" ✓":""));var ck=(idx===0)?"checked":"";h+='<label class="ctopt"><input type="checkbox" class="prc prc-'+i+'" data-i="'+i+'" data-j="'+jj+'" data-canal="'+PROSCANAL+'" '+ck+' onchange="prosCount()"><span class="cf">'+ic+' '+esc(c.papel||"contato")+' <span style="font-size:10px;color:#6a7f78">'+tag+'</span></span><span>'+val+'</span></label>';});h+='</div>';
+    h+='<div style="margin:6px 0">';cts.forEach(function(c,idx){var jj=it.contatos.indexOf(c);var val=(PROSCANAL==="email")?esc(c.valor):esc(foneBonito(c.valor));var ic=(PROSCANAL==="email")?"✉":"📱";var tag=(PROSCANAL==="email")?("e-mail"+(c.validado?" ✓":"")):("Zaptos"+(c.whatsapp_conf?" ✓":""));var ck=(idx===0)?"checked":"";h+='<label class="ctopt"><input type="checkbox" class="prc prc-'+i+'" data-i="'+i+'" data-j="'+jj+'" data-canal="'+PROSCANAL+'" '+ck+' onchange="prosCount()"><span class="cf">'+ic+' '+esc(c.papel||"contato")+' <span style="font-size:10px;color:#6a7f78">'+tag+'</span></span><span>'+val+'</span></label>';});h+='</div>';
     var socs=[];if(it.social){var sv={};it.social.forEach(function(s){var k=(String(s.plataforma||"").toLowerCase())+"|"+String(s.url||s.id||"").toLowerCase();if(k!=="|"&&!sv[k]){sv[k]=1;socs.push(s);}});}
     if(socs.length)h+='<div class="note" style="padding:2px 0 5px 2px"><span style="color:#6a7f78">📲 Redes:</span> '+socs.map(function(s){var pl=String(s.plataforma||"").toLowerCase();var u=s.url||(/face/.test(pl)?"https://facebook.com/":/linked/.test(pl)?"https://linkedin.com/":"https://instagram.com/")+String(s.id||"").replace(/^@/,"");var ic=/face/.test(pl)?"📘":/linked/.test(pl)?"💼":"📷";return '<a href="'+esc(u)+'" target="_blank" style="color:#5b3fa0;font-weight:600;margin:0 10px 0 4px">'+ic+' '+esc(s.plataforma||"social")+(s.id?(" "+esc(s.id)):"")+' ↗</a>';}).join("")+'</div>';
     h+='<div class="lab" style="margin-top:4px">1ª mensagem (editável)</div><textarea id="prt-'+i+'" rows="3" style="width:100%" oninput="edGuardar(\'pros\','+i+',\'mensagem\',this)">'+esc(it.mensagem||"")+'</textarea>'+edTag("pros",i)+'';
@@ -1428,7 +1428,7 @@
   function prosFilaBulk(){var st=$("pros-fila-st");var itens=[];var vistos={};
     document.querySelectorAll("#pros-lista input.prc:checked").forEach(function(cb){var i=+cb.getAttribute("data-i");var it=PROSDATA[i];if(!it)return;var c=it.contatos[+cb.getAttribute("data-j")];if(!c)return;var texto=($("prt-"+i)||{}).value||it.mensagem||"";var base={campanha:CUR,publico:"cliente",corpo:texto,nome:it.nome,codparc:it.codparc,lead_id:it.lead_id};if(c.canal==="email")itens.push(Object.assign({canal:"email",email:c.valor,assunto:"Nitron"},base));else itens.push(Object.assign({canal:"whatsapp",fone:waNum(c.valor),instancia:INSTCLI},base));});
     if(!itens.length){st.textContent="marque ao menos 1 contato";return;}
-    if(itens.some(function(x){return x.canal==="whatsapp"&&!x.instancia;})){st.innerHTML='<b style="color:#c0392b">✗ nenhuma instância de cliente cadastrada</b> — cadastre uma linha em <code>instancia_ghl</code> com <code>escopo=\'cliente\'</code> e <code>ativa</code>. Sem isso o WhatsApp sairia pelo número de uma assistente.';return;}
+    if(itens.some(function(x){return x.canal==="whatsapp"&&!x.instancia;})){st.innerHTML='<b style="color:#c0392b">✗ nenhuma instância de cliente cadastrada</b> — cadastre uma linha em <code>instancia_ghl</code> com <code>escopo=\'cliente\'</code> e <code>ativa</code>. Sem isso o Zaptos sairia pelo número de uma assistente.';return;}
     st.textContent="enfileirando "+itens.length+"…";postJSON(SUPA+"/functions/v1/fila-enfileirar",{itens:itens},function(r){st.innerHTML=r.ok?("<b style='color:#1a7f4b'>✓ "+r.enfileirados+" na fila</b>"):("✗ "+((r&&r.erro)||"falha"));});}
   var REDEDATA={};
   function abrirRedes(cod){$("op-nome").textContent="Promoção de Redes — store-check";$("op-meta").textContent="Redes com +1 loja · roteiro que visita TODAS as lojas do grupo por região (tipo promotor) · algumas também são Key Accounts";var ai=$("atuInfo");if(ai)ai.textContent="";$("op-kpis").innerHTML="";
@@ -1509,7 +1509,7 @@
       if(r.ok){if(stEl)stEl.innerHTML='<b>✓ '+r.enfileirados+' na fila</b>';if(FILATIMER)clearInterval(FILATIMER);statusFila();FILATIMER=setInterval(statusFila,15000);}else{if(stEl)stEl.textContent="✗ "+(r.erro||"falha");}});}
   /* ===== FREIO DE MAO E RESOLUCAO DE PENDENCIA =====
      Ver que um disparo saiu errado e nao poder fazer nada foi o pior momento de hoje: os 71
-     WhatsApp ao representante ficaram na fila e so nao sairam porque a fila estava desligada por
+     Zaptos ao representante ficaram na fila e so nao sairam porque a fila estava desligada por
      outro motivo. Estes botoes existem para isso nao depender de sorte.
        Parar agora        — desliga as chaves. NAO cancela nada: so para de puxar linha nova.
        Cancelar pendentes — marca como cancelada toda linha desta campanha que ainda nao saiu.
@@ -1541,7 +1541,7 @@
       if(Array.isArray(rs))rs.forEach(function(r){if(r.campanha&&r.campanha!==CUR){outras[r.campanha]=(outras[r.campanha]||0)+1;n++;}});
       var lista=Object.keys(outras).map(function(k){return "· "+(NOMECAMP[k]||k)+": "+outras[k];}).join("\n");
       var msg="⛔ PARAR TUDO — isto é GERAL, não é só desta campanha.\n\n"
-        +"Desliga a fila de WhatsApp e de e-mail para TODAS as campanhas até você religar em Cadência.\n"
+        +"Desliga a fila de Zaptos e de e-mail para TODAS as campanhas até você religar em Cadência.\n"
         +"Nada é cancelado nem perdido: as linhas ficam guardadas.\n\n"
         +(n?("Além desta campanha, ficam paradas "+n+" linha(s):\n"+lista+"\n\n"):"")
         +"Para parar só ESTA campanha, use \"Cancelar pendentes desta campanha\".\n\nParar tudo?";
@@ -1644,7 +1644,7 @@
      Campanha sem gatilho: o texto e escrito aqui e vale exatamente como esta. Sem IA — num
      comunicado nao ha dado de onde a IA partir; o conteudo e da gestao.
      Usa os MESMOS mecanismos das outras campanhas: linha .rrow/.rmain com ▶ para escolher os
-     contatos, barra de marcar/desmarcar todos, envio pela fila (1 WhatsApp por instancia a cada
+     contatos, barra de marcar/desmarcar todos, envio pela fila (1 Zaptos por instancia a cada
      wpp_intervalo_seg, respeitando o ZaptosWPP) e o painel de fila que se atualiza sozinho.
      Marcadores: [REP] vira o nome do representante e [ASSISTENTE] o nome da assistente. */
   var COMD = { reps: [], salvos: [], cfg: null }, COMSEL = {}, COMCT = {}, COMAB = {};
@@ -1695,7 +1695,7 @@
     (COMD.salvos || []).forEach(function (s) { h += '<option value="' + s.id + '">' + esc(s.titulo) + '</option>'; });
     return h;
   }
-  /* cadencia real: a fila manda 1 WhatsApp por instancia a cada wpp_intervalo_seg, e as instancias
+  /* cadencia real: a fila manda 1 Zaptos por instancia a cada wpp_intervalo_seg, e as instancias
      correm em paralelo. Logo o disparo termina quando a MAIOR fila de uma instancia termina, e a
      primeira mensagem de cada instancia sai na hora — dai (n-1) intervalos. */
   function comEstim() {
@@ -1827,14 +1827,14 @@
     var ch = $("comChips"); if (ch) { ch.innerHTML = comChipsHTML(); ch.querySelectorAll(".cbtn").forEach(function (el) { el.addEventListener("click", function () { COMF.inst = el.getAttribute("data-inst") || ""; comPintarLista(); }); }); }
     var fi = $("comFiltroInfo"); if (fi) fi.textContent = vis.length === comReps().length ? (comReps().length + " representantes") : (vis.length + " de " + comReps().length + " na tela");
     var rs = $("comResumo");
-    if (rs) rs.innerHTML = '<b>' + e.reps + '</b> representante(s) · <b>' + e.wpp + '</b> WhatsApp · <b>' + e.emails + '</b> e-mail(s)'
+    if (rs) rs.innerHTML = '<b>' + e.reps + '</b> representante(s) · <b>' + e.wpp + '</b> Zaptos · <b>' + e.emails + '</b> e-mail(s)'
       + (e.semInst ? (' · <span style="color:#b7791f">' + e.semInst + ' sem instância, não entra</span>') : '');
     var cad = $("comCad");
     if (cad) {
       if (!e.wpp) cad.textContent = "";
       else {
         var porI = Object.keys(e.porInst).sort().map(function (k) { return esc(k) + " " + e.porInst[k]; }).join(" · ");
-        cad.innerHTML = 'Cadência: 1 WhatsApp por instância a cada ' + Math.round(e.iv / 60) + ' min, instâncias em paralelo → termina em <b>' + comTempo(e.seg) + '</b>'
+        cad.innerHTML = 'Cadência: 1 Zaptos por instância a cada ' + Math.round(e.iv / 60) + ' min, instâncias em paralelo → termina em <b>' + comTempo(e.seg) + '</b>'
           + (e.maior > 1 ? (' (a fila mais longa é <b>' + esc(e.quem) + '</b>, com ' + e.maior + ')') : '') + '. Por instância: ' + porI + '.';
       }
     }
@@ -1872,7 +1872,7 @@
   function comAbrirAdd(cv, tipo) {
     var box = $("comadd-" + cv); if (!box) return;
     box.innerHTML = '<div style="display:flex;gap:6px;margin:4px 0;align-items:center">'
-      + '<input id="comaddin-' + cv + '" placeholder="' + (tipo === "telefone" ? "WhatsApp com DDD (ex: 11 99999-9999)" : "e-mail") + '" style="flex:1;max-width:320px;border:1px solid var(--line);border-radius:7px;padding:5px 9px;font:inherit;font-size:12px">'
+      + '<input id="comaddin-' + cv + '" placeholder="' + (tipo === "telefone" ? "Celular com DDD (ex: 11 99999-9999)" : "e-mail") + '" style="flex:1;max-width:320px;border:1px solid var(--line);border-radius:7px;padding:5px 9px;font:inherit;font-size:12px">'
       + '<button class="btn ok" style="padding:3px 11px;font-size:12px" id="comaddok-' + cv + '">Salvar</button>'
       + '<button class="btn out" style="padding:3px 9px;font-size:12px" id="comaddno-' + cv + '">cancelar</button></div>';
     var inp = $("comaddin-" + cv), ok = $("comaddok-" + cv), no = $("comaddno-" + cv);
@@ -1980,7 +1980,7 @@
       var mk = { REP: r.nome, ASSISTENTE: inst || "" };
       (r.telefones || []).forEach(function (t) {
         if (!COMCT[comCk(r.codvend, "tel", t.valor)]) return;
-        if (!inst) { semInst++; return; }   // sem instancia o WhatsApp sairia pelo numero errado
+        if (!inst) { semInst++; return; }   // sem instancia o Zaptos sairia pelo numero errado
         itens.push({ campanha: "rep_comunicado", publico: "rep", canal: "whatsapp", fone: t.valor, instancia: inst, corpo: fillMk(tW, mk), nome: r.nome });
       });
       (r.emails || []).forEach(function (e) {
@@ -1995,7 +1995,7 @@
     if (!COMTXT.w.trim()) { st.textContent = "escreva o comunicado primeiro"; st.style.color = "#b7791f"; return; }
     var r = comItens(), e = comEstim();
     if (!r.itens.length) { st.textContent = "marque ao menos um contato"; st.style.color = "#b7791f"; return; }
-    if (!confirm("Agendar " + r.itens.length + " envio(s) na fila?\n\nTermina em " + comTempo(e.seg) + " (1 WhatsApp por instância a cada " + Math.round(e.iv / 60) + " min).")) return;
+    if (!confirm("Agendar " + r.itens.length + " envio(s) na fila?\n\nTermina em " + comTempo(e.seg) + " (1 Zaptos por instância a cada " + Math.round(e.iv / 60) + " min).")) return;
     btn.disabled = true; btn.textContent = "agendando…"; st.textContent = ""; st.style.color = "#6a7f78";
     postJSON(SUPA + "/functions/v1/fila-enfileirar", { itens: r.itens }, function (d) {
       btn.disabled = false; btn.textContent = "📅 Criar fila e enviar";
@@ -2026,7 +2026,7 @@
       function kpi(n,l){return '<span><b style="font-size:17px;color:#12514c">'+(n==null?"—":n)+'</b> <span class="note">'+l+'</span></span>';}
       if(box)box.innerHTML=
         kpi(p.prontos_acionar,"prontos p/ acionar")+
-        kpi(p.prontos_whatsapp,"WhatsApp")+
+        kpi(p.prontos_whatsapp,"Zaptos")+
         kpi(p.prontos_email,"e-mail")+
         kpi(p.recuperados_busca_nome,"recuperados (busca)")+
         kpi(p.fila_na_espera,"na fila")+

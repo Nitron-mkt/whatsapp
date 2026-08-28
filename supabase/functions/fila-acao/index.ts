@@ -1,3 +1,6 @@
+// fila-acao (v2) — retomar o Zaptos tambem tira as instancias da pausa por queda
+// (instancia_ghl.pausada_em, escrita pelo fila-processar v22). Sem isso a chave voltaria ligada e as
+// linhas seguiriam paradas, sem nada na tela explicando por que.
 // fila-acao (v1) — o freio de mao e o "resolver a pendencia" da fila, num lugar so.
 //
 // Ate agora, ver que um disparo estava errado nao dava para fazer nada: a fila seguia. A unica
@@ -126,7 +129,15 @@ Deno.serve(async (req) => {
       if (canal === "ambos" || canal === "whatsapp") patch.wpp_ativo = true;
       if (canal === "ambos" || canal === "email") patch.email_ativo = true;
       const r = await chaves(patch);
-      return j({ ok: r.ok, acao, canal, config: r.config, erro: r.erro });
+      // Retomar o Zaptos e o gesto de quem RECONECTOU: tira as instancias da pausa por queda junto,
+      // senao a fila voltaria ligada e as linhas continuariam paradas sem explicacao na tela.
+      let despausadas: string[] = [];
+      if (canal === "ambos" || canal === "whatsapp") {
+        const rp = await rest("instancia_ghl?select=instancia&pausada_em=not.is.null",
+          { method: "PATCH", body: JSON.stringify({ pausada_em: null, pausada_motivo: null }) });
+        if (rp.ok) { const rows = await rp.json().catch(() => []); despausadas = (Array.isArray(rows) ? rows : []).map((x: any) => String(x.instancia)); }
+      }
+      return j({ ok: r.ok, acao, canal, config: r.config, erro: r.erro, instancias_despausadas: despausadas.length ? despausadas : undefined });
     }
 
     // ---------- cancelar / reenviar ----------

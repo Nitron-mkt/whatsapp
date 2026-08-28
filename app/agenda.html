@@ -223,7 +223,7 @@
       </select>
       <div class="lab">Canais</div>
       <div class="canais">
-        <label><input type="checkbox" id="fWpp"> 📱 WhatsApp</label>
+        <label><input type="checkbox" id="fWpp"> 📱 Zaptos</label>
         <label><input type="checkbox" id="fMail"> ✉ E-mail</label>
       </div>
       <div class="lab">Objetivo desta rodada</div>
@@ -735,10 +735,10 @@ function pintaFila(cfg){
   var cad = b>1 ? (b + " por rodada, " + cfg.wpp_burst_min_seg + "–" + cfg.wpp_burst_max_seg + "s entre elas, a cada " + seg + "s")
                 : ("1 por instância a cada " + seg + "s");
   $("travFila").innerHTML = '<div class="swi">'
-    + '<span>📱 WhatsApp <b class="' + (cfg.wpp_ativo?"on":"off") + '">' + (cfg.wpp_ativo?"LIGADO":"DESLIGADO") + '</b></span>'
+    + '<span>📱 Zaptos <b class="' + (cfg.wpp_ativo?"on":"off") + '">' + (cfg.wpp_ativo?"LIGADO":"DESLIGADO") + '</b></span>'
     + '<span>✉️ E-mail <b class="' + (cfg.email_ativo?"on":"off") + '">' + (cfg.email_ativo?"LIGADO":"DESLIGADO") + '</b></span>'
     + '<span class="mt" style="font-size:12px;color:var(--tinta2)">cadência: ' + esc(cad) + ' · e-mail em lotes de ' + cfg.email_lote + '</span>'
-    + (cfg.wpp_ativo ? "" : '<span style="font-size:12px;color:#9c2b2b;font-weight:bold">⚠ com o WhatsApp desligado, nenhuma linha de WhatsApp sai — nem as que já estão na fila</span>')
+    + (cfg.wpp_ativo ? "" : '<span style="font-size:12px;color:#9c2b2b;font-weight:bold">⚠ com o Zaptos desligado, nenhuma linha de Zaptos sai — nem as que já estão na fila</span>')
     + '</div>';
 }
 function pintaTravas(rs){

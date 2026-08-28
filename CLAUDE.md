@@ -76,6 +76,14 @@ renomear exigiria migrar linhas e funções sem ganho para quem lê a tela.
 - **Rep sem cluster de 4 não recebe rota** (`rota_possivel:false` + `aviso`, mensagem vazia). São 32
   dos 84 reps — a carteira apta existe mas está espalhada. Para eles visita não é o instrumento.
   O painel mostra o motivo e **não** oferece caixa de texto nem botão de envio.
+- **Os números da rota moram no banco**, não em constante: `campanhas.filtros_padrao` de
+  `rep_roteiro_visitas` → `roteiro_max_km` (raio do dia, **100**), `roteiro_min_dia` (4),
+  `roteiro_vis_dia` (6), `roteiro_dias_semana` (5), `roteiro_raio_semana_km` (300). Ajustar por
+  UPDATE, sem deploy. O raio já mudou de 150 → 100 e o piso nasceu inexistente: é parâmetro de
+  operação. Corte 150→100km custou 1.236→1.127 pontos com dia viável e 52→50 reps.
+- **DENIZE (codvend 116) é agência de representantes, não rep de rua.** O objetivo com ela é
+  levantar informação de cliente sem compra e repassar — não montar rota. Deixar como está; não
+  "consertar" as contas dela que ficam fora da região.
 - **A semana mora numa região só**: mesma UF e dentro de `RAIO_SEMANA_KM` da âncora, e cada dia
   começa onde o anterior terminou. Segunda em SP, terça no RJ e quarta em SP de novo não é rota.
 - **A âncora é o centro da melhor semana, não o maior cliente.** Escolher pelo faturamento dava

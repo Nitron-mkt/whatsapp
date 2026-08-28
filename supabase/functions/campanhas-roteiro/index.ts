@@ -1,3 +1,10 @@
+// campanhas-roteiro (v20) — OS PARAMETROS DA ROTA VIERAM PARA O BANCO:
+// campanhas.filtros_padrao de rep_roteiro_visitas manda em roteiro_max_km (raio do dia, agora 100 —
+// era 150 e o gestor cortou), roteiro_min_dia (4), roteiro_vis_dia (6), roteiro_dias_semana (5) e
+// roteiro_raio_semana_km (300). O raio ja mudou uma vez e o piso tambem: sao decisoes de operacao,
+// nao de programa. As constantes abaixo ficam como padrao de quem nao tiver o campo preenchido.
+// Impacto medido do corte 150->100km: pontos que fecham um dia de 4 caem de 1.236 para 1.127, e reps
+// com pelo menos um dia viavel de 52 para 50. Barato, e o dia fica bem mais apertado de rodar.
 // campanhas-roteiro (v19) — DIA SO EXISTE COM 4 VISITAS OU MAIS, e o dia se enche pelos clientes
 // MAIS PROXIMOS, nao pelos mais valiosos. Pedido do gestor em 28/08: mandar o rep viajar para 1 ou 2
 // visitas, ou para 6 visitas espalhadas em 150km, queima a viagem e a relacao com o cliente.
@@ -80,13 +87,29 @@ function pushCanal(out: any[], seen: any, canal: string, valor: any, origem: str
 // ordena um grupo por vizinho-mais-proximo (NN) a partir do 1o
 function rota(grupo: any[]) { if (grupo.length <= 2) return grupo; const out = [grupo[0]]; const rest = grupo.slice(1); while (rest.length) { const last = out[out.length - 1]; let bi = 0, bd = Infinity; rest.forEach((n: any, i: number) => { const d = dist(last, n); if (d < bd) { bd = d; bi = i; } }); out.push(rest.splice(bi, 1)[0]); } return out; }
 const srvKey = () => Deno.env.get("SRV_JWT") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-// Uma semana util. Antes 22 dias: virava "rota" de quase um mes, que ninguem executa.
-// VIS_DIA e o teto e MIN_VIS_DIA o piso: dia com menos de 4 visitas nao vira dia. O rep nao sai
-// para a rua por 2 clientes — melhor deixa-los para contato, e dizer isso na mensagem.
-const VIS_DIA = 6; const MIN_VIS_DIA = 4; const DIAS_SEMANA = 5; const CEP3_JANELA = 20; const MAX_KM = 150; const LOTE_MAX = 15;
 // A semana inteira fica dentro deste raio da ancora, e na mesma UF. E o que impede segunda em SP,
 // terca no RJ e quarta em SP de novo.
 const RAIO_SEMANA_KM = 300;
+/* PADROES. O que vale em producao vem de campanhas.filtros_padrao (ver cfgRota); isto aqui e a rede
+   para o caso de a linha da campanha nao ter os campos.
+     DIAS_SEMANA  uma semana util. Antes eram 22 dias: virava rota de quase um mes, que ninguem faz.
+     VIS_DIA      teto de visitas no dia.
+     MIN_VIS_DIA  piso: dia com menos que isso nao vira dia. O rep nao pega a estrada por 2 clientes.
+     MAX_KM       raio do dia — o que conta como "perto". Era 150; o gestor cortou para 100. */
+const VIS_DIA = 6; const MIN_VIS_DIA = 4; const DIAS_SEMANA = 5; const CEP3_JANELA = 20; const MAX_KM = 100; const LOTE_MAX = 15;
+type CfgRota = { maxKm: number; minDia: number; visDia: number; diasSemana: number; raioSemana: number };
+const num = (v: any, padrao: number) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : padrao; };
+async function cfgRota(sb: any): Promise<CfgRota> {
+  const { data } = await sb.from("campanhas").select("filtros_padrao").eq("codigo", "rep_roteiro_visitas").maybeSingle();
+  const f = (data?.filtros_padrao || {}) as any;
+  return {
+    maxKm: num(f.roteiro_max_km, MAX_KM),
+    minDia: num(f.roteiro_min_dia, MIN_VIS_DIA),
+    visDia: num(f.roteiro_vis_dia, VIS_DIA),
+    diasSemana: num(f.roteiro_dias_semana, DIAS_SEMANA),
+    raioSemana: num(f.roteiro_raio_semana_km, RAIO_SEMANA_KM),
+  };
+}
 /* roteiro_cliente.uf e o CODUF NUMERICO do Sankhya (TSIUFS), nao a sigla — sem este mapa a mensagem
    ao representante diria "concentradas em 2" em vez de "em MG". Estatico de proposito: e tabela de
    dominio do ERP, muda a cada década. */
@@ -97,7 +120,7 @@ const sig = (u: any) => UF_SIGLA[String(u)] || "";
 // `ri` e a linha da view rep_instancia: a instancia que VALE e a do proprietario do contato no CRM,
 // porque o WhatsApp sai pelo numero do usuario remetente. snap_rep.assistente e so o organograma do
 // Sankhya casado por nome — era ele que fazia a mensagem chegar pela assistente errada.
-function montar(rep: number, rows: any[], sr: any, geo: Map<string, any>, ri?: any) {
+function montar(rep: number, rows: any[], sr: any, geo: Map<string, any>, ri: any, cfg: CfgRota) {
   const nodes = agrupar(rows).filter((n: any) => digits(n.cep).length >= 7).map((n: any) => { const g = geo.get(cep8(n.cep)); return { ...n, cepn: parseInt(cep8(n.cep)) || 0, lat: g ? g.lat : null, lng: g ? g.lng : null, prio: prioridade(n) }; });
   const nome = rows[0]?.rep || ("Rep " + rep);
   const visitados = new Set<number>(); const dias: any[] = [];
@@ -116,8 +139,8 @@ function montar(rep: number, rows: any[], sr: any, geo: Map<string, any>, ri?: a
      esta meu maior cliente?", pergunta "onde consigo a melhor semana?". Entao cada candidato e
      avaliado como CENTRO: soma a prioridade do que ele alcanca (mesma UF, dentro do raio), limitada
      a CAP_SEMANA porque mais que isso nao cabe na semana de todo jeito. Ganha o melhor centro. */
-  const CAP_SEMANA = DIAS_SEMANA * VIS_DIA;
-  const alcance = (c: any) => nodes.filter((n: any) => n.uf === c.uf && dist(c, n) <= RAIO_SEMANA_KM);
+  const CAP_SEMANA = cfg.diasSemana * cfg.visDia;
+  const alcance = (c: any) => nodes.filter((n: any) => n.uf === c.uf && dist(c, n) <= cfg.raioSemana);
   let ancoraSemana: any = null, melhorNota = -1, melhorAlcance: any[] = [];
   for (const c of nodes) {
     const ac = alcance(c);
@@ -141,9 +164,9 @@ function montar(rep: number, rows: any[], sr: any, geo: Map<string, any>, ri?: a
      anterior — densidade manda, continuidade desempata. Quem nao entra em nenhum cluster fica em
      `sem_cluster` e a mensagem diz que esses ficam para contato, nao para visita. */
   let de = ancoraSemana;   // de onde o proximo dia parte
-  while (dias.length < DIAS_SEMANA) {
+  while (dias.length < cfg.diasSemana) {
     const rest = naRegiao.filter((n: any) => !visitados.has(n.gkey));
-    if (rest.length < MIN_VIS_DIA) break;   // nem sobra gente para um dia inteiro
+    if (rest.length < cfg.minDia) break;   // nem sobra gente para um dia inteiro
     let semente: any = null, notaTop = -1, clusterTop: any[] = [];
     for (const seed of rest) {
       /* O dia se enche pelos MAIS PROXIMOS, nao pelos mais valiosos.
@@ -151,10 +174,10 @@ function montar(rep: number, rows: any[], sr: any, geo: Map<string, any>, ri?: a
          de rodar: 6 visitas espalhadas em 150km porque as mais valiosas estavam longe uma da outra.
          A prioridade decide PARA ONDE ir (a semente e a regiao); depois de chegar la, o rep visita
          quem esta ao lado. Ordenar por distancia torna o raio do dia minimo por construcao. */
-      const vizinhos = rest.filter((n: any) => n.gkey !== seed.gkey && dist(seed, n) <= MAX_KM)
+      const vizinhos = rest.filter((n: any) => n.gkey !== seed.gkey && dist(seed, n) <= cfg.maxKm)
                            .sort((a: any, b: any) => dist(seed, a) - dist(seed, b));
-      const cluster = [seed, ...vizinhos.slice(0, VIS_DIA - 1)];
-      if (cluster.length < MIN_VIS_DIA) continue;   // este ponto nao fecha um dia: nao serve de semente
+      const cluster = [seed, ...vizinhos.slice(0, cfg.visDia - 1)];
+      if (cluster.length < cfg.minDia) continue;   // este ponto nao fecha um dia: nao serve de semente
       const soma = cluster.reduce((t: number, n: any) => t + (n.prio || 0), 0);
       const raio = Math.max(...cluster.map((n: any) => dist(seed, n)).filter((d: number) => d < 9000), 0);
       const desloc = de ? Math.min(dist(de, seed), 500) : 0;   // 9999 (sem coord) nao pode dominar
@@ -164,7 +187,7 @@ function montar(rep: number, rows: any[], sr: any, geo: Map<string, any>, ri?: a
       const nota = soma / (1 + raio / 60) / (1 + desloc / 200);
       if (nota > notaTop) { notaTop = nota; semente = seed; clusterTop = cluster; }
     }
-    if (!semente) break;   // ninguem mais reune MIN_VIS_DIA: a semana termina aqui, de proposito
+    if (!semente) break;   // ninguem mais reune o minimo: a semana termina aqui, de proposito
     const grupo = rota(clusterTop);   // ordem por vizinho mais proximo, partindo da semente
     grupo.forEach((n: any) => visitados.add(n.gkey));
     const maisRelevante = grupo.slice().sort((a: any, b: any) => b.prio - a.prio)[0];
@@ -207,7 +230,7 @@ function montar(rep: number, rows: any[], sr: any, geo: Map<string, any>, ri?: a
       rota_possivel: false, dias: [],
       aviso: nodes.length
         ? ("sem rota viavel: os " + nodes.length + " cliente(s) aptos deste representante estao espalhados e nenhum reune "
-           + MIN_VIS_DIA + " outros num raio de " + MAX_KM + "km. Visita nao se paga aqui — vale contato por Zaptos ou e-mail.")
+           + cfg.minDia + " outros num raio de " + cfg.maxKm + "km. Visita nao se paga aqui — vale contato por Zaptos ou e-mail.")
         : "nenhum cliente apto agora (todos com pedido em aberto, dentro do ciclo, inadimplentes ou bloqueados).",
       mensagem: "",
     };
@@ -216,7 +239,7 @@ function montar(rep: number, rows: any[], sr: any, geo: Map<string, any>, ri?: a
   let msg = "Oi " + nome + ", tudo bem?\n\n"
     + "Levantamos aqui uma sugestao de sequencia de visitas para a proxima semana. Olhamos quem esta "
     + "com o ciclo de compra vencido e montamos os dias por PROXIMIDADE — um dia so entrou na lista se "
-    + "juntasse ao menos " + MIN_VIS_DIA + " clientes perto um do outro, para a viagem valer a pena.\n\n"
+    + "juntasse ao menos " + cfg.minDia + " clientes perto um do outro, para a viagem valer a pena.\n\n"
     + "Antes de tudo: e so uma sugestao, montada de fora. Voce conhece a praca e o momento de cada "
     + "cliente muito melhor que a gente — se alguns desses voce ja esta atendendo, ou se a ordem nao "
     + "faz sentido para a sua semana, ignore sem problema. A ideia e te poupar trabalho de "
@@ -254,6 +277,7 @@ Deno.serve(async (req) => {
     const sb = createClient(Deno.env.get("SUPABASE_URL")!, srvKey());
     const p = new URL(req.url).searchParams; const repParam = p.get("rep"); const loteParam = p.get("lote");
     const intra = await intraSet(sb);
+    const cfg = await cfgRota(sb);
 
     // LOTE: roteiro de varios reps numa chamada (p/ enfileirar em massa). Devolve mensagem+contatos, sem o detalhe dos dias.
     if (loteParam) {
@@ -267,15 +291,15 @@ Deno.serve(async (req) => {
       const riBy: Record<string, any> = {}; (ris || []).forEach((x: any) => riBy[String(x.codvend)] = x);
       const byRep: Record<string, any[]> = {};
       cli.forEach((c: any) => { if (intra.has(Number(c.codparc))) return; const k = String(c.codvend); (byRep[k] = byRep[k] || []).push(c); });
-      const lote = cvs.map((cv) => { const r: any = montar(cv, byRep[String(cv)] || [], srBy[String(cv)], geo, riBy[String(cv)]); return { codvend: r.codvend, rep: r.rep, instancia: r.instancia, instancia_erp: r.instancia_erp, divergente: r.divergente, contatos: r.contatos, total: r.total, cobertos: r.cobertos, fora_da_regiao: r.fora_da_regiao, sem_cluster: r.sem_cluster, rota_possivel: r.rota_possivel !== false, aviso: r.aviso, uf_semana: r.uf_semana, dias_n: r.dias.length, mensagem: r.mensagem }; });
-      return j({ lote });
+      const lote = cvs.map((cv) => { const r: any = montar(cv, byRep[String(cv)] || [], srBy[String(cv)], geo, riBy[String(cv)], cfg); return { codvend: r.codvend, rep: r.rep, instancia: r.instancia, instancia_erp: r.instancia_erp, divergente: r.divergente, contatos: r.contatos, total: r.total, cobertos: r.cobertos, fora_da_regiao: r.fora_da_regiao, sem_cluster: r.sem_cluster, rota_possivel: r.rota_possivel !== false, aviso: r.aviso, uf_semana: r.uf_semana, dias_n: r.dias.length, mensagem: r.mensagem }; });
+      return j({ lote, cfg });
     }
 
     if (!repParam) {
       const byRep: Record<string, any[]> = {}; let from = 0;
       while (true) { const { data } = await sb.from("roteiro_cliente_apto").select("codparc,codparcmatriz,codvend,rep,fat12m,dias,giro,clube_saldo").range(from, from + 999); (data || []).forEach((c: any) => { if (c.codvend == null || intra.has(Number(c.codparc))) return; (byRep[c.codvend] = byRep[c.codvend] || []).push(c); }); if (!data || data.length < 1000) break; from += 1000; }
       const reps = Object.keys(byRep).map((cv) => { const nodes = agrupar(byRep[cv]); const rep = (byRep[cv][0] || {}).rep; return { codvend: Number(cv), rep, clientes: nodes.length, prioritarios: nodes.filter((n) => gatilho(n).any).length, fat: Math.round(nodes.reduce((a, b) => a + (Number(b.fat12m) || 0), 0)) }; }).sort((a, b) => b.prioritarios - a.prioritarios || b.fat - a.fat);
-      return j({ reps });
+      return j({ reps, cfg });
     }
 
     const rep = parseInt(repParam);
@@ -284,6 +308,6 @@ Deno.serve(async (req) => {
     const rows = todas.filter((c: any) => !intra.has(Number(c.codparc)));
     const { data: sr } = await sb.from("snap_rep").select("*").eq("codvend", rep).maybeSingle();
     const { data: ri } = await sb.from("rep_instancia").select("codvend,instancia,instancia_erp,divergente").eq("codvend", rep).maybeSingle();
-    return j(montar(rep, rows, sr, geo, ri));
+    return j({ ...montar(rep, rows, sr, geo, ri, cfg), cfg });
   } catch (e) { return j({ erro: String(e) }, 500); }
 });

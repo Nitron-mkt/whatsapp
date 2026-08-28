@@ -1193,7 +1193,7 @@
       d.reps.forEach(function(r){h+='<div class="rmain" style="cursor:pointer;padding:9px 12px" onclick="verRoteiro('+r.codvend+',this)"><input type="checkbox" class="rotchk" data-id="'+r.codvend+'" onclick="event.stopPropagation()" onchange="rotSel('+r.codvend+',this.checked)"><b>'+esc(r.rep||("Rep "+r.codvend))+'</b><span class="note" style="margin-left:8px">'+r.clientes+' pontos · '+r.prioritarios+' prioritários</span><span class="rv" style="margin-left:auto">'+brl(r.fat)+'</span></div><div class="rotbox" id="rot-'+r.codvend+'"></div>';});h+='</div>';$("roteiroFlow").innerHTML=h;rotSelCount();});}
   function verRoteiro(cod,el){var box=$("rot-"+cod);if(!box)return;if(box.getAttribute("data-open")){box.innerHTML="";box.removeAttribute("data-open");return;}box.setAttribute("data-open","1");box.innerHTML='<div class="note" style="padding:8px 0 8px 14px">montando roteiro…</div>';getJSON(SUPA+"/functions/v1/campanhas-roteiro?rep="+cod,function(d){if(d.erro){box.innerHTML='<div class="note" style="color:#c0392b;padding-left:14px">erro</div>';return;}
     /* Sem rota viavel nao se oferece envio. A funcao devolve rota_possivel=false quando nenhum
-       cliente do rep reune 4 vizinhos num raio de 150km — mandar "roteiro" de 1 ou 2 visitas seria
+       cliente do rep reune 4 vizinhos dentro do raio do dia — mandar "roteiro" de 1 ou 2 visitas seria
        pedir uma viagem que nao se paga. Aqui a tela explica e nao mostra caixa de texto nem botao. */
     if(d.rota_possivel===false){box.innerHTML='<div style="margin:6px 0 8px 14px;border:1px solid #f0dfc0;background:#fffdf7;border-radius:9px;padding:10px 12px">'
       +'<b style="color:#b7791f">Sem rota viável esta semana</b>'

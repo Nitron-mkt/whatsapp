@@ -1,3 +1,13 @@
+// campanhas-roteiro (v19) — DIA SO EXISTE COM 4 VISITAS OU MAIS, e o dia se enche pelos clientes
+// MAIS PROXIMOS, nao pelos mais valiosos. Pedido do gestor em 28/08: mandar o rep viajar para 1 ou 2
+// visitas, ou para 6 visitas espalhadas em 150km, queima a viagem e a relacao com o cliente.
+// A analise de proximidade feita antes de codar (1.672 pontos, 84 reps, raio de 150km na mesma UF):
+//   1.242 (74%) tem 3+ vizinhos — fecham um dia de 4
+//     217 tem so 1 ou 2 vizinhos — no maximo um dia de 2 ou 3
+//     213 ISOLADOS, nenhum vizinho em 150km
+// Consequencia assumida: 32 dos 84 reps nao tem NENHUM ponto que feche um dia de 4, e passam a nao
+// receber rota. Isso e a resposta correta — para eles visita nao e o instrumento, contato e. A funcao
+// devolve rota_possivel=false e mensagem vazia, para a tela avisar em vez de mandar roteiro vazio.
 // campanhas-roteiro (v17) — A ROTA CABE NUMA SEMANA, NAO PULA DE ESTADO, COMECA NA MELHOR REGIAO
 // e fala do ciclo DE CADA CLIENTE (v17: posic/gatilho/prioridade usavam 50 e 180 dias fixos e
 // brigavam com o filtro por giro — a mensagem chegava a rotular "em dia (31d)" um cliente que
@@ -71,7 +81,9 @@ function pushCanal(out: any[], seen: any, canal: string, valor: any, origem: str
 function rota(grupo: any[]) { if (grupo.length <= 2) return grupo; const out = [grupo[0]]; const rest = grupo.slice(1); while (rest.length) { const last = out[out.length - 1]; let bi = 0, bd = Infinity; rest.forEach((n: any, i: number) => { const d = dist(last, n); if (d < bd) { bd = d; bi = i; } }); out.push(rest.splice(bi, 1)[0]); } return out; }
 const srvKey = () => Deno.env.get("SRV_JWT") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 // Uma semana util. Antes 22 dias: virava "rota" de quase um mes, que ninguem executa.
-const VIS_DIA = 6; const DIAS_SEMANA = 5; const CEP3_JANELA = 20; const MAX_KM = 150; const LOTE_MAX = 15;
+// VIS_DIA e o teto e MIN_VIS_DIA o piso: dia com menos de 4 visitas nao vira dia. O rep nao sai
+// para a rua por 2 clientes — melhor deixa-los para contato, e dizer isso na mensagem.
+const VIS_DIA = 6; const MIN_VIS_DIA = 4; const DIAS_SEMANA = 5; const CEP3_JANELA = 20; const MAX_KM = 150; const LOTE_MAX = 15;
 // A semana inteira fica dentro deste raio da ancora, e na mesma UF. E o que impede segunda em SP,
 // terca no RJ e quarta em SP de novo.
 const RAIO_SEMANA_KM = 300;
@@ -120,24 +132,51 @@ function montar(rep: number, rows: any[], sr: any, geo: Map<string, any>, ri?: a
   if (ancoraSemana && naRegiao.length < 2) naRegiao = nodes.filter((n: any) => n.uf === ancoraSemana.uf);
   const foraDaRegiao = nodes.length - naRegiao.length;
 
+  /* O DIA E UM CLUSTER, NAO UMA SEQUENCIA.
+     A versao anterior comecava o dia pelo ponto mais proximo de onde o dia anterior terminou e
+     preenchia com quem estivesse a MAX_KM DELE. Em regiao rala isso dava dia de 1, 2 ou 3 visitas —
+     o rep pegava a estrada para quase nada. Agora cada candidato e avaliado como SEMENTE de um dia:
+     conta quantos vizinhos ele reune dentro de MAX_KM, e so vale se fechar MIN_VIS_DIA. Entre os que
+     fecham, ganha o de maior soma de prioridade, com um desconto pelo deslocamento desde o fim do dia
+     anterior — densidade manda, continuidade desempata. Quem nao entra em nenhum cluster fica em
+     `sem_cluster` e a mensagem diz que esses ficam para contato, nao para visita. */
   let de = ancoraSemana;   // de onde o proximo dia parte
-  while (dias.length < DIAS_SEMANA && de) {
+  while (dias.length < DIAS_SEMANA) {
     const rest = naRegiao.filter((n: any) => !visitados.has(n.gkey));
-    if (!rest.length) break;
-    // o dia comeca pelo mais proximo do ponto onde paramos; nao pela prioridade solta no mapa
-    const perto = rest.slice().sort((a: any, b: any) => dist(de, a) - dist(de, b));
-    const primeiro = perto[0];
-    const cand = perto.slice(1).filter((n: any) => dist(primeiro, n) <= MAX_KM).slice(0, VIS_DIA - 1);
-    const grupo = rota([primeiro, ...cand]);
+    if (rest.length < MIN_VIS_DIA) break;   // nem sobra gente para um dia inteiro
+    let semente: any = null, notaTop = -1, clusterTop: any[] = [];
+    for (const seed of rest) {
+      /* O dia se enche pelos MAIS PROXIMOS, nao pelos mais valiosos.
+         Preencher por prioridade dentro do raio de 150km dava dias tecnicamente cheios e horriveis
+         de rodar: 6 visitas espalhadas em 150km porque as mais valiosas estavam longe uma da outra.
+         A prioridade decide PARA ONDE ir (a semente e a regiao); depois de chegar la, o rep visita
+         quem esta ao lado. Ordenar por distancia torna o raio do dia minimo por construcao. */
+      const vizinhos = rest.filter((n: any) => n.gkey !== seed.gkey && dist(seed, n) <= MAX_KM)
+                           .sort((a: any, b: any) => dist(seed, a) - dist(seed, b));
+      const cluster = [seed, ...vizinhos.slice(0, VIS_DIA - 1)];
+      if (cluster.length < MIN_VIS_DIA) continue;   // este ponto nao fecha um dia: nao serve de semente
+      const soma = cluster.reduce((t: number, n: any) => t + (n.prio || 0), 0);
+      const raio = Math.max(...cluster.map((n: any) => dist(seed, n)).filter((d: number) => d < 9000), 0);
+      const desloc = de ? Math.min(dist(de, seed), 500) : 0;   // 9999 (sem coord) nao pode dominar
+      /* valor por esforco: quanto a semente reune, descontado o quao esparramado ficou o dia e o
+         quanto se anda desde o fim do dia anterior. Assim um dia de 4 clientes colados ganha de um
+         de 6 espalhados por 150km — que e o que o gestor pediu ao falar de "nao perder a viagem". */
+      const nota = soma / (1 + raio / 60) / (1 + desloc / 200);
+      if (nota > notaTop) { notaTop = nota; semente = seed; clusterTop = cluster; }
+    }
+    if (!semente) break;   // ninguem mais reune MIN_VIS_DIA: a semana termina aqui, de proposito
+    const grupo = rota(clusterTop);   // ordem por vizinho mais proximo, partindo da semente
     grupo.forEach((n: any) => visitados.add(n.gkey));
     const maisRelevante = grupo.slice().sort((a: any, b: any) => b.prio - a.prio)[0];
+    const kmsDia = grupo.map((n: any) => (n.lat != null && semente.lat != null) ? Math.round(dist(semente, n)) : null);
     dias.push({
       dia: dias.length + 1,
       ancora: maisRelevante.codparc, ancora_nome: maisRelevante.nome, ancora_porque: porque(maisRelevante),
-      cidade_base: primeiro.cidade, uf: primeiro.uf,
+      cidade_base: semente.cidade, uf: semente.uf,
+      raio_km: Math.max(...kmsDia.map((k: any) => k == null ? 0 : k)),
       clientes: grupo.map((n: any, k: number) => ({
         ordem: k + 1, codparc: n.codparc, nome: n.nome, cidade: n.cidade, cep: fmtCep(n.cep), uf: n.uf,
-        km: (n.lat != null && primeiro.lat != null) ? Math.round(dist(primeiro, n)) : null,
+        km: (n.lat != null && semente.lat != null) ? Math.round(dist(semente, n)) : null,
         fat: Math.round(n.fat12m), fat_fmt: brl(n.fat12m), dias: n.dias, giro: n.giro,
         clube_saldo: Number(n.clube_saldo) || 0, lojas: n.lojas,
         posicionamento: posic(n), motivo: porque(n), ancora: n.gkey === maisRelevante.gkey,
@@ -145,41 +184,68 @@ function montar(rep: number, rows: any[], sr: any, geo: Map<string, any>, ri?: a
     });
     de = grupo[grupo.length - 1];   // o dia seguinte parte daqui
   }
+  // sobrou na regiao quem nao reune 4 por perto: nao e rota, e contato
+  const semCluster = naRegiao.filter((n: any) => !visitados.has(n.gkey)).length;
 
   const contatos: any[] = []; const seen: any = {};
   if (sr) { pushCanal(contatos, seen, "whatsapp", sr.celular, "Sankhya"); pushCanal(contatos, seen, "whatsapp", sr.fone_parc, "Sankhya"); pushCanal(contatos, seen, "email", sr.email, "Sankhya"); pushCanal(contatos, seen, "email", sr.email_crm, "CRM"); }
   /* TOM: muitos desses clientes o rep JA esta atendendo, e ele conhece a praca melhor que a gente.
-     Entao o texto se apresenta como apoio, diz de saida que e sugestao e que ele pode ignorar, e
-     nunca cobra visita, prazo ou resultado. Sem isso a mensagem soa como roteiro imposto por quem
-     nao esta na rua. */
+     O texto se apresenta como apoio, diz de saida que e sugestao e que ele pode ignorar, e nunca
+     cobra visita, prazo ou resultado. Sem isso a mensagem soa como roteiro imposto por quem nao
+     esta na rua. */
   const uf1 = dias.length ? sig(dias[0].uf) : "";
+
+  /* SEM ROTA VIAVEL NAO SE MANDA ROTEIRO. 32 dos 84 reps nao tem nenhum ponto que reuna 4 clientes
+     dentro de 150km: a carteira apta existe, mas espalhada. Mandar um "roteiro" de 1 ou 2 visitas
+     seria pedir uma viagem que nao se paga. Mensagem vazia + aviso: a tela mostra o motivo e nao
+     enfileira nada. */
+  if (!dias.length) {
+    return {
+      rep: nome, codvend: rep, instancia: ri?.instancia || null, instancia_erp: ri?.instancia_erp || null,
+      divergente: !!ri?.divergente, contatos, total: nodes.length, cobertos: 0,
+      fora_da_regiao: foraDaRegiao, sem_cluster: semCluster, uf_semana: null,
+      rota_possivel: false, dias: [],
+      aviso: nodes.length
+        ? ("sem rota viavel: os " + nodes.length + " cliente(s) aptos deste representante estao espalhados e nenhum reune "
+           + MIN_VIS_DIA + " outros num raio de " + MAX_KM + "km. Visita nao se paga aqui — vale contato por Zaptos ou e-mail.")
+        : "nenhum cliente apto agora (todos com pedido em aberto, dentro do ciclo, inadimplentes ou bloqueados).",
+      mensagem: "",
+    };
+  }
+
   let msg = "Oi " + nome + ", tudo bem?\n\n"
-    + "Levantamos aqui uma sugestao de sequencia de visitas para a proxima semana, olhando quem esta "
-    + "com o ciclo de compra vencido e agrupando por proximidade para economizar seu deslocamento.\n\n"
+    + "Levantamos aqui uma sugestao de sequencia de visitas para a proxima semana. Olhamos quem esta "
+    + "com o ciclo de compra vencido e montamos os dias por PROXIMIDADE — um dia so entrou na lista se "
+    + "juntasse ao menos " + MIN_VIS_DIA + " clientes perto um do outro, para a viagem valer a pena.\n\n"
     + "Antes de tudo: e so uma sugestao, montada de fora. Voce conhece a praca e o momento de cada "
     + "cliente muito melhor que a gente — se alguns desses voce ja esta atendendo, ou se a ordem nao "
     + "faz sentido para a sua semana, ignore sem problema. A ideia e te poupar trabalho de "
     + "planejamento, nao te dar rota.\n\n"
-    + "São " + visitados.size + " contas em " + dias.length + " dia(s)"
-    + (uf1 ? (", concentradas em " + uf1) : "") + ", ate " + MAX_KM + "km entre os pontos de cada dia.\n";
+    + "Sao " + visitados.size + " contas em " + dias.length + " dia(s)"
+    + (uf1 ? (", concentradas em " + uf1) : "") + ".\n";
   dias.forEach((d: any) => {
-    msg += "\n━━━ DIA " + d.dia + " · " + (d.cidade_base || "") + " e regiao (" + d.clientes.length + " visitas) ━━━\n";
+    msg += "\n\u2501\u2501\u2501 DIA " + d.dia + " \u00b7 " + (d.cidade_base || "") + " e regiao ("
+      + d.clientes.length + " visitas" + (d.raio_km ? (", num raio de ~" + d.raio_km + "km") : "") + ") \u2501\u2501\u2501\n";
     d.clientes.forEach((c: any) => {
-      msg += "\n" + c.ordem + ") " + (c.ancora ? "⭐ " : "") + c.nome + "\n   "
-        + (c.cidade || "") + (sig(c.uf) ? ("/" + sig(c.uf)) : "") + " · CEP " + c.cep
-        + (c.km != null ? (" · ~" + c.km + "km do primeiro") : "") + "\n   " + c.motivo + "\n";
+      msg += "\n" + c.ordem + ") " + (c.ancora ? "\u2b50 " : "") + c.nome + "\n   "
+        + (c.cidade || "") + (sig(c.uf) ? ("/" + sig(c.uf)) : "") + " \u00b7 CEP " + c.cep
+        + (c.km != null ? (" \u00b7 ~" + c.km + "km do primeiro") : "") + "\n   " + c.motivo + "\n";
     });
   });
-  if (foraDaRegiao > 0) {
-    msg += "\nTem outras " + foraDaRegiao + " conta(s) suas fora dessa regiao. Deixamos de fora de proposito "
-      + "para a semana nao virar ida e volta entre estados — elas entram numa proxima sugestao, ou "
-      + "antes, se voce preferir comecar por elas.\n";
+  const sobra = foraDaRegiao + semCluster;
+  if (sobra > 0) {
+    msg += "\nTem outras " + sobra + " conta(s) suas que ficaram fora desta semana";
+    if (foraDaRegiao > 0 && semCluster > 0) msg += " — parte em outra regiao, parte distante das demais";
+    else if (foraDaRegiao > 0) msg += ", em outra regiao";
+    else msg += ", distantes demais das outras para caber num dia de visitas";
+    msg += ". Nao esquecemos delas: em vez de te fazer atravessar o estado por uma visita, vale um "
+      + "contato. Se quiser, preparo essa lista separada para voce falar por Zaptos ou e-mail.\n";
   }
   msg += "\nO que podemos fazer para te ajudar? Se quiser que a gente levante algo antes de alguma "
     + "visita — historico de compra, mix que ele nao leva, condicao comercial, saldo do Clube — me "
     + "fala que eu preparo. E se preferir a sugestao de outra forma (outra regiao, mais ou menos "
     + "visitas por dia), e so dizer.";
-  return { rep: nome, codvend: rep, instancia: ri?.instancia || null, instancia_erp: ri?.instancia_erp || null, divergente: !!ri?.divergente, contatos, total: nodes.length, cobertos: visitados.size, fora_da_regiao: foraDaRegiao, uf_semana: dias.length ? (sig(dias[0].uf) || null) : null, dias, mensagem: msg };
+  return { rep: nome, codvend: rep, instancia: ri?.instancia || null, instancia_erp: ri?.instancia_erp || null, divergente: !!ri?.divergente, contatos, total: nodes.length, cobertos: visitados.size, fora_da_regiao: foraDaRegiao, sem_cluster: semCluster, rota_possivel: true, uf_semana: dias.length ? (sig(dias[0].uf) || null) : null, dias, mensagem: msg };
 }
 
 Deno.serve(async (req) => {
@@ -201,7 +267,7 @@ Deno.serve(async (req) => {
       const riBy: Record<string, any> = {}; (ris || []).forEach((x: any) => riBy[String(x.codvend)] = x);
       const byRep: Record<string, any[]> = {};
       cli.forEach((c: any) => { if (intra.has(Number(c.codparc))) return; const k = String(c.codvend); (byRep[k] = byRep[k] || []).push(c); });
-      const lote = cvs.map((cv) => { const r = montar(cv, byRep[String(cv)] || [], srBy[String(cv)], geo, riBy[String(cv)]); return { codvend: r.codvend, rep: r.rep, instancia: r.instancia, instancia_erp: r.instancia_erp, divergente: r.divergente, contatos: r.contatos, total: r.total, cobertos: r.cobertos, dias_n: r.dias.length, mensagem: r.mensagem }; });
+      const lote = cvs.map((cv) => { const r: any = montar(cv, byRep[String(cv)] || [], srBy[String(cv)], geo, riBy[String(cv)]); return { codvend: r.codvend, rep: r.rep, instancia: r.instancia, instancia_erp: r.instancia_erp, divergente: r.divergente, contatos: r.contatos, total: r.total, cobertos: r.cobertos, fora_da_regiao: r.fora_da_regiao, sem_cluster: r.sem_cluster, rota_possivel: r.rota_possivel !== false, aviso: r.aviso, uf_semana: r.uf_semana, dias_n: r.dias.length, mensagem: r.mensagem }; });
       return j({ lote });
     }
 

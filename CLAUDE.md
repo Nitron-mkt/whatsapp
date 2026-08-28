@@ -67,7 +67,15 @@ renomear exigiria migrar linhas e funções sem ganho para quem lê a tela.
 
 ## Roteiro de visitas — regras que vieram da operação
 
-- **Uma semana, no máximo** (`DIAS_SEMANA = 5`, 6 visitas/dia). Rota de 20 dias ninguém executa.
+- **Uma semana, no máximo** (`DIAS_SEMANA = 5`). **4 a 6 visitas/dia** — `MIN_VIS_DIA = 4` é piso:
+  dia com menos de 4 não vira dia. Rota de 20 dias ninguém executa; viagem por 2 clientes também não.
+- **O dia se enche pelos MAIS PRÓXIMOS, não pelos mais valiosos.** A prioridade decide *para onde ir*
+  (a semente/região); chegando lá, visita-se quem está ao lado. Preencher por prioridade dava dias
+  cheios e horríveis: 6 visitas espalhadas em 150km. Depois da mudança, raio médio em SP caiu de
+  ~135km para 4–6km.
+- **Rep sem cluster de 4 não recebe rota** (`rota_possivel:false` + `aviso`, mensagem vazia). São 32
+  dos 84 reps — a carteira apta existe mas está espalhada. Para eles visita não é o instrumento.
+  O painel mostra o motivo e **não** oferece caixa de texto nem botão de envio.
 - **A semana mora numa região só**: mesma UF e dentro de `RAIO_SEMANA_KM` da âncora, e cada dia
   começa onde o anterior terminou. Segunda em SP, terça no RJ e quarta em SP de novo não é rota.
 - **A âncora é o centro da melhor semana, não o maior cliente.** Escolher pelo faturamento dava

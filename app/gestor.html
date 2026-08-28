@@ -1560,17 +1560,36 @@
       var por={};rs.forEach(function(r){var k=r.trava;if(!por[k])por[k]={t:k,txt:r.trava_txt,ac:r.acao,quem:r.quem,rec:r.recupera,g:r.gravidade,n:0};por[k].n+=(+r.linhas||0);});
       var gs=Object.keys(por).map(function(k){return por[k];});
       gs.sort(function(a,b){return (a.g-b.g)||(b.n-a.n);});
-      var h='<div style="border-bottom:1px solid var(--line);padding:9px 12px;background:#fffdf7">'
-        +'<div class="note" style="margin-bottom:6px"><b>🚧 Pendências desta campanha</b> — resolva cada motivo: reenviar (se fizer sentido) ou cancelar para sair da lista.</div>';
-      gs.forEach(function(g){
-        h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:5px 0;border-top:1px solid #f0eee6">'
-          +'<b style="min-width:34px;font-size:15px">'+g.n+'</b>'
-          +'<span style="font-size:12.5px;flex:1;min-width:220px">'+esc(g.txt)+'<div class="note">✔ '+esc(g.ac)+'</div></span>'
-          +(g.rec?('<button class="btn ok" style="padding:3px 9px;font-size:11.5px" onclick="pendReenviar(\''+g.t+'\','+g.n+')">↻ reenviar os '+g.n+'</button>')
-                 :('<span class="note" style="color:#b7791f;font-size:11px">reenviar não resolve</span>'))
-          +'<button class="btn" style="padding:3px 9px;font-size:11.5px" onclick="pendCancelar(\''+g.t+'\','+g.n+')">✖ cancelar os '+g.n+'</button>'
-          +'</div>';});
-      box.innerHTML=h+'</div>';});}
+      /* DUAS COISAS DIFERENTES PEDEM LISTAS DIFERENTES. Tudo caia no mesmo bloco de "Pendencias", e
+         como a fila_trava classificava linha cancelada como "Erro nao classificado", 313 linhas que
+         a gestao JA decidiu cancelar apareciam como problema sem diagnostico: a tela dizia que a
+         campanha estava travada quando nao havia nada a resolver. Agora gravidade <=5 e problema
+         (pede decisao) e >=8 e estado ja decidido ou normal (cancelada, na fila, saindo agora), que
+         vai para um rodape discreto — ainda reenviavel, para quem mudar de ideia. */
+      var prob=gs.filter(function(g){return (g.g==null?9:g.g)<=5;});
+      var quieto=gs.filter(function(g){return (g.g==null?9:g.g)>=8;});
+      var h="";
+      if(prob.length){
+        h+='<div style="border-bottom:1px solid var(--line);padding:9px 12px;background:#fffdf7">'
+          +'<div class="note" style="margin-bottom:6px"><b>🚧 Pendências desta campanha</b> — resolva cada motivo: reenviar (se fizer sentido) ou cancelar para sair da lista.</div>';
+        prob.forEach(function(g){
+          h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:5px 0;border-top:1px solid #f0eee6">'
+            +'<b style="min-width:34px;font-size:15px">'+g.n+'</b>'
+            +'<span style="font-size:12.5px;flex:1;min-width:220px">'+esc(g.txt)+'<div class="note">✔ '+esc(g.ac)+'</div></span>'
+            +(g.rec?('<button class="btn ok" style="padding:3px 9px;font-size:11.5px" onclick="pendReenviar(\''+g.t+'\','+g.n+')">↻ reenviar os '+g.n+'</button>')
+                   :('<span class="note" style="color:#b7791f;font-size:11px">reenviar não resolve</span>'))
+            +'<button class="btn" style="padding:3px 9px;font-size:11.5px" onclick="pendCancelar(\''+g.t+'\','+g.n+')">✖ cancelar os '+g.n+'</button>'
+            +'</div>';});
+        h+='</div>';}
+      if(quieto.length){
+        h+='<div style="border-bottom:1px solid var(--line);padding:6px 12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">';
+        if(!prob.length)h+='<span class="note" style="color:#2f7a55">\u2714 <b>nada pendente</b> nesta campanha</span>';
+        quieto.forEach(function(g){
+          h+='<span class="note" style="font-size:11.5px"><b>'+g.n+'</b> '+esc(String(g.txt||g.t).toLowerCase())
+            +(g.t==="cancelado"?(' <button class="btn" style="padding:1px 7px;font-size:11px" onclick="pendReenviar(\''+g.t+'\','+g.n+')">\u21BB reenviar</button>'):'')
+            +'</span>';});
+        h+='</div>';}
+      box.innerHTML=h;});}
   function pendReenviar(t,n){
     if(!confirm("Reenviar "+n+" linha(s) deste motivo?\n\nElas voltam para pendente e saem na cadência. Se a causa não foi corrigida, vão falhar igual."))return;
     filaAcao({acao:"reenviar",trava:t,filtro:{campanha:CUR},quem:"painel",motivo:"reenvio da pendencia "+t});}

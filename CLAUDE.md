@@ -30,10 +30,15 @@ renomear exigiria migrar linhas e funções sem ganho para quem lê a tela.
 2. **Não desligar a chave de Zaptos (`wpp_ativo`) por hábito.** Ela não é ferramenta de
    diagnóstico. Quando algo precisa parar, pare *o que está errado* — a campanha, a instância —
    não a fila inteira.
-3. **Campanha de cliente não vai para representante.** A aba aberta manda no público
+3. **NÃO travar campanha no painel.** Dito em 28/08: não cancelar linha, não desligar chave, não
+   marcar campanha como inativa por conta própria. Achou problema? **Reporta e deixa correndo** —
+   quem decide parar é o gestor. Continuam automáticos e permitidos apenas: a trava de duplicidade
+   no enfileirar e a pausa da instância que cai (o GHL aceita e o Zaptos não entrega — sem isso a
+   linha viraria "enviado" mentindo).
+4. **Campanha de cliente não vai para representante.** A aba aberta manda no público
    (`publicoAtivo()`); nenhum representante nasce marcado.
-4. **Teto de 2 mensagens por minuto por instância** (`fila_config.wpp_max_min`).
-5. **Horários da tela são de São Paulo**, fixo, não do navegador (`hl()`).
+5. **Teto de 2 mensagens por minuto por instância** (`fila_config.wpp_max_min`).
+6. **Horários da tela são de São Paulo**, fixo, não do navegador (`hl()`).
 
 ## Coisas que já custaram caro — não redescubra
 
@@ -86,7 +91,10 @@ renomear exigiria migrar linhas e funções sem ganho para quem lê a tela.
 
 ## Estado conhecido (28/08/2026)
 
-- **Zaptos da instância "Campanhas Nitron" está RESTRINGIDO pelo WhatsApp.** Sem previsão. A fila de
-  Zaptos está desligada por causa disso — é exceção, não hábito.
+- **Zaptos da instância "Campanhas Nitron" está RESTRINGIDO pelo WhatsApp.** Sem previsão. A fila
+  segue LIGADA; a restrição está registrada como pausa dessa instância (`instancia_ghl.pausada_em`).
+  As outras seis instâncias trabalham normalmente.
+- **Clube a vencer / distrato está em STAND BY** (`ativa=false`) desde 28/08, por decisão do gestor.
+- **Reativação 180 dias** só volta quando o gestor mandar; as 43 linhas restantes estão canceladas.
 - 9 das 13 campanhas ativas são só Zaptos; 4 aceitam e-mail. 77 de 79 representantes têm e-mail,
   e 5.969 clientes também.

@@ -52,6 +52,23 @@ renomear exigiria migrar linhas e funções sem ganho para quem lê a tela.
   `campanhas.filtros_padrao->>'clube_venc_dias'`. Textos de trava: tabela `fila_trava_motivo`.
   Motivo: mudaram duas vezes num dia, e duplicar em duas funções deixa tela e disparo discordando.
 
+## Roteiro de visitas — regras que vieram da operação
+
+- **Uma semana, no máximo** (`DIAS_SEMANA = 5`, 6 visitas/dia). Rota de 20 dias ninguém executa.
+- **A semana mora numa região só**: mesma UF e dentro de `RAIO_SEMANA_KM` da âncora, e cada dia
+  começa onde o anterior terminou. Segunda em SP, terça no RJ e quarta em SP de novo não é rota.
+- **A âncora é o centro da melhor semana, não o maior cliente.** Escolher pelo faturamento dava
+  semana de 9 visitas para quem tem carteira espalhada (DENIZE: 181 contas em 19 UFs).
+- **Quem entra é quem fechou o PRÓPRIO ciclo** (`dias >= contato_enriquecido.giro`, 30 a 90 dias
+  conforme o cliente) — não um limite fixo. Fora: pedido em aberto (`saldo_entregar > 0`),
+  inadimplente, título vencido e **bloqueado no Sankhya** (`parc_bloqueado`, de `TGFPAR.BLOQUEAR`).
+- **`roteiro_cliente.uf` é o CODUF numérico do Sankhya** (1=SP, 2=MG, 7=RJ, 9=PA…), não a sigla.
+- O filtro mora na **view** `roteiro_cliente_apto`, não na função, para tela e disparo contarem a
+  mesma audiência.
+- **Tom ao representante:** ele já atende esses clientes e conhece a praça melhor que nós. A
+  mensagem se apresenta como sugestão montada de fora, diz que ele pode ignorar, e oferece apoio.
+  Nunca cobra visita, prazo ou resultado.
+
 ## Segurança — restrições dadas pelo gestor
 
 - **Nunca colar chave de API no chat.**

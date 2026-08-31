@@ -50,6 +50,10 @@ renomear exigiria migrar linhas e funções sem ganho para quem lê a tela.
   `#contact_instance:<token>` governa só a entrada. Sem dono, a mensagem não sai.
 - **`SUPABASE_SERVICE_ROLE_KEY` vem com valor `sb_secret_`** que o PostgREST recusa (PGRST303).
   Toda função usa `const srvKey = () => Deno.env.get("SRV_JWT") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";`
+- **Chave de serviço escrita no código: já não há em `campanhas-saldo` nem em
+  `campanhas-keyaccounts`.** As duas carregavam um JWT `service_role` literal como fallback do
+  SRV_JWT — chave de administrador do banco, no fonte, válida por anos. Retiradas em 31/08; as duas
+  usam `srvKey()` como todo o resto. Se aparecer outra, tire: a variável SRV_JWT existe e funciona.
 - **Publicar o painel:** `POST host-upload?path=gestor.html` com o **HTML cru no corpo** e o caminho
   na query — não JSON. **Confira o md5 publicado antes de subir:** há outro chat editando o mesmo
   arquivo, e sobrescrever o trabalho dele já aconteceu.
@@ -60,15 +64,32 @@ renomear exigiria migrar linhas e funções sem ganho para quem lê a tela.
   manuais estão desligados desde 28/08.
 - **Todo cliente citado ao representante leva o CNPJ, em linha própria.** Pedido do gestor em
   28/08: por nome fantasia ou razão social o rep não acha o cliente no sistema dele; pelo CNPJ acha.
-  Vale nas cinco listas (Clube, voucher, giro, motor e roteiro de visitas). O documento vem de
-  `contato_enriquecido.cnpj` / `roteiro_cliente_apto.cnpj` — 14 dígitos crus, alguns cadastros são
-  CPF e um cliente do Uruguai tem RUT de 12; `fmtDoc()` rotula cada caso e omite a linha quando não
-  há documento. Duas regras que a consolidação por rede impôs: **nome e CNPJ são sempre da mesma
-  loja** (a lista agrupa por matriz, mas em 5 dos 13 grupos do giro vencido a matriz não está na
-  lista — usar o codparc da matriz dava nome de uma loja com o documento de outra), e quando a linha
-  resume mais de uma loja o texto marca `(desta loja)`. No Clube o CNPJ é o da **matriz do
-  contrato**, e esse sufixo só aparece nos 18 dos 68 grupos que de fato têm mais de uma loja —
-  dizê-lo nos outros 50 mandaria o rep procurar uma rede que não existe.
+  Vale em **toda** comunicação interna, não só nas campanhas — o gestor cobrou isso explicitamente
+  ("em todas as comunicações que mandamos para os representantes"). Onde está: `campanhas-disparar`
+  (Clube, voucher, giro, motor), `campanhas-roteiro`, `campanhas-preview` (a prévia da tela),
+  `campanhas-bulk` (os cinco pipes operáveis), `campanhas-saldo`, `campanhas-prep`,
+  `campanhas-cobranca`, `campanhas-retorno`, `campanhas-agendar`, `campanhas-redes` e
+  `campanhas-keyaccounts`. **Na mensagem AO CLIENTE não entra**: ali seria o documento dele mesmo.
+  O documento vem de `contato_enriquecido.cnpj` (ou `roteiro_cliente_apto.cnpj` / `ghl_cliente.cnpj`)
+  — 14 dígitos crus, alguns cadastros são CPF e um cliente do Uruguai tem RUT de 12; `fmtDoc()`
+  rotula cada caso e omite a linha quando não há documento.
+- **A IA NUNCA escreve o CNPJ, e não escreve mais a lista de clientes.** Onde a mensagem era escrita
+  inteira pela IA a partir do contexto (cobrança, retorno, agendar), ela reescrevia nome, valor e
+  número de pedido — com CNPJ isso passa a ser inaceitável: um dígito trocado manda o rep para outra
+  empresa. Agora a IA escreve só o texto em volta e o marcador `[LISTA]`; a lista entra depois,
+  montada em código, e sem o marcador cai no modelo fixo. Efeito colateral bom: os nomes das lojas
+  pararam de sair abreviados ("Suzano" onde é "SUPER SHOPPING DA UTILIDADE SUZANO"). No
+  `campanhas-keyaccounts`, que é texto corrido sobre uma conta só, a identificação vai **anexada** no
+  fim e o prompt proíbe a IA de escrever documento.
+- **A prévia da tela e a mensagem leem a MESMA regra.** Em 31/08 o gestor conferiu a prévia e não viu
+  CNPJ: a mensagem já trazia, mas a prévia monta a lista com regra própria (`bulletEx()` no painel) e
+  o `campanhas-preview` não devolvia o dado. Agora o preview devolve `doc` **pronto** — máscara e
+  sufixo incluídos — e a tela só imprime. Se o sufixo mudar na função, a tela acompanha sozinha.
+- **Nome e CNPJ são sempre da mesma loja.** As listas consolidam por matriz, mas a matriz nem sempre
+  está na lista (5 dos 13 grupos do giro vencido): usar o codparc da matriz dava nome de uma loja com
+  o documento de outra. Quando a linha resume mais de uma loja, o texto marca `(desta loja)`. No
+  Clube o CNPJ é o da **matriz do contrato**, e esse sufixo só aparece nos 18 dos 68 grupos que de
+  fato têm mais de uma loja — dizê-lo nos outros 50 mandaria o rep procurar uma rede que não existe.
 - **A fila barra duplicidade** (`fila-enfileirar` v18): mesmo `(campanha, canal, destino)` no mesmo
   pedido, ou já pendente/entregue nas últimas `ANTI_DUP_HORAS` (12). O destino é normalizado —
   `11970399053` e `+5511970399053` são o mesmo WhatsApp. Antes, três cliques mandavam três vezes.

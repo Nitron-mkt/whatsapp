@@ -1,4 +1,12 @@
-// campanhas-retorno (v4) — entregas que voltaram CONSOLIDADAS POR MATRIZ (parc_matriz): 1 card por rede com todas as NFs das lojas. ?grupo=<matriz>&publico=cliente|rep manda p/ UM contato central listando todas as entregas. ?msg=nunota (single) mantido.
+// campanhas-retorno (v6) — CNPJ NA LISTA DE NFs QUE VAI AO REPRESENTANTE, e a lista deixa de ser
+// escrita pela IA. Duas coisas ligadas:
+//   1. Pedido do gestor: por nome fantasia ou razao social o rep nao acha o cliente no sistema dele;
+//      pelo CNPJ acha. Aqui cada linha e uma loja da rede, e o documento diz qual.
+//   2. Antes a IA recebia a lista pronta no contexto e a REESCREVIA. Com CNPJ isso e inaceitavel: um
+//      digito trocado manda o rep para outra empresa. Agora a IA escreve so o texto em volta e o
+//      marcador [LISTA]; a lista entra depois, em codigo. Sem o marcador, cai no modelo fixo.
+// campanhas-retorno (v5) — entregas que voltaram CONSOLIDADAS POR MATRIZ (parc_matriz): 1 card por rede com todas as NFs das lojas. ?grupo=<matriz>&publico=cliente|rep manda p/ UM contato central listando todas as entregas. ?msg=nunota (single) mantido.
+// v5: filtro de empresa nas leituras de snap_contato e snap_rep. Ver a nota acima de contatosRede.
 // v4: a instancia vem da view rep_instancia (proprietario do contato no CRM, com o organograma do
 // Sankhya por ID como fallback), nao de snap_rep.assistente casado por nome.
 // v3: chave de servico via SRV_JWT (a SUPABASE_SERVICE_ROLE_KEY injetada pela plataforma virou sb_secret_ e o PostgREST recusa) + tom de parceria com o representante.
@@ -11,11 +19,33 @@ const MODELO = "claude-haiku-4-5-20251001";
 const lj = (n: any) => (Number(n) > 1 ? ` (${n} lojas)` : "");
 const srvKey = () => Deno.env.get("SRV_JWT") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const detalhar = (e: any) => { if (!e) return "erro sem detalhe"; if (typeof e === "string") return e; const p = [e.message, e.code, e.details, e.hint].filter(Boolean).join(" | "); return p || String(e); };
+/* CNPJ crus de 14 digitos do Sankhya. Ha cadastro com CPF (11) e um cliente do Uruguai com RUT de
+   12: o rotulo muda, porque chamar CPF de CNPJ e erro visivel para quem le. */
+function fmtDoc(d: any) {
+  const x = digits(d);
+  if (x.length === 14) return "CNPJ " + x.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
+  if (x.length === 11) return "CPF " + x.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
+  return x ? ("doc " + x) : "";
+}
+async function docMap(sb: any, codps: any[]): Promise<Record<string, string>> {
+  const by: Record<string, string> = {};
+  const u = Array.from(new Set(codps.map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0)));
+  for (let i = 0; i < u.length; i += 300) {
+    const { data } = await sb.from("contato_enriquecido").select("codparc,cnpj").in("codparc", u.slice(i, i + 300));
+    (data || []).forEach((r: any) => { const d = fmtDoc(r.cnpj); if (d) by[String(r.codparc)] = d; });
+  }
+  return by;
+}
+// Se a IA repetir o marcador, a lista inteira sairia duas vezes. Mantem so a ultima ocorrencia.
+function umaListaSo(t: string) { const partes = String(t || "").split(/\[LISTA\]/i); if (partes.length <= 2) return String(t || ""); return partes.slice(0, -1).join("lista") + "[LISTA]" + partes[partes.length - 1]; }
+const temLista = (t: string) => /\[LISTA\]/i.test(String(t || ""));
 async function matrizMap(sb: any): Promise<Map<number, number>> { const m = new Map(); let f = 0; while (true) { const { data } = await sb.from("parc_matriz").select("codparc,matriz").range(f, f + 999); (data || []).forEach((r: any) => m.set(Number(r.codparc), Number(r.matriz))); if (!data || data.length < 1000) break; f += 1000; } return m; }
 const gk = (mtz: Map<number, number>, cp: any) => mtz.get(Number(cp)) || Number(cp);
 async function claude(sys: string, user: string): Promise<string | null> { const key = Deno.env.get("ANTHROPIC_API_KEY"); if (!key) return null; try { const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" }, body: JSON.stringify({ model: MODELO, max_tokens: 600, temperature: 0.7, system: sys, messages: [{ role: "user", content: user }] }) }); if (!r.ok) return null; return (await r.json())?.content?.[0]?.text || null; } catch { return null; } }
 function pushCanal(out: any[], seen: any, canal: string, valor: any, funcao: string, origem: string) { const v = String(valor || "").trim(); if (!v) return; const k = canal + "|" + (canal === "email" ? v.toLowerCase() : digits(v).replace(/^0+/, "").replace(/^55/, "")); if (seen[k]) return; seen[k] = 1; out.push({ canal, valor: v, funcao, origem }); }
-async function contatosRede(sb: any, memArr: number[], out: any[], seen: any) { const { data: sc } = await sb.from("snap_contato").select("*").in("codparc", memArr); const { data: gc } = await sb.from("ghl_contato").select("nome,fone,email").in("codparc", memArr); (sc || []).forEach((ct: any) => { pushCanal(out, seen, "whatsapp", ct.fone, ct.funcao || "Contato", "Sankhya"); pushCanal(out, seen, "email", ct.email, ct.funcao || "Contato", "Sankhya"); }); (gc || []).forEach((g: any) => { pushCanal(out, seen, "whatsapp", g.fone, "CRM", "CRM"); pushCanal(out, seen, "email", g.email, "CRM", "CRM"); }); }
+// .eq(empresa): esta funcao e da Nitron e snap_contato passou a ter mais de uma empresa. CODPARC e
+// GLOBAL no Sankhya — o 1 e o 78701, por exemplo, existem na Nitron E na Teak.
+async function contatosRede(sb: any, memArr: number[], out: any[], seen: any) { const { data: sc } = await sb.from("snap_contato").select("*").eq("empresa", "nitron").in("codparc", memArr); const { data: gc } = await sb.from("ghl_contato").select("nome,fone,email").in("codparc", memArr); (sc || []).forEach((ct: any) => { pushCanal(out, seen, "whatsapp", ct.fone, ct.funcao || "Contato", "Sankhya"); pushCanal(out, seen, "email", ct.email, ct.funcao || "Contato", "Sankhya"); }); (gc || []).forEach((g: any) => { pushCanal(out, seen, "whatsapp", g.fone, "CRM", "CRM"); pushCanal(out, seen, "email", g.email, "CRM", "CRM"); }); }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -36,9 +66,12 @@ Deno.serve(async (req) => {
       const lojasN = new Set(membros.map((m: any) => Number(m.codparc))).size;
       const memArr = Array.from(new Set(membros.map((m: any) => Number(m.codparc))));
       const valTot = membros.reduce((a: number, b: any) => a + (Number(b.valor) || 0), 0);
-      const notas = membros.slice().sort((a: any, b: any) => Number(b.valor) - Number(a.valor)).map((c: any) => ({ nunota: c.nunota, loja: c.cliente, valor: Math.round(c.valor), valor_fmt: brl(c.valor), motivo: c.motivo, data: c.data_retorno }));
-      const bd = notas.map((n: any) => `• ${n.loja} — NF ${n.nunota} (${n.data || ""}) ${n.valor_fmt}${n.motivo ? " · " + n.motivo : ""}`);
-      let repRow: any = null; if (sede.codvend != null) { const { data: rr } = await sb.from("snap_rep").select("*").eq("codvend", sede.codvend).maybeSingle(); repRow = rr; }
+      // documento so na lista AO REP: ao cliente seria o CNPJ dele proprio
+      const DOC = publico === "rep" ? await docMap(sb, memArr) : {};
+      const notas = membros.slice().sort((a: any, b: any) => Number(b.valor) - Number(a.valor)).map((c: any) => ({ nunota: c.nunota, loja: c.cliente, doc: DOC[String(c.codparc)] || "", valor: Math.round(c.valor), valor_fmt: brl(c.valor), motivo: c.motivo, data: c.data_retorno }));
+      const bd = notas.map((n: any) => "• " + n.loja + (n.doc ? ("\n  " + n.doc) : "")
+        + `\n  NF ${n.nunota} (${n.data || ""}) ${n.valor_fmt}${n.motivo ? " · " + n.motivo : ""}`);
+      let repRow: any = null; if (sede.codvend != null) { const { data: rr } = await sb.from("snap_rep").select("*").eq("empresa", "nitron").eq("codvend", sede.codvend).maybeSingle(); repRow = rr; }
       // A instancia vem da view rep_instancia (proprietario no CRM, com o organograma do Sankhya por
       // ID como fallback). snap_rep.assistente e nome casado por nome do organograma: dizia quem
       // DEVERIA atender, nao por qual numero a mensagem sai.
@@ -49,13 +82,22 @@ Deno.serve(async (req) => {
       else { if (!repRow) aviso = "rep sem contato no snapshot"; else { pushCanal(out, seen, "whatsapp", repRow.celular, "Rep", "Sankhya"); pushCanal(out, seen, "whatsapp", repRow.fone_parc, "Rep", "Sankhya"); pushCanal(out, seen, "email", repRow.email, "Rep", "Sankhya"); pushCanal(out, seen, "email", repRow.email_crm, "Rep", "CRM"); } }
       const rede = lojasN > 1;
       const nomeGrupo = String(sede.cliente) + lj(lojasN);
-      const ctx = `${rede ? "Rede" : "Cliente"} ${nomeGrupo} (matriz cod ${g}). ${membros.length} entrega(s) que VOLTARAM (nao entregues), total ${brl(valTot)}${rede ? (", em " + lojasN + " lojas") : ""}. Detalhe:\n${bd.join("\n")}. Representante ${sede.rep}.`;
+      /* Ao rep o contexto NAO leva a lista: ela entra depois, em codigo. Levar a lista no prompt era
+         o convite para a IA reescrever numero de NF, valor e agora CNPJ. */
+      const ctxBase = `${rede ? "Rede" : "Cliente"} ${nomeGrupo} (matriz cod ${g}). ${membros.length} entrega(s) que VOLTARAM (nao entregues), total ${brl(valTot)}${rede ? (", em " + lojasN + " lojas") : ""}. Representante ${sede.rep}.`;
+      const ctx = publico === "cliente" ? (ctxBase + ` Detalhe:\n${bd.join("\n")}`) : ctxBase;
       let sys = "";
       if (publico === "cliente") sys = `Voce e o comercial/logistica da Nitronplast. ${rede ? membros.length + " entregas da REDE " + sede.cliente + " voltaram" : "Uma entrega voltou"} sem ser entregue. Escreva UMA mensagem CORDIAL ao contato central ${rede ? "da rede" : "do cliente"}: avise com transparencia, peca desculpas breves e combine a REPROGRAMACAO de ${rede ? "todas as entregas (pode listar as NFs)" : "a entrega"} — pergunte o melhor dia/janela. NAO culpe o cliente. Curta, pt-BR. So a mensagem.`;
-      else sys = `Voce fala em nome da Nitronplast COM o representante, que e PARCEIRO nosso. TOM (obrigatorio): comece cumprimentando pelo primeiro nome dele e perguntando como ele esta ("Oi ${sede.rep}, tudo bem?"). Avise que ${rede ? membros.length + " entregas da rede " + sede.cliente + " voltaram" : "uma entrega de um cliente dele voltou"} (detalhe no contexto) — isso e um aviso para ele NAO ser pego de surpresa pelo cliente, e nao uma tarefa nem uma pendencia dele. Diga que a logistica ja esta olhando e que podemos falar com o contato do cliente junto com ele ou no lugar dele, como ele preferir. TERMINE oferecendo ajuda concreta e com uma pergunta aberta, no espirito de "o que podemos fazer para te ajudar a destravar isso?". PROIBIDO cobrar, exigir, impor prazo ao rep, escrever "peca que", "voce precisa", "e importante que voce", falar de meta ou insinuar que ele esta atrasado. Curta, pt-BR. So a mensagem.`;
-      const fallbackRep = `Oi ${String(sede.rep || "").split(" ")[0] || "tudo bem"}, tudo bem?\n\nSo passando um aviso para voce nao ser pego de surpresa: ${membros.length} entrega(s) de ${nomeGrupo} voltaram sem ser entregues (${brl(valTot)}).\n\n${bd.join("\n")}\n\nA logistica ja esta olhando. Se voce preferir, a gente fala direto com o contato do cliente para reprogramar — ou vamos junto com voce, do jeito que funcionar melhor. O que podemos fazer para te ajudar a destravar isso?`;
-      const fallback = publico === "rep" ? fallbackRep : "(nao foi possivel gerar)";
-      const mensagem = (await claude(sys, "Contexto: " + ctx)) || fallback;
+      else sys = `Voce fala em nome da Nitronplast COM o representante, que e PARCEIRO nosso. TOM (obrigatorio): comece cumprimentando pelo primeiro nome dele e perguntando como ele esta ("Oi ${sede.rep}, tudo bem?"). Avise que ${rede ? membros.length + " entregas da rede " + sede.cliente + " voltaram" : "uma entrega de um cliente dele voltou"} — isso e um aviso para ele NAO ser pego de surpresa pelo cliente, e nao uma tarefa nem uma pendencia dele. Diga que a logistica ja esta olhando e que podemos falar com o contato do cliente junto com ele ou no lugar dele, como ele preferir. TERMINE oferecendo ajuda concreta e com uma pergunta aberta, no espirito de "o que podemos fazer para te ajudar a destravar isso?". FORMATO OBRIGATORIO: NAO escreva a lista de entregas. No lugar dela escreva o marcador literal [LISTA], em linha propria, exatamente uma vez — o sistema substitui pela lista real (loja, CNPJ, NF, valor). NUNCA invente numero de NF, valor, CNPJ ou nome de loja. PROIBIDO cobrar, exigir, impor prazo ao rep, escrever "peca que", "voce precisa", "e importante que voce", falar de meta ou insinuar que ele esta atrasado. Curta, pt-BR. So a mensagem.`;
+      const fallbackRep = `Oi ${String(sede.rep || "").split(" ")[0] || "tudo bem"}, tudo bem?\n\nSo passando um aviso para voce nao ser pego de surpresa: ${membros.length} entrega(s) de ${nomeGrupo} voltaram sem ser entregues (${brl(valTot)}).\n\n[LISTA]\n\nA logistica ja esta olhando. Se voce preferir, a gente fala direto com o contato do cliente para reprogramar — ou vamos junto com voce, do jeito que funcionar melhor. O que podemos fazer para te ajudar a destravar isso?`;
+      const bruto = await claude(sys, "Contexto: " + ctx);
+      let mensagem: string;
+      if (publico === "rep") {
+        const modelo = temLista(umaListaSo(bruto || "")) ? umaListaSo(bruto || "") : fallbackRep;
+        mensagem = modelo.replace(/\[LISTA\]/gi, bd.join("\n"));
+      } else {
+        mensagem = bruto || "(nao foi possivel gerar)";
+      }
       return j({ codparc: g, nunota: sede.nunota, nome: nomeGrupo, lojas: lojasN, publico, instancia, instancia_erp: riRow?.instancia_erp || null, divergente: !!riRow?.divergente, contatos: out, aviso, mensagem, valor: brl(valTot), notas });
     }
 

@@ -58,6 +58,17 @@ renomear exigiria migrar linhas e funções sem ganho para quem lê a tela.
   eles. Em 27/08, 6 dos 10 Zaptos e 4 dos 11 e-mails do Clube a vencer foram para contato interno.
   Regra que os identifica: **o mesmo valor em mais de um rep não é contato daquele rep.** Todos os
   manuais estão desligados desde 28/08.
+- **Todo cliente citado ao representante leva o CNPJ, em linha própria.** Pedido do gestor em
+  28/08: por nome fantasia ou razão social o rep não acha o cliente no sistema dele; pelo CNPJ acha.
+  Vale nas cinco listas (Clube, voucher, giro, motor e roteiro de visitas). O documento vem de
+  `contato_enriquecido.cnpj` / `roteiro_cliente_apto.cnpj` — 14 dígitos crus, alguns cadastros são
+  CPF e um cliente do Uruguai tem RUT de 12; `fmtDoc()` rotula cada caso e omite a linha quando não
+  há documento. Duas regras que a consolidação por rede impôs: **nome e CNPJ são sempre da mesma
+  loja** (a lista agrupa por matriz, mas em 5 dos 13 grupos do giro vencido a matriz não está na
+  lista — usar o codparc da matriz dava nome de uma loja com o documento de outra), e quando a linha
+  resume mais de uma loja o texto marca `(desta loja)`. No Clube o CNPJ é o da **matriz do
+  contrato**, e esse sufixo só aparece nos 18 dos 68 grupos que de fato têm mais de uma loja —
+  dizê-lo nos outros 50 mandaria o rep procurar uma rede que não existe.
 - **A fila barra duplicidade** (`fila-enfileirar` v18): mesmo `(campanha, canal, destino)` no mesmo
   pedido, ou já pendente/entregue nas últimas `ANTI_DUP_HORAS` (12). O destino é normalizado —
   `11970399053` e `+5511970399053` são o mesmo WhatsApp. Antes, três cliques mandavam três vezes.

@@ -1,3 +1,8 @@
+// campanhas-roteiro (v21) — CNPJ EM TODA MENCAO A CLIENTE. O representante acha o cliente pelo CNPJ
+// no sistema dele, nao pelo nome fantasia: a razao social do Sankhya nem sempre e o nome da placa, e
+// nome parecido entre lojas da mesma rede leva a visita errada. Em linha de rede consolidada o nome
+// e o CNPJ sao SEMPRE da mesma loja, e o texto marca "(desta loja)" — senao o rep leria o CNPJ como
+// se cobrisse o grupo todo e procuraria a loja errada.
 // campanhas-roteiro (v20) — OS PARAMETROS DA ROTA VIERAM PARA O BANCO:
 // campanhas.filtros_padrao de rep_roteiro_visitas manda em roteiro_max_km (raio do dia, agora 100 —
 // era 150 e o gestor cortou), roteiro_min_dia (4), roteiro_vis_dia (6), roteiro_dias_semana (5) e
@@ -46,6 +51,15 @@ const j = (o: unknown, s = 200) => new Response(JSON.stringify(o), { status: s, 
 const brl = (v: any) => "R$ " + Math.round(Number(v) || 0).toLocaleString("pt-BR");
 const digits = (s: any) => String(s || "").replace(/\D/g, "");
 const cep8 = (c: any) => digits(c).slice(0, 8);
+/* CNPJ chega do Sankhya como 14 digitos crus. Formatado para o rep poder ler e copiar direto no
+   sistema dele. Alguns cadastros sao CPF (7 casos): 11 digitos, mascara e rotulo diferentes — chamar
+   CPF de CNPJ na mensagem seria um erro visivel para quem recebe. */
+function fmtDoc(d: any) {
+  const x = String(d || "").replace(/\D/g, "");
+  if (x.length === 14) return "CNPJ " + x.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
+  if (x.length === 11) return "CPF " + x.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
+  return x ? ("doc " + x) : "";
+}
 function fmtCep(c: any) { const d = digits(c); return d.length === 8 ? d.slice(0, 5) + "-" + d.slice(5) : (c || ""); }
 function haversine(a: any, b: any) { const R = 6371, tr = (x: number) => x * Math.PI / 180; const dLat = tr(b.lat - a.lat), dLng = tr(b.lng - a.lng); const s = Math.sin(dLat / 2) ** 2 + Math.cos(tr(a.lat)) * Math.cos(tr(b.lat)) * Math.sin(dLng / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(s)); }
 const cep3 = (cepn: number) => Math.floor((cepn || 0) / 100000);
@@ -80,7 +94,7 @@ function gkeyOf(c: any) { const m = Number(c.codparcmatriz) || 0; return (m > 0 
 function agrupar(rows: any[]) {
   const by: Record<string, any[]> = {}; rows.forEach((c) => { const k = String(gkeyOf(c)); (by[k] = by[k] || []).push(c); });
   const nodes: any[] = [];
-  for (const k in by) { const membros = by[k]; let sede = membros.find((m) => Number(m.codparc) === Number(k)); if (!sede) sede = membros.slice().sort((a, b) => Number(b.fat12m) - Number(a.fat12m))[0]; const fat = membros.reduce((a, b) => a + (Number(b.fat12m) || 0), 0); const clube = membros.reduce((a, b) => a + (Number(b.clube_saldo) || 0), 0); const dias = Math.min(...membros.map((m) => Number(m.dias) || 9999)); const giro = Math.min(...membros.map((m) => Number(m.giro) || 9999)); nodes.push({ codparc: sede.codparc, gkey: Number(k), nome: sede.nome, cep: sede.cep, cidade: sede.cidade, uf: sede.uf, codvend: sede.codvend, rep: sede.rep, fat12m: fat, dias, giro: (giro === 9999 ? null : giro), clube_saldo: clube, lojas: membros.length }); }
+  for (const k in by) { const membros = by[k]; let sede = membros.find((m) => Number(m.codparc) === Number(k)); if (!sede) sede = membros.slice().sort((a, b) => Number(b.fat12m) - Number(a.fat12m))[0]; const fat = membros.reduce((a, b) => a + (Number(b.fat12m) || 0), 0); const clube = membros.reduce((a, b) => a + (Number(b.clube_saldo) || 0), 0); const dias = Math.min(...membros.map((m) => Number(m.dias) || 9999)); const giro = Math.min(...membros.map((m) => Number(m.giro) || 9999)); nodes.push({ codparc: sede.codparc, gkey: Number(k), nome: sede.nome, cnpj: sede.cnpj, cep: sede.cep, cidade: sede.cidade, uf: sede.uf, codvend: sede.codvend, rep: sede.rep, fat12m: fat, dias, giro: (giro === 9999 ? null : giro), clube_saldo: clube, lojas: membros.length }); }
   return nodes;
 }
 function pushCanal(out: any[], seen: any, canal: string, valor: any, origem: string) { const v = String(valor || "").trim(); if (!v) return; const k = canal + "|" + (canal === "email" ? v.toLowerCase() : digits(v).replace(/^0+/, "").replace(/^55/, "")); if (seen[k]) return; seen[k] = 1; out.push({ canal, valor: v, funcao: "Rep", origem }); }
@@ -198,7 +212,7 @@ function montar(rep: number, rows: any[], sr: any, geo: Map<string, any>, ri: an
       cidade_base: semente.cidade, uf: semente.uf,
       raio_km: Math.max(...kmsDia.map((k: any) => k == null ? 0 : k)),
       clientes: grupo.map((n: any, k: number) => ({
-        ordem: k + 1, codparc: n.codparc, nome: n.nome, cidade: n.cidade, cep: fmtCep(n.cep), uf: n.uf,
+        ordem: k + 1, codparc: n.codparc, nome: n.nome, cnpj: n.cnpj || null, doc: fmtDoc(n.cnpj), cidade: n.cidade, cep: fmtCep(n.cep), uf: n.uf,
         km: (n.lat != null && semente.lat != null) ? Math.round(dist(semente, n)) : null,
         fat: Math.round(n.fat12m), fat_fmt: brl(n.fat12m), dias: n.dias, giro: n.giro,
         clube_saldo: Number(n.clube_saldo) || 0, lojas: n.lojas,
@@ -250,8 +264,12 @@ function montar(rep: number, rows: any[], sr: any, geo: Map<string, any>, ri: an
     msg += "\n\u2501\u2501\u2501 DIA " + d.dia + " \u00b7 " + (d.cidade_base || "") + " e regiao ("
       + d.clientes.length + " visitas" + (d.raio_km ? (", num raio de ~" + d.raio_km + "km") : "") + ") \u2501\u2501\u2501\n";
     d.clientes.forEach((c: any) => {
-      msg += "\n" + c.ordem + ") " + (c.ancora ? "\u2b50 " : "") + c.nome + "\n   "
-        + (c.cidade || "") + (sig(c.uf) ? ("/" + sig(c.uf)) : "") + " \u00b7 CEP " + c.cep
+      /* CNPJ em linha propria: e por ele que o rep busca no sistema, e enfiado no meio da linha de
+         endereco ele se perde. Em rede, o CNPJ e o da loja nomeada — dito explicitamente, porque a
+         linha resume varias lojas do grupo. */
+      msg += "\n" + c.ordem + ") " + (c.ancora ? "\u2b50 " : "") + c.nome + "\n"
+        + (c.doc ? ("   " + (c.lojas > 1 ? (c.doc + " (desta loja)") : c.doc) + "\n") : "")
+        + "   " + (c.cidade || "") + (sig(c.uf) ? ("/" + sig(c.uf)) : "") + " \u00b7 CEP " + c.cep
         + (c.km != null ? (" \u00b7 ~" + c.km + "km do primeiro") : "") + "\n   " + c.motivo + "\n";
     });
   });
@@ -297,7 +315,7 @@ Deno.serve(async (req) => {
 
     if (!repParam) {
       const byRep: Record<string, any[]> = {}; let from = 0;
-      while (true) { const { data } = await sb.from("roteiro_cliente_apto").select("codparc,codparcmatriz,codvend,rep,fat12m,dias,giro,clube_saldo").range(from, from + 999); (data || []).forEach((c: any) => { if (c.codvend == null || intra.has(Number(c.codparc))) return; (byRep[c.codvend] = byRep[c.codvend] || []).push(c); }); if (!data || data.length < 1000) break; from += 1000; }
+      while (true) { const { data } = await sb.from("roteiro_cliente_apto").select("codparc,codparcmatriz,codvend,rep,fat12m,dias,giro,clube_saldo,cnpj").range(from, from + 999); (data || []).forEach((c: any) => { if (c.codvend == null || intra.has(Number(c.codparc))) return; (byRep[c.codvend] = byRep[c.codvend] || []).push(c); }); if (!data || data.length < 1000) break; from += 1000; }
       const reps = Object.keys(byRep).map((cv) => { const nodes = agrupar(byRep[cv]); const rep = (byRep[cv][0] || {}).rep; return { codvend: Number(cv), rep, clientes: nodes.length, prioritarios: nodes.filter((n) => gatilho(n).any).length, fat: Math.round(nodes.reduce((a, b) => a + (Number(b.fat12m) || 0), 0)) }; }).sort((a, b) => b.prioritarios - a.prioritarios || b.fat - a.fat);
       return j({ reps, cfg });
     }

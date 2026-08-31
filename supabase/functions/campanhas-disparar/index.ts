@@ -1,3 +1,15 @@
+// campanhas-disparar (v50) — CNPJ EM TODA LISTA DE CLIENTE QUE VAI AO REPRESENTANTE. Pedido do
+// gestor em 28/08: com nome fantasia ou razao social o rep nao acha o cliente no sistema dele; pelo
+// CNPJ acha. Vale para as quatro fontes de lista (Clube, voucher, giro e motor), em linha propria,
+// porque no meio da linha do motivo o numero se perde.
+// Duas regras que as listas consolidadas por rede impuseram:
+//   1) NOME E CNPJ SAO SEMPRE DA MESMA LOJA. As listas agrupam por matriz, mas a matriz nem sempre
+//      esta na lista (5 dos 13 grupos do giro vencido): antes disso a linha sairia com o nome de uma
+//      filial e o CNPJ da matriz. Quando a linha resume mais de uma loja, o texto marca
+//      "(desta loja)" — senao o rep leria o CNPJ como se cobrisse o grupo inteiro.
+//   2) O Clube fala de CONTRATO, e ai o CNPJ e o da matriz mesmo — mas so 18 dos 68 grupos tem mais
+//      de uma loja. Nos outros 50 dizer "matriz do contrato" mandaria o rep procurar uma rede que
+//      nao existe, entao o sufixo so aparece quando ha rede de fato.
 // campanhas-disparar (v49) — a janela do Clube a vencer saiu do codigo e foi para o banco:
 // campanhas.filtros_padrao->>'clube_venc_dias' (hoje 60). Ela mudou duas vezes em um dia; deixar o
 // numero em constante obrigava a redeployar duas funcoes para ajustar uma regra comercial, com o
@@ -30,6 +42,35 @@ const MODELO = "claude-haiku-4-5-20251001";
 const srvKey = () => Deno.env.get("SRV_JWT") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const fmtDate = (s: any) => { const m = String(s || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}` : (s ? String(s) : ""); };
 const lj = (n: any) => (Number(n) > 1 ? ` (${n} lojas)` : "");
+/* CNPJ chega do Sankhya como 14 digitos crus. Formatado para o rep ler e copiar direto no sistema
+   dele. Alguns cadastros sao CPF (11 digitos): mascara e rotulo diferentes — chamar CPF de CNPJ na
+   mensagem seria um erro visivel para quem recebe. */
+function fmtDoc(d: any) {
+  const x = String(d || "").replace(/\D/g, "");
+  if (x.length === 14) return "CNPJ " + x.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
+  if (x.length === 11) return "CPF " + x.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
+  return x ? ("doc " + x) : "";
+}
+/* O documento por codparc, de contato_enriquecido (99,9% de cobertura). Em lote de 300 porque a lista
+   do motor chega a 9 mil codparc e o `in` do PostgREST tem limite de URL. */
+async function docMap(sb: any, codps: any[]): Promise<Record<string, string>> {
+  const by: Record<string, string> = {};
+  const u = Array.from(new Set(codps.map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0)));
+  for (let i = 0; i < u.length; i += 300) {
+    const { data } = await sb.from("contato_enriquecido").select("codparc,cnpj").in("codparc", u.slice(i, i + 300));
+    (data || []).forEach((r: any) => { const d = fmtDoc(r.cnpj); if (d) by[String(r.codparc)] = d; });
+  }
+  return by;
+}
+/* A linha do cliente na lista do rep. Duas linhas de proposito: o CNPJ sozinho na segunda e o que o
+   rep copia, e enfiado no meio da primeira ele se perde entre nome e motivo. */
+function linhaCli(nome: string, doc: string, sufixo: string, motivo: string) {
+  return "• " + nome + (doc ? ("\n  " + doc + (sufixo || "")) : "") + "\n  " + motivo;
+}
+/* Linha consolidada de rede: o nome mostrado e o de UMA loja e o CNPJ e o dela — o rep precisa
+   saber disso, senao acha que o CNPJ cobre o grupo todo e procura a loja errada. Quantas lojas a
+   linha resume ja vem no nome, por lj(). */
+const sufDoc = (lojas: any) => (Number(lojas) > 1 ? " (desta loja)" : "");
 const GIRO: Record<string, string[]> = { recompra_giro_a_vencer: ["A_VENCER"], recompra_giro_vencido: ["VENCIDO"], rep_sem_comprar: ["VENCIDO", "REATIVACAO"] };
 const MOTOR: Record<string, number> = { recompra_cross_sell: 1, rep_sugestao_produto: 1, rep_roteiro_visitas: 1, clube_a_vencer: 1, recompra_novo_produto: 1 };
 // Janela de aviso do Clube a vencer. Sem teto, "a condicao esta perto de vencer" saia para quem
@@ -57,7 +98,7 @@ function garantirLista(p: any) {
 async function inadSet(sb: any) { const s = new Set<number>(); let from = 0; while (true) { const { data } = await sb.from("inadimplente").select("codparc").range(from, from + 999); (data || []).forEach((x: any) => s.add(Number(x.codparc))); if (!data || data.length < 1000) break; from += 1000; } const { data: ig } = await sb.from("parc_intragrupo").select("codparc"); (ig || []).forEach((x: any) => s.add(Number(x.codparc))); return s; }
 async function matrizMap(sb: any): Promise<Map<number, number>> { const m = new Map(); let f = 0; while (true) { const { data } = await sb.from("parc_matriz").select("codparc,matriz").range(f, f + 999); (data || []).forEach((r: any) => m.set(Number(r.codparc), Number(r.matriz))); if (!data || data.length < 1000) break; f += 1000; } return m; }
 const gk = (mtz: Map<number, number>, cp: any) => mtz.get(Number(cp)) || Number(cp);
-function consVoucher(rows: any[], mtz: Map<number, number>) { const by: Record<string, any[]> = {}; rows.forEach((c) => { const g = gk(mtz, c.codparc); (by[g] = by[g] || []).push(c); }); return Object.keys(by).map((g) => { const ms = by[g].slice().sort((a, b) => String(a.dtvalidade).localeCompare(String(b.dtvalidade))); const sede = ms.find((x) => Number(x.codparc) === Number(g)) || ms[0]; return { codparc: Number(g), nome: String(sede.nome), pct: Number(ms[0].pct), dtvalidade: ms[0].dtvalidade, lojas: ms.length }; }); }
+function consVoucher(rows: any[], mtz: Map<number, number>) { const by: Record<string, any[]> = {}; rows.forEach((c) => { const g = gk(mtz, c.codparc); (by[g] = by[g] || []).push(c); }); return Object.keys(by).map((g) => { const ms = by[g].slice().sort((a, b) => String(a.dtvalidade).localeCompare(String(b.dtvalidade))); const sede = ms.find((x) => Number(x.codparc) === Number(g)) || ms[0]; return { codparc: Number(sede.codparc), nome: String(sede.nome), pct: Number(ms[0].pct), dtvalidade: ms[0].dtvalidade, lojas: ms.length }; }); }
 
 const BASE = "Voce e o DIRETOR COMERCIAL da Nitronplast - industria de utilidades domesticas em plastico do Grupo Hyak. Linhas: organizacao (NitronBox, rattan), potes, frasqueiras, lixeiras, limpeza/cozinha/banheiro. Clientes sao LOJISTAS que revendem. Escreva como vendedor senior consultivo: humano, direto, com bons ARGUMENTOS DE VENDA - nunca robotico, generico nem insistente. Lidere pelo BENEFICIO do lojista (giro, nao faltar na gondola, ticket, sortimento, margem), baixa friccao, UMA chamada para acao, tom de parceria. NUNCA pressionar/cobrar; NUNCA prometer prazo/estoque sem confirmar; NUNCA preco fora de contexto; NUNCA chamar saldo de parado. pt-BR do varejo, frases curtas, no maximo 1 emoji, VARIE a abertura (fuja de cliche).";
 const ANG_CLI = ["Enfatize evitar RUPTURA na gondola.", "Enfatize GIRO das linhas Nitron.", "Enfatize a CONDICAO/oportunidade agora.", "Puxe pelo RELACIONAMENTO/parceria.", "Enfatize a FACILIDADE de fechar o pedido.", "Traga gancho de MIX/sortimento para subir o ticket."];
@@ -135,12 +176,14 @@ function valorCliente(codigo: string, c: any) {
   if (codigo === "rep_roteiro_visitas") return String(c.valtxt || c.situacao || "");
   return `${Number(c.dias)} dias`;
 }
-function motorBullet(codigo: string, c: any) {
+function motorBullet(codigo: string, c: any, doc = "") {
   const nome = (c.razao || ("Cod " + c.codparc)) + lj(c.lojas);
-  if (codigo === "clube_a_vencer") { const d = vigDias(c); return `• ${nome} — Clube vence em ${d != null ? d + "d" : "breve"}`; }
-  if (codigo === "rep_roteiro_visitas") return `• ${nome} — ${c.situacao || ""}${Number(c.saldo_entregar) > 0 ? (" · saldo " + brl(Number(c.saldo_entregar))) : ""}${Number(c.dias) ? (" · " + c.dias + "d") : ""}`;
-  if (codigo === "recompra_novo_produto") return `• ${nome} — apresentar lancamento: ${c.novidades || ""}`;
-  return `• ${nome} — sugerir ${c.crosssell || ""}`;
+  let motivo: string;
+  if (codigo === "clube_a_vencer") { const d = vigDias(c); motivo = `Clube vence em ${d != null ? d + "d" : "breve"}`; }
+  else if (codigo === "rep_roteiro_visitas") motivo = `${c.situacao || ""}${Number(c.saldo_entregar) > 0 ? (" · saldo " + brl(Number(c.saldo_entregar))) : ""}${Number(c.dias) ? (" · " + c.dias + "d") : ""}`;
+  else if (codigo === "recompra_novo_produto") motivo = `apresentar lancamento: ${c.novidades || ""}`;
+  else motivo = `sugerir ${c.crosssell || ""}`;
+  return linhaCli(nome, doc, sufDoc(c.lojas), motivo);
 }
 async function motorFetch(sb: any, codigo: string, vencDias: number) {
   let q = sb.from("ghl_cliente").select("codparc,razao,rep,situacao,ticket,dias,crosssell,novidades,saldo_entregar,clube_vig_dias,clube_saldo_pedir").eq("nitron", true);
@@ -185,6 +228,11 @@ Deno.serve(async (req) => {
     }
 
     const inad = await inadSet(sb); const mtz = await matrizMap(sb);
+    /* Quantas lojas tem cada rede. parc_matriz guarda so as FILIAIS (a matriz nao aponta para si
+       mesma), entao o total e 1 + filiais. Serve para o Clube: 50 dos 68 grupos sao LOJA UNICA, e
+       dizer "matriz do contrato" neles faria o rep procurar uma rede que nao existe. */
+    const filiais = new Map<number, number>();
+    mtz.forEach((m: number) => filiais.set(Number(m), (filiais.get(Number(m)) || 0) + 1));
     let repList: { codvend: number; rep: string }[] = [];
     let giroByRep: Record<string, any[]> = {}; let motorByRep: Record<string, any[]> = {};
     if (isMotor) {
@@ -202,19 +250,33 @@ Deno.serve(async (req) => {
       for (let i = 0; i < codpsG.length; i += 300) { const ch = codpsG.slice(i, i + 300); const { data } = await sb.from("contato_enriquecido").select("codparc,num_compras,ticket_medio").in("codparc", ch); (data || []).forEach((x: any) => teBy[x.codparc] = { nc: Number(x.num_compras) || 0, tk: Number(x.ticket_medio) || 0 }); }
       const tmp: Record<string, Record<string, any[]>> = {};
       grF.forEach((r: any) => { if (r.codvend == null) return; const cv = String(r.codvend); const g = gk(mtz, r.codparc); (tmp[cv] = tmp[cv] || {}); (tmp[cv][g] = tmp[cv][g] || []).push(r); });
-      Object.keys(tmp).forEach((cv) => { giroByRep[cv] = Object.keys(tmp[cv]).map((g) => { const ms = tmp[cv][g]; const sede = ms.find((x) => Number(x.codparc) === Number(g)) || ms.slice().sort((a, b) => Number(b.fat12m) - Number(a.fat12m))[0]; const fat = ms.reduce((a, b) => a + (Number(b.fat12m) || 0), 0); const nc = ms.reduce((a, b) => a + ((teBy[b.codparc] || {}).nc || 0), 0); const ticket = nc > 0 ? Math.round(fat / nc) : ((teBy[sede.codparc] || {}).tk || 0); return { nomeparc: sede.nomeparc, rep: sede.rep, fat12m: fat, dias: Math.min(...ms.map((x) => Number(x.dias) || 9999)), lojas: ms.length, ticket }; }); });
+      /* O codparc que fica na linha e o da SEDE DA LISTA, nao o da matriz do grupo: em 5 dos 13
+         grupos consolidados do giro vencido a matriz nao esta na lista e o nome exibido e de uma
+         filial — buscar o CNPJ pela matriz daria nome de uma loja com o documento de outra. */
+      Object.keys(tmp).forEach((cv) => { giroByRep[cv] = Object.keys(tmp[cv]).map((g) => { const ms = tmp[cv][g]; const sede = ms.find((x) => Number(x.codparc) === Number(g)) || ms.slice().sort((a, b) => Number(b.fat12m) - Number(a.fat12m))[0]; const fat = ms.reduce((a, b) => a + (Number(b.fat12m) || 0), 0); const nc = ms.reduce((a, b) => a + ((teBy[b.codparc] || {}).nc || 0), 0); const ticket = nc > 0 ? Math.round(fat / nc) : ((teBy[sede.codparc] || {}).tk || 0); return { codparc: Number(sede.codparc), nomeparc: sede.nomeparc, rep: sede.rep, fat12m: fat, dias: Math.min(...ms.map((x) => Number(x.dias) || 9999)), lojas: ms.length, ticket }; }); });
       repList = Object.keys(giroByRep).map((k) => ({ codvend: Number(k), rep: String((giroByRep[k][0] || {}).rep || "") }));
     } else {
       const { data: rl } = await sb.from(isClube ? "clube_rep" : "voucher_rep").select("*");
       repList = (rl || []).map((r: any) => ({ codvend: Number(r.codvend), rep: String(r.rep) }));
     }
     if (reps.length) repList = repList.filter((r) => reps.includes(Number(r.codvend)));
+    /* O CNPJ de todo cliente que pode aparecer em alguma lista, carregado UMA vez.
+       Buscar por rep dentro do bulletsDe faria uma ida ao banco por representante — com 84 reps a
+       funcao estouraria o tempo de execucao. */
+    const codpsDoc: number[] = [];
+    Object.keys(motorByRep).forEach((k) => motorByRep[k].forEach((c: any) => codpsDoc.push(Number(c.codparc))));
+    Object.keys(giroByRep).forEach((k) => giroByRep[k].forEach((c: any) => codpsDoc.push(Number(c.codparc))));
+    if (isClube) { const { data } = await sb.from("clube_grupo").select("matriz"); (data || []).forEach((g: any) => codpsDoc.push(Number(g.matriz))); }
+    if (isVoucher) { const { data } = await sb.from("voucher_cli").select("codparc"); (data || []).forEach((c: any) => codpsDoc.push(Number(c.codparc))); }
+    const DOC = await docMap(sb, codpsDoc);
+    const doc = (cp: any) => DOC[String(cp)] || "";
+
     async function bulletsDe(codvend: number): Promise<{ bl: string[]; metric: number }> {
-      if (isMotor) { const its = (motorByRep[String(codvend)] || []).sort((a: any, b: any) => (Number(b.ticket) || 0) - (Number(a.ticket) || 0)); return { bl: its.map((c: any) => motorBullet(codigo, c)), metric: its.reduce((a: number, b: any) => a + (Number(b.ticket) || 0), 0) }; }
-      if (isClube) { const { data: gs } = await sb.from("clube_grupo").select("matriz,grupo,saldo").eq("codvend", codvend).order("saldo", { ascending: false }); return { bl: (gs || []).filter((g: any) => !inad.has(Number(g.matriz))).map((g: any) => `• ${g.grupo} — ${brl(Number(g.saldo))} de direito de compra`), metric: (gs || []).filter((g: any) => !inad.has(Number(g.matriz))).reduce((a: number, b: any) => a + Number(b.saldo), 0) }; }
-      if (isVoucher) { const { data: cs } = await sb.from("voucher_cli").select("codparc,nome,pct,dtvalidade").eq("codvend", codvend); const cons = consVoucher((cs || []).filter((c: any) => !inad.has(Number(c.codparc))), mtz).sort((a: any, b: any) => String(a.dtvalidade).localeCompare(String(b.dtvalidade))); return { bl: cons.map((c: any) => `• ${c.nome}${lj(c.lojas)} — ${Number(c.pct)}% de desconto, vence ${fmtDate(c.dtvalidade)}`), metric: 0 }; }
+      if (isMotor) { const its = (motorByRep[String(codvend)] || []).sort((a: any, b: any) => (Number(b.ticket) || 0) - (Number(a.ticket) || 0)); return { bl: its.map((c: any) => motorBullet(codigo, c, doc(c.codparc))), metric: its.reduce((a: number, b: any) => a + (Number(b.ticket) || 0), 0) }; }
+      if (isClube) { const { data: gs } = await sb.from("clube_grupo").select("matriz,grupo,saldo").eq("codvend", codvend).order("saldo", { ascending: false }); const ok = (gs || []).filter((g: any) => !inad.has(Number(g.matriz))); return { bl: ok.map((g: any) => { const nl = 1 + (filiais.get(Number(g.matriz)) || 0); return linhaCli(String(g.grupo) + lj(nl), doc(g.matriz), nl > 1 ? " (matriz do contrato)" : "", `${brl(Number(g.saldo))} de direito de compra`); }), metric: ok.reduce((a: number, b: any) => a + Number(b.saldo), 0) }; }
+      if (isVoucher) { const { data: cs } = await sb.from("voucher_cli").select("codparc,nome,pct,dtvalidade").eq("codvend", codvend); const cons = consVoucher((cs || []).filter((c: any) => !inad.has(Number(c.codparc))), mtz).sort((a: any, b: any) => String(a.dtvalidade).localeCompare(String(b.dtvalidade))); return { bl: cons.map((c: any) => linhaCli(String(c.nome) + lj(c.lojas), doc(c.codparc), sufDoc(c.lojas), `${Number(c.pct)}% de desconto, vence ${fmtDate(c.dtvalidade)}`)), metric: 0 }; }
       const its = (giroByRep[String(codvend)] || []).sort((a: any, b: any) => Number(b.dias) - Number(a.dias));
-      return { bl: its.map((c: any) => `• ${c.nomeparc}${lj(c.lojas)} — ${Number(c.ticket) > 0 ? ("ticket medio " + brl(Number(c.ticket))) : ("media " + brl(Math.round(Number(c.fat12m) / 12)) + "/mes")} · ${c.dias}d sem comprar`), metric: its.reduce((a: number, b: any) => a + Number(b.fat12m), 0) };
+      return { bl: its.map((c: any) => linhaCli(String(c.nomeparc) + lj(c.lojas), doc(c.codparc), sufDoc(c.lojas), `${Number(c.ticket) > 0 ? ("ticket medio " + brl(Number(c.ticket))) : ("media " + brl(Math.round(Number(c.fat12m) / 12)) + "/mes")} · ${c.dias}d sem comprar`)), metric: its.reduce((a: number, b: any) => a + Number(b.fat12m), 0) };
     }
     const built = await Promise.all(repList.map(async (rr) => ({ rr, ...(await bulletsDe(rr.codvend)) })));
     const rows: any[] = [];

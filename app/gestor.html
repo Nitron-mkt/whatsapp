@@ -1065,19 +1065,22 @@
     if(CUR==="clube_a_vencer"){var m=String(c.valtxt||"").match(/(\d+)\s*d/);return m?(m[1]+" dias"):"em breve";}
     if(CUR==="rep_roteiro_visitas")return String(c.valtxt||c.situacao||"");
     return (c.dias!=null?(c.dias+" dias"):"");}
-  /* O bullet de exemplo do rep tem de ser o MESMO que o disparo escreve. Esta funcao repete o
-     motorBullet()/bulletsDe() do campanhas-disparar; se mudar la, muda aqui. */
+  /* O bullet de exemplo do rep tem de ser o MESMO que o disparo escreve — nome, CNPJ em linha
+     propria e motivo, tres linhas. Esta funcao repete o linhaCli()/motorBullet() do
+     campanhas-disparar; se mudar la, muda aqui. O `doc` vem PRONTO do campanhas-preview (mascara e
+     sufixo de rede incluidos), justamente para a tela nao remontar a regra e discordar da mensagem. */
   function bulletEx(c){
     var nome=c.nome||c.nomeparc||"Cliente";
-    var k=campKind();
-    if(k==="clube")return "• "+nome+" — "+brl(c.saldo)+" de direito de compra";
-    if(k==="voucher")return "• "+nome+" — "+(c.pct!=null?c.pct+"%":"")+" de desconto"+(c.validade?(", vence "+c.validade):"");
-    if(k==="motor")return "• "+nome+" — "+(c.valtxt||"");
-    return "• "+nome+" — "+(c.ticket>0?("ticket médio "+brl(c.ticket)):brl(c.saldo))+(c.dias!=null?(" · "+c.dias+"d sem comprar"):"");}
+    var k=campKind(),motivo;
+    if(k==="clube")motivo=brl(c.saldo)+" de direito de compra";
+    else if(k==="voucher")motivo=(c.pct!=null?c.pct+"%":"")+" de desconto"+(c.validade?(", vence "+c.validade):"");
+    else if(k==="motor")motivo=(c.valtxt||"");
+    else motivo=(c.ticket>0?("ticket médio "+brl(c.ticket)):brl(c.saldo))+(c.dias!=null?(" · "+c.dias+"d sem comprar"):"");
+    return "• "+nome+(c.doc?("\n  "+c.doc):"")+"\n  "+motivo;}
   function previewModelo(){var repEx="Fulano",cliEx="Loja Exemplo";
     var base=CLIFLAT.length?CLIFLAT:((function(){var ks=Object.keys(CLIENTES);return ks.length?(CLIENTES[ks[0]]||[]):[];})());
     var g0=exGen();var valEx=g0.bvalor||g0.merge.valor;
-    var listaEx="• Cliente A — "+g0.merge.saldo+"\n• Cliente B — "+g0.merge.saldo;
+    var listaEx="• Cliente A\n  CNPJ 00.000.000/0000-00\n  "+g0.merge.saldo+"\n• Cliente B\n  CNPJ 00.000.000/0000-00\n  "+g0.merge.saldo;
     if(base.length){var c0=base[0];cliEx=c0.nome;if(c0.rep)repEx=c0.rep;
       var vb=valorBracket(c0);valEx=(vb!=null&&vb!=="")?vb:valorInfo(c0).valor;
       var mesmos=base.filter(function(x){return !c0.rep||x.rep===c0.rep;});

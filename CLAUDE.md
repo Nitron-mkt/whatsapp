@@ -152,6 +152,21 @@ renomear exigiria migrar linhas e funções sem ganho para quem lê a tela.
 - **Quem entra é quem fechou o PRÓPRIO ciclo** (`dias >= contato_enriquecido.giro`, 30 a 90 dias
   conforme o cliente) — não um limite fixo. Fora: pedido em aberto (`saldo_entregar > 0`),
   inadimplente, título vencido e **bloqueado no Sankhya** (`parc_bloqueado`, de `TGFPAR.BLOQUEAR`).
+- **PEDIDO conta como compra, não só o faturamento.** O `dias` do snapshot vinha só de nota emitida
+  (`TGFCAB` `TIPMOV='V'`, `STATUSNOTA='L'`): quem *pediu* e ainda não foi faturado aparecia como quem
+  parou de comprar — 163 dos 2.071 aptos tinham pedido no sistema, **142 com o pedido travado
+  aguardando liberação interna nossa**, e o rep ia visitar quem acabou de comprar. O filtro que
+  existia (`ce.saldo_entregar > 0`) não pega esses: `saldo_entregar` só é preenchido quando o pedido
+  foi *parcialmente* entregue; nos 163 vinha NULL. Agora `roteiro-refresh` grava `ult_pedido` e
+  `dias_pedido` (`TIPMOV='P'`, faturado ou não, 24 meses) e a view expõe `dias` como o **menor entre
+  faturamento e pedido** — faturar é etapa nossa, não dele. `dias_fat` continua exposto para
+  auditoria. **Conta todo tipo de pedido de venda, inclusive bonificado e troca** (198 e 179 notas em
+  60 dias) — se o gestor quiser tirar esses dois, é filtro de `CODTIPOPER` nas subqueries `ped`/`ab`.
+- **Pedido EM ABERTO recente também exclui.** `pedido_aberto_dias` (o `TIPMOV='P'` com `PENDENTE='S'`
+  mais recente) tem de ser >= `filtros_padrao->>'roteiro_pedido_aberto_dias'` (**120**). Sem isso
+  sobravam 32 clientes com pedido parado há ~1 mês: pediram, está travado na liberação, e o ciclo
+  venceu de novo. Acima de 120 dias o pedido é abandonado, não compra — por isso 282 dos aptos ainda
+  têm pedido em aberto. Efeito das duas regras: **2.065 → 1.790 aptos** e 50 → 47 reps com rota.
 - **`roteiro_cliente.uf` é o CODUF numérico do Sankhya** (1=SP, 2=MG, 7=RJ, 9=PA…), não a sigla.
 - O filtro mora na **view** `roteiro_cliente_apto`, não na função, para tela e disparo contarem a
   mesma audiência.

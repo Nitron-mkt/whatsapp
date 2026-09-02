@@ -1,3 +1,14 @@
+// campanhas-disparar (v51) — "Sugestao de produtos p/ a visita" e "Lancamentos" pararam de dizer a
+// MESMA COISA. O crosssell mistura curva A nao comprada com lancamentos marcados, e para 528 dos 529
+// clientes da audiencia a parte de curva A estava vazia (o cliente ja compra tudo da curva A do
+// canal dele): as duas campanhas saiam com os mesmos lancamentos. Agora cada uma le seu campo:
+//   rep_sugestao_produto  -> ghl_cliente.curva_a   (curva A do canal que ele nao compra, SEM lanc.)
+//   recompra_novo_produto -> ghl_cliente.novidades (lancamento, e cada linha marcada "(Lançamento)")
+//   recompra_cross_sell   -> ghl_cliente.crosssell (a mistura, campanha de ticket)
+// O texto da campanha de lancamentos passou a pedir o formato da mensagem que o gestor aprovou em
+// 01/09 (levantamento para a visita, beneficio do lojista, decisao dele, oferta concreta de apoio) e
+// proibe explicitamente o angulo de concorrencia — a IA escreveu "chegar antes da concorrencia", que
+// o TOM_REP ja vetava.
 // campanhas-disparar (v50) — CNPJ EM TODA LISTA DE CLIENTE QUE VAI AO REPRESENTANTE. Pedido do
 // gestor em 28/08: com nome fantasia ou razao social o rep nao acha o cliente no sistema dele; pelo
 // CNPJ acha. Vale para as quatro fontes de lista (Clube, voucher, giro e motor), em linha propria,
@@ -71,6 +82,10 @@ function linhaCli(nome: string, doc: string, sufixo: string, motivo: string) {
    saber disso, senao acha que o CNPJ cobre o grupo todo e procura a loja errada. Quantas lojas a
    linha resume ja vem no nome, por lj(). */
 const sufDoc = (lojas: any) => (Number(lojas) > 1 ? " (desta loja)" : "");
+/* "(Lançamento)" escrito em CADA linha, pedido do gestor: quando a campanha e de lancamento, tem de
+   estar dito — senao a linha parece uma sugestao de mix qualquer, e foi assim que a campanha de
+   lancamentos e a de sugestao viraram a mesma mensagem aos olhos de quem recebe. */
+const tagLanc = (v: any) => String(v || "").split(",").map((x) => x.trim()).filter(Boolean).map((x) => x + " (Lançamento)").join(", ");
 const GIRO: Record<string, string[]> = { recompra_giro_a_vencer: ["A_VENCER"], recompra_giro_vencido: ["VENCIDO"], rep_sem_comprar: ["VENCIDO", "REATIVACAO"] };
 const MOTOR: Record<string, number> = { recompra_cross_sell: 1, rep_sugestao_produto: 1, rep_roteiro_visitas: 1, clube_a_vencer: 1, recompra_novo_produto: 1 };
 // Janela de aviso do Clube a vencer. Sem teto, "a condicao esta perto de vencer" saia para quem
@@ -121,8 +136,8 @@ const CTX: Record<string, any> = {
   recompra_giro_vencido: { assunto: "o TEMPO desde a ultima compra: o ciclo de recompra (giro) JA VENCEU", proibido: "citar valor em dinheiro ao cliente, falar de desconto, de divida ou de cobranca", valor: "[VALOR] e um tempo (ex '83 dias') sem comprar: o giro do cliente JA VENCEU (passou do ciclo de recompra). Escreva ex 'faz [VALOR] desde seu ultimo pedido — o giro ja venceu'. Deixe claro que e a HORA DE REPOR o estoque. NUNCA cobranca/saldo.", cliente: "Reative acolhedor: faz [VALOR] (giro vencido), convide a repor o giro antes de faltar na gondola. Deixe claro que e sobre repor a compra, NAO e cobranca.", rep: "A lista traz clientes DELE que passaram do giro (giro VENCIDO). IMPORTANTE: cada cliente na lista vem com o TICKET MEDIO dele (valor medio por pedido/reposicao, ex 'ticket medio R$ 44.000') e os dias sem comprar — explique ao rep que esse valor e o quanto o cliente COSTUMA colocar em CADA pedido (a reposicao tipica dele), a referencia de quanto ele deveria estar repondo agora, e NAO e cobranca nem saldo." },
   rep_sem_comprar: { assunto: "o TEMPO que o cliente esta sem nenhum pedido", proibido: "falar de divida, cobranca, desconto ou valor devido", valor: "[VALOR] e um tempo (ex '120 dias') sem pedido. Escreva ex 'faz [VALOR] sem um pedido'. NUNCA saldo/cobranca.", cliente: "Cliente parado: pergunte gentil se ha algo a melhorar e convide a retomar as compras.", rep: "A lista traz clientes DELE que estao sem pedido ha um tempo. Em vez de cobrar contato, PERGUNTE se ele sabe o que aconteceu com esses clientes e ofereca ajuda para retomar. Na lista cada cliente vem com o TICKET MEDIO historico (valor medio por pedido, ex 'ticket medio R$ 44.000') e os dias sem comprar — explique que esse valor e o quanto ele COSTUMAVA colocar em cada pedido, a referencia do que se perde parado, NAO e cobranca nem saldo." },
   recompra_cross_sell: { assunto: "LINHAS de produto que o cliente ainda NAO compra e que vendem bem no canal dele", proibido: "citar valor em dinheiro, desconto, prazo ou dias sem comprar", valor: "[VALOR] sao LINHAS de produto que o cliente ainda NAO compra mas que vendem bem no canal dele (ex 'Frasqueiras, Lixeiras'). Se aparecer '(lancamento)', e uma linha NOVA. Escreva ex 'que tal incluir as linhas [VALOR] no proximo pedido'. NUNCA saldo/tempo.", cliente: "Sugira incluir essas linhas para ampliar o sortimento e o ticket.", rep: "A lista traz clientes DELE e as linhas que fazem sentido oferecer a cada um. Apresente como sugestao de mix e ofereca material ou informacao para ele levar." },
-  rep_sugestao_produto: { assunto: "LINHAS de produto sugeridas para o cliente experimentar", proibido: "citar valor em dinheiro, desconto, prazo ou dias sem comprar", valor: "[VALOR] sao LINHAS sugeridas para o cliente experimentar (ex 'Potes, Cozinha'). Escreva ex 'sugiro incluir [VALOR] na proxima compra'.", cliente: "Sugira ao lojista experimentar essas linhas na proxima visita/pedido.", rep: "A lista traz sugestao de linhas por cliente para ele levar na visita, se fizer sentido. Ofereca ajuda com material ou argumento de venda." },
-  recompra_novo_produto: { assunto: "LINHAS recem-lancadas (novidades) que o cliente ainda NAO compra", proibido: "citar valor em dinheiro, desconto, prazo ou dias sem comprar", valor: "[VALOR] sao LINHAS recem-lancadas (novidades) que o cliente ainda NAO compra (ex 'Teca, Decor Util'). Apresente como LANCAMENTO/novidade: chance de sair na frente, diferenciar a loja e pegar giro novo. NUNCA trate como saldo/tempo.", cliente: "Apresente os lancamentos e convide a conhecer/experimentar. Tom de novidade e pioneirismo, sem pressao.", rep: "A lista traz clientes DELE que ainda nao compram os lancamentos. Apresente como novidade que ele pode levar primeiro, e ofereca material ou amostra para apoiar." },
+  rep_sugestao_produto: { assunto: "as LINHAS DA CURVA A DO CANAL do cliente que ele ainda NAO compra — o que mais fatura no canal dele e nao esta no sortimento dele. NAO sao lancamentos: sao linhas consolidadas, com giro provado no canal", proibido: "chamar essas linhas de lancamento, novidade, estreia ou algo recem-chegado (elas NAO sao); citar valor em dinheiro, desconto, prazo ou dias sem comprar; falar de concorrente", valor: "[VALOR] sao LINHAS da curva A do canal do cliente que ele ainda nao compra (ex 'Potes, Cozinha'). Sao linhas que ja vendem bem em lojas como a dele. Escreva ex 'sugiro incluir [VALOR] na proxima compra'.", cliente: "Sugira incluir essas linhas, explicando que sao das que mais giram em lojas do mesmo perfil que a dele.", rep: "A lista traz, por cliente, as linhas da CURVA A DO CANAL daquele cliente que ele ainda nao compra — ou seja, o que mais fatura em lojas do mesmo canal e esta faltando no sortimento dele. Explique isso ao rep: nao e chute nem novidade, e o buraco de sortimento medido contra o que o canal dele compra. Ofereca ajuda com material de ponto de venda ou argumento de venda." },
+  recompra_novo_produto: { assunto: "LINHAS RECEM-LANCADAS que o cliente ainda NAO compra. Cada linha da lista vem marcada '(Lançamento)' — o marcador e proposital e a mensagem deve tratar o assunto como lancamento, nao como sugestao de mix qualquer", proibido: "citar valor em dinheiro, desconto, prazo ou dias sem comprar; falar de CONCORRENTE em qualquer forma — nem 'chegar antes da concorrencia', nem 'sair na frente', nem 'antes que outro leve'", valor: "[VALOR] sao LINHAS recem-lancadas que o cliente ainda NAO compra, ja com o marcador (ex 'Teca (Lançamento), Decor Util (Lançamento)'). Apresente como lancamento: linha nova, giro novo na gondola. NUNCA trate como saldo/tempo.", cliente: "Apresente os lancamentos e convide a conhecer/experimentar. Tom de novidade, sem pressao e sem falar de concorrente.", rep: "A lista traz clientes DELE que ainda nao compram os lancamentos, cada linha marcada '(Lançamento)'. ESCREVA NESTE FORMATO, que e o que o gestor aprovou: (1) diga que fizemos um levantamento rapido de lancamentos que podem fazer sentido ele apresentar na proxima visita; (2) traga o beneficio pelo lado do lojista — giro novo na gondola e ticket, sem complicar; (3) deixe explicito que nada e obrigatorio e que ele decide o que faz sentido levar, porque ele conhece o momento de cada cliente; (4) diga de onde saiu a sugestao: sao linhas novas que aquele cliente ainda nao tem no sortimento; (5) ofereca coisas CONCRETAS — material de ponto de venda, amostra, um argumento de venda mais forte para algum cliente especifico, ou levantar informacao antes do contato; (6) feche com uma pergunta aberta do tipo 'o que podemos fazer para te facilitar?'." },
   clube_a_vencer: { assunto: "o TEMPO QUE FALTA para a vigencia do Clube Nitron do cliente TERMINAR. E um prazo em dias, e so isso. O Clube Nitron e um DIREITO DE COMPRA com vigencia: o que esta acabando e o PRAZO para usar, nao um valor", proibido: "citar QUALQUER valor em dinheiro (R$), saldo, faturamento, ticket ou percentual; chamar o Clube de desconto, de credito, de saldo, de bonus ou de premio; inventar qualquer numero que nao seja o prazo que veio em [VALOR]", valor: "[VALOR] e um tempo ate a condicao do Clube VENCER (ex '30 dias'). Escreva ex 'sua condicao do Clube vence em [VALOR]'. Convide a usar antes de vencer.", cliente: "Avise que a condicao do Clube esta a vencer e convide a aproveitar antes do prazo.", rep: "A lista traz clientes DELE com a condicao do Clube perto de vencer. Avise do prazo e ofereca ajuda para ele aproveitar com esses clientes." },
   rep_roteiro_visitas: { assunto: "a PRIORIDADE de visita de cada cliente da carteira", proibido: "prometer prazo, citar desconto ou valor de cobranca", valor: "[VALOR] e o motivo/prioridade da visita (ex 'Giro vencido').", cliente: "Convide para uma conversa/visita.", rep: "A lista traz clientes DELE que podem fazer sentido na rota, do mais relevante ao menos. Apresente como sugestao de roteiro pensada para facilitar o caminho, e ofereca levantar informacao de qualquer um deles antes da visita." },
 };
@@ -170,8 +185,9 @@ function vigDias(c: any): number | null {
 function valorCliente(codigo: string, c: any) {
   if (codigo === "clube_saldo") return `${brl(Number(c.saldo))}`;
   if (codigo === "voucher_empurrar") return `${Number(c.pct)}%`;
-  if (codigo === "recompra_cross_sell" || codigo === "rep_sugestao_produto") return String(c.crosssell || "novas linhas");
-  if (codigo === "recompra_novo_produto") return String(c.novidades || "nossos lancamentos");
+  if (codigo === "recompra_cross_sell") return String(c.crosssell || "novas linhas");
+  if (codigo === "rep_sugestao_produto") return String(c.curva_a || "novas linhas");
+  if (codigo === "recompra_novo_produto") return c.novidades ? tagLanc(c.novidades) : "nossos lancamentos";
   if (codigo === "clube_a_vencer") { const d = vigDias(c); return d != null ? `${d} dias` : "poucos dias"; }
   if (codigo === "rep_roteiro_visitas") return String(c.valtxt || c.situacao || "");
   return `${Number(c.dias)} dias`;
@@ -181,13 +197,19 @@ function motorBullet(codigo: string, c: any, doc = "") {
   let motivo: string;
   if (codigo === "clube_a_vencer") { const d = vigDias(c); motivo = `Clube vence em ${d != null ? d + "d" : "breve"}`; }
   else if (codigo === "rep_roteiro_visitas") motivo = `${c.situacao || ""}${Number(c.saldo_entregar) > 0 ? (" · saldo " + brl(Number(c.saldo_entregar))) : ""}${Number(c.dias) ? (" · " + c.dias + "d") : ""}`;
-  else if (codigo === "recompra_novo_produto") motivo = `apresentar lancamento: ${c.novidades || ""}`;
+  else if (codigo === "recompra_novo_produto") motivo = `apresentar ${tagLanc(c.novidades)}`;
+  else if (codigo === "rep_sugestao_produto") motivo = `sugerir ${c.curva_a || ""}`;
   else motivo = `sugerir ${c.crosssell || ""}`;
   return linhaCli(nome, doc, sufDoc(c.lojas), motivo);
 }
 async function motorFetch(sb: any, codigo: string, vencDias: number) {
-  let q = sb.from("ghl_cliente").select("codparc,razao,rep,situacao,ticket,dias,crosssell,novidades,saldo_entregar,clube_vig_dias,clube_saldo_pedir").eq("nitron", true);
-  if (codigo === "recompra_cross_sell" || codigo === "rep_sugestao_produto") q = q.not("crosssell", "is", null).eq("situacao", "Em dia");
+  let q = sb.from("ghl_cliente").select("codparc,razao,rep,situacao,ticket,dias,curva_a,crosssell,novidades,saldo_entregar,clube_vig_dias,clube_saldo_pedir").eq("nitron", true);
+  /* Cada uma na sua fonte. crosssell = curva A + lancamentos misturados (campanha de ticket);
+     curva_a = so a curva A do canal que o cliente nao compra (sugestao para a visita); novidades =
+     so lancamento. Enquanto a sugestao lia crosssell, ela saia com os mesmos lancamentos da campanha
+     de lancamentos: 528 dos 529 clientes da audiencia nao tinham NENHUMA curva A em falta. */
+  if (codigo === "recompra_cross_sell") q = q.not("crosssell", "is", null).eq("situacao", "Em dia");
+  else if (codigo === "rep_sugestao_produto") q = q.not("curva_a", "is", null).eq("situacao", "Em dia");
   else if (codigo === "recompra_novo_produto") q = q.not("novidades", "is", null).eq("situacao", "Em dia");
   else if (codigo === "clube_a_vencer") q = q.not("clube_vig_dias", "is", null).gte("clube_vig_dias", 0).lte("clube_vig_dias", vencDias);
   else q = q.not("rep", "is", null).neq("situacao", "Em dia");

@@ -50,8 +50,8 @@ renomear exigiria migrar linhas e funções sem ganho para quem lê a tela.
   `#contact_instance:<token>` governa só a entrada. Sem dono, a mensagem não sai.
 - **`SUPABASE_SERVICE_ROLE_KEY` vem com valor `sb_secret_`** que o PostgREST recusa (PGRST303).
   Toda função usa `const srvKey = () => Deno.env.get("SRV_JWT") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";`
-- **Chave de serviço escrita no código: já não há em `campanhas-saldo` nem em
-  `campanhas-keyaccounts`.** As duas carregavam um JWT `service_role` literal como fallback do
+- **Chave de serviço escrita no código: já não há em `campanhas-saldo`, `campanhas-keyaccounts` nem
+  `cross-sell-abc`.** As duas carregavam um JWT `service_role` literal como fallback do
   SRV_JWT — chave de administrador do banco, no fonte, válida por anos. Retiradas em 31/08; as duas
   usam `srvKey()` como todo o resto. Se aparecer outra, tire: a variável SRV_JWT existe e funciona.
 - **Publicar o painel:** `POST host-upload?path=gestor.html` com o **HTML cru no corpo** e o caminho
@@ -90,6 +90,35 @@ renomear exigiria migrar linhas e funções sem ganho para quem lê a tela.
   o documento de outra. Quando a linha resume mais de uma loja, o texto marca `(desta loja)`. No
   Clube o CNPJ é o da **matriz do contrato**, e esse sufixo só aparece nos 18 dos 68 grupos que de
   fato têm mais de uma loja — dizê-lo nos outros 50 mandaria o rep procurar uma rede que não existe.
+- **Cada campanha de produto tem sua PRÓPRIA fonte.** O `crosssell` do `cross-sell-abc` sempre foi
+  uma mistura: curva A do canal que o cliente não compra **+** lançamentos marcados
+  `(lançamento)`. Isso fez "Sugestão de produtos p/ a visita" e "Lançamentos — produtos novos"
+  mandarem a mesma mensagem, com os mesmos produtos: dos 529 clientes da audiência (`situacao='Em
+  dia'`), **528 não tinham nenhuma curva A em falta** — já compram tudo o que o canal deles compra.
+  Sobrava só lançamento nas duas. Agora:
+  | campanha | campo | audiência |
+  |---|---|---|
+  | Sugestão de produtos p/ a visita (`rep_sugestao_produto`) | `ghl_cliente.curva_a` | 149 clientes, 35 reps |
+  | Lançamentos — produtos novos (`recompra_novo_produto`) | `ghl_cliente.novidades`, cada linha marcada `(Lançamento)` | 528 clientes, 51 reps |
+  | Aumento de ticket — cross-sell (`recompra_cross_sell`) | `ghl_cliente.crosssell` (a mistura) | 529 clientes |
+  `curva_a` é escrito pelo `cross-sell-abc` (é o `abcGap` que já existia lá dentro, agora gravado em
+  vez de só concatenado). **`recompra_cross_sell` é hoje a união das outras duas** — se voltar a
+  incomodar, é decisão de negócio: ou vira só curva A, ou é retirada.
+- **O texto da campanha de lançamentos é o formato que o gestor aprovou em 01/09.** Ele comparou as
+  duas mensagens e preferiu a da sugestão: levantamento para a visita, benefício pelo lado do
+  lojista, "nada é obrigatório — você decide", de onde saiu a sugestão, oferta concreta (material de
+  PDV, amostra, argumento, informação antes do contato) e pergunta aberta no fim. O `CTX` da
+  `recompra_novo_produto` pede esse roteiro em seis passos. E **proíbe o ângulo de concorrência**: a
+  IA escreveu "chegar antes da concorrência", que o `TOM_REP` já vetava — agora está vetado também
+  no contexto da campanha, nome por nome ("sair na frente", "antes que outro leve").
+- **O bloco de contatos do representante é UM só, e mora no painel.** `repContatosHTML()` monta
+  telefone e e-mail agrupados por canal, com rótulo de origem (Sankhya, CRM, CRM·casado, manual),
+  ✕ para excluir o manual e "+ telefone / + email". Ele se alimenta de
+  `{telefones:[{valor,rotulo}], emails:[...]}` — formato que só o `campanhas-preview` devolvia, e por
+  isso o roteiro de visitas tinha uma listinha própria e pobre. O `campanhas-roteiro` passou a
+  devolver o mesmo formato (as três funções são cópia deliberada do preview: mesma fonte, mesmos
+  rótulos). **O container tem de se chamar `repct-<codvend>`** — é nele que `removeRepContato()`
+  redesenha o bloco depois de excluir um contato manual.
 - **A fila barra duplicidade** (`fila-enfileirar` v18): mesmo `(campanha, canal, destino)` no mesmo
   pedido, ou já pendente/entregue nas últimas `ANTI_DUP_HORAS` (12). O destino é normalizado —
   `11970399053` e `+5511970399053` são o mesmo WhatsApp. Antes, três cliques mandavam três vezes.

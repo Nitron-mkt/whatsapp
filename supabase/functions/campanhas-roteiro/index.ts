@@ -1,3 +1,9 @@
+// campanhas-roteiro (v22) — OS CONTATOS DO REP VOLTAM NO MESMO FORMATO DAS OUTRAS CAMPANHAS.
+// O painel tem um bloco de contatos so (telefones e e-mails agrupados por canal, rotulo da origem,
+// excluir manual, "+ telefone / + email"), montado a partir de {telefones:[{valor,rotulo}], emails}.
+// Esse formato so vinha do campanhas-preview, e por isso o roteiro tinha uma listinha pobre,
+// diferente de todo o resto da tela. Agora devolve telefones/emails tambem — mesma fonte, mesmos
+// rotulos. O campo `contatos` continua, para o envio em massa que ja o usava.
 // campanhas-roteiro (v21) — CNPJ EM TODA MENCAO A CLIENTE. O representante acha o cliente pelo CNPJ
 // no sistema dele, nao pelo nome fantasia: a razao social do Sankhya nem sempre e o nome da placa, e
 // nome parecido entre lojas da mesma rede leva a visita errada. Em linha de rede consolidada o nome
@@ -101,6 +107,43 @@ function pushCanal(out: any[], seen: any, canal: string, valor: any, origem: str
 // ordena um grupo por vizinho-mais-proximo (NN) a partir do 1o
 function rota(grupo: any[]) { if (grupo.length <= 2) return grupo; const out = [grupo[0]]; const rest = grupo.slice(1); while (rest.length) { const last = out[out.length - 1]; let bi = 0, bd = Infinity; rest.forEach((n: any, i: number) => { const d = dist(last, n); if (d < bd) { bd = d; bi = i; } }); out.push(rest.splice(bi, 1)[0]); } return out; }
 const srvKey = () => Deno.env.get("SRV_JWT") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+const nf = (v: any) => digits(v).replace(/^0+/, "").replace(/^55/, "");
+/* CONTATOS DO REP NO MESMO FORMATO DAS OUTRAS CAMPANHAS.
+   O painel tem um bloco de contatos so — telefones e e-mails agrupados por canal, com o rotulo da
+   origem (Sankhya, CRM, CRM-casado, manual), botao de excluir o manual e "+ telefone / + email".
+   Ele monta esse bloco a partir de {telefones:[{valor,rotulo}], emails:[...]}, que era o formato que
+   so o campanhas-preview devolvia — por isso o roteiro tinha uma listinha pobre e diferente de todo
+   o resto. Estas tres funcoes sao as mesmas do campanhas-preview, de proposito: mesma fonte, mesmos
+   rotulos, mesmo comportamento na tela. */
+function repContatos(sr: any, extras: any[]) {
+  const telRaw = [sr?.celular, sr?.fone_parc].concat((extras || []).filter((e) => e.tipo === "telefone").map((e) => ({ v: e.valor, r: e.rotulo })));
+  const emRaw = [sr?.email, sr?.email_crm, sr?.email_parc].concat((extras || []).filter((e) => e.tipo === "email").map((e) => ({ v: e.valor, r: e.rotulo })));
+  const telSeen = new Set<string>(), telefones: any[] = [];
+  for (const t of telRaw) { const val = typeof t === "object" ? t?.v : t; const rot = typeof t === "object" ? t?.r : null; const d = nf(val); if (!d || telSeen.has(d)) continue; telSeen.add(d); telefones.push({ valor: String(val).trim(), rotulo: rot || null }); }
+  const emSeen = new Set<string>(), emails: any[] = [];
+  for (const t of emRaw) { const val = typeof t === "object" ? t?.v : t; const rot = typeof t === "object" ? t?.r : null; const k = String(val || "").trim().toLowerCase(); if (!k || emSeen.has(k)) continue; emSeen.add(k); emails.push({ valor: String(val).trim(), rotulo: rot || null }); }
+  return { telefones, emails };
+}
+async function repBasesMap(sb: any): Promise<Record<string, any[]>> {
+  const { data: rc } = await sb.from("rep_carteira").select("codvend,codparc");
+  const cpByVend: Record<string, number> = {}; const cps: number[] = [];
+  (rc || []).forEach((r: any) => { if (r.codparc != null) { cpByVend[r.codvend] = Number(r.codparc); cps.push(Number(r.codparc)); } });
+  const byCp: Record<string, any[]> = {};
+  for (let i = 0; i < cps.length; i += 300) { const ch = cps.slice(i, i + 300);
+    const { data: sc } = await sb.from("snap_contato").select("codparc,fone,email").in("codparc", ch);
+    (sc || []).forEach((c: any) => { byCp[c.codparc] = byCp[c.codparc] || []; if (c.fone) byCp[c.codparc].push({ tipo: "telefone", valor: c.fone, rotulo: "Sankhya" }); if (c.email) byCp[c.codparc].push({ tipo: "email", valor: c.email, rotulo: "Sankhya" }); });
+    const { data: gc } = await sb.from("ghl_contato").select("codparc,ghl_id,fone,email").in("codparc", ch);
+    (gc || []).forEach((c: any) => { byCp[c.codparc] = byCp[c.codparc] || []; const gid = String(c.ghl_id || ""); const rot = gid.includes("#biz") ? "CRM·empresa" : (gid.includes("#r") ? "CRM·casado" : "CRM"); if (c.fone) byCp[c.codparc].push({ tipo: "telefone", valor: c.fone, rotulo: rot }); if (c.email) byCp[c.codparc].push({ tipo: "email", valor: c.email, rotulo: rot }); });
+  }
+  const byVend: Record<string, any[]> = {};
+  Object.keys(cpByVend).forEach((v) => { byVend[v] = byCp[cpByVend[v]] || []; });
+  return byVend;
+}
+async function extrasMap(sb: any): Promise<Record<string, any[]>> {
+  const { data } = await sb.from("rep_contato_extra").select("*").eq("ativo", true);
+  const by: Record<string, any[]> = {}; (data || []).forEach((e: any) => { (by[e.codvend] = by[e.codvend] || []).push(e); });
+  return by;
+}
 // A semana inteira fica dentro deste raio da ancora, e na mesma UF. E o que impede segunda em SP,
 // terca no RJ e quarta em SP de novo.
 const RAIO_SEMANA_KM = 300;
@@ -309,7 +352,8 @@ Deno.serve(async (req) => {
       const riBy: Record<string, any> = {}; (ris || []).forEach((x: any) => riBy[String(x.codvend)] = x);
       const byRep: Record<string, any[]> = {};
       cli.forEach((c: any) => { if (intra.has(Number(c.codparc))) return; const k = String(c.codvend); (byRep[k] = byRep[k] || []).push(c); });
-      const lote = cvs.map((cv) => { const r: any = montar(cv, byRep[String(cv)] || [], srBy[String(cv)], geo, riBy[String(cv)], cfg); return { codvend: r.codvend, rep: r.rep, instancia: r.instancia, instancia_erp: r.instancia_erp, divergente: r.divergente, contatos: r.contatos, total: r.total, cobertos: r.cobertos, fora_da_regiao: r.fora_da_regiao, sem_cluster: r.sem_cluster, rota_possivel: r.rota_possivel !== false, aviso: r.aviso, uf_semana: r.uf_semana, dias_n: r.dias.length, mensagem: r.mensagem }; });
+      const exL = await extrasMap(sb); const bvL = await repBasesMap(sb);
+      const lote = cvs.map((cv) => { const r: any = montar(cv, byRep[String(cv)] || [], srBy[String(cv)], geo, riBy[String(cv)], cfg); const rcL = repContatos(srBy[String(cv)], (exL[String(cv)] || []).concat(bvL[String(cv)] || [])); return { codvend: r.codvend, rep: r.rep, telefones: rcL.telefones, emails: rcL.emails, instancia: r.instancia, instancia_erp: r.instancia_erp, divergente: r.divergente, contatos: r.contatos, total: r.total, cobertos: r.cobertos, fora_da_regiao: r.fora_da_regiao, sem_cluster: r.sem_cluster, rota_possivel: r.rota_possivel !== false, aviso: r.aviso, uf_semana: r.uf_semana, dias_n: r.dias.length, mensagem: r.mensagem }; });
       return j({ lote, cfg });
     }
 
@@ -326,6 +370,8 @@ Deno.serve(async (req) => {
     const rows = todas.filter((c: any) => !intra.has(Number(c.codparc)));
     const { data: sr } = await sb.from("snap_rep").select("*").eq("codvend", rep).maybeSingle();
     const { data: ri } = await sb.from("rep_instancia").select("codvend,instancia,instancia_erp,divergente").eq("codvend", rep).maybeSingle();
-    return j({ ...montar(rep, rows, sr, geo, ri, cfg), cfg });
+    const ex = await extrasMap(sb); const bv = await repBasesMap(sb);
+    const rc = repContatos(sr, (ex[String(rep)] || []).concat(bv[String(rep)] || []));
+    return j({ ...montar(rep, rows, sr, geo, ri, cfg), telefones: rc.telefones, emails: rc.emails, cfg });
   } catch (e) { return j({ erro: String(e) }, 500); }
 });

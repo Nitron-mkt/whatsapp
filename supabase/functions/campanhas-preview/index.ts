@@ -1,3 +1,8 @@
+// campanhas-preview (v32) — a tela conta a audiencia certa de cada campanha de produto. A sugestao
+// para a visita lia crosssell (curva A + lancamentos misturados) e por isso mostrava os mesmos
+// lancamentos da campanha de lancamentos: 528 dos 529 clientes da audiencia nao tinham NENHUMA curva
+// A em falta. Agora rep_sugestao_produto le ghl_cliente.curva_a, recompra_novo_produto le novidades
+// com cada linha marcada "(Lançamento)", e o valtxt e IGUAL ao motivo que a mensagem escreve.
 // campanhas-preview (v31) — A TELA MOSTRA O CNPJ, E O MESMO TEXTO QUE A MENSAGEM MOSTRA.
 // O gestor conferiu a previa e nao viu documento: a mensagem do campanhas-disparar ja trazia, mas a
 // previa monta a lista com regra propria e nao tinha o dado. Agora cada cliente vem com `doc` PRONTO
@@ -61,6 +66,8 @@ async function docMap(sb: any, codps: any[]): Promise<Record<string, string>> {
 }
 // linha consolidada de rede: o documento e da loja NOMEADA, e o rep tem de saber disso
 const sufRede = (lojas: any) => (Number(lojas) > 1 ? " (desta loja)" : "");
+// "(Lançamento)" em cada linha — mesmo marcador do campanhas-disparar, para tela e mensagem baterem
+const tagLanc = (v: any) => String(v || "").split(",").map((x) => x.trim()).filter(Boolean).map((x) => x + " (Lançamento)").join(", ");
 // quantas lojas tem a rede. parc_matriz guarda so as FILIAIS: o total e 1 + filiais.
 function filiaisMap(mtz: Map<number, number>): Map<number, number> {
   const f = new Map<number, number>();
@@ -132,12 +139,17 @@ function contatosMembros(codps: number[], contBy: any, ghlBy: any, fallback: num
 function motorVal(codigo: string, c: any) {
   if (codigo === "clube_a_vencer") return { saldo: Number(c.clube_saldo_pedir) || 0, valtxt: "Clube vence em " + (c.clube_vig_dias) + "d", vig_dias: Number(c.clube_vig_dias), sort: -(Number(c.clube_vig_dias) || 99999) };
   if (codigo === "rep_roteiro_visitas") return { saldo: Number(c.ticket) || 0, valtxt: (c.situacao || "") + (Number(c.saldo_entregar) > 0 ? (" · saldo " + brl(c.saldo_entregar)) : "") + (Number(c.dias) ? (" · " + c.dias + "d") : ""), sort: Number(c.ticket) || 0 };
-  if (codigo === "recompra_novo_produto") return { saldo: Number(c.ticket) || 0, valtxt: "lançamentos: " + (c.novidades || ""), sort: Number(c.ticket) || 0 };
-  return { saldo: Number(c.ticket) || 0, valtxt: "sugerir: " + (c.crosssell || ""), sort: Number(c.ticket) || 0 };
+  /* O valtxt e o que a TELA mostra e o que a previa da mensagem imprime: tem de ser igual ao motivo
+     que o campanhas-disparar escreve, palavra por palavra. Cada campanha na sua fonte — a sugestao
+     lia crosssell e por isso saia com os mesmos lancamentos da campanha de lancamentos. */
+  if (codigo === "recompra_novo_produto") return { saldo: Number(c.ticket) || 0, valtxt: "apresentar " + tagLanc(c.novidades), sort: Number(c.ticket) || 0 };
+  if (codigo === "rep_sugestao_produto") return { saldo: Number(c.ticket) || 0, valtxt: "sugerir " + (c.curva_a || ""), sort: Number(c.ticket) || 0 };
+  return { saldo: Number(c.ticket) || 0, valtxt: "sugerir " + (c.crosssell || ""), sort: Number(c.ticket) || 0 };
 }
 async function motorRows(sb: any, codigo: string, vencDias: number) {
-  let q = sb.from("ghl_cliente").select("codparc,razao,rep,situacao,ticket,dias,mix,compra_linhas,crosssell,novidades,saldo_entregar,titulos_vencidos,clube_vig_dias,clube_saldo_pedir,score").eq("nitron", true);
-  if (codigo === "recompra_cross_sell" || codigo === "rep_sugestao_produto") q = q.not("crosssell", "is", null).eq("situacao", "Em dia");
+  let q = sb.from("ghl_cliente").select("codparc,razao,rep,situacao,ticket,dias,mix,compra_linhas,curva_a,crosssell,novidades,saldo_entregar,titulos_vencidos,clube_vig_dias,clube_saldo_pedir,score").eq("nitron", true);
+  if (codigo === "recompra_cross_sell") q = q.not("crosssell", "is", null).eq("situacao", "Em dia");
+  else if (codigo === "rep_sugestao_produto") q = q.not("curva_a", "is", null).eq("situacao", "Em dia");
   else if (codigo === "recompra_novo_produto") q = q.not("novidades", "is", null).eq("situacao", "Em dia");
   // so quem esta DE FATO perto de vencer, e nao qualquer um que tenha vigencia
   else if (codigo === "clube_a_vencer") q = q.not("clube_vig_dias", "is", null).gte("clube_vig_dias", 0).lte("clube_vig_dias", vencDias);
@@ -169,7 +181,7 @@ Deno.serve(async (req) => {
         rows.sort((a: any, b: any) => b._v.sort - a._v.sort);
         const allc: number[] = []; rows.forEach((c: any) => (c._codps || [c.codparc]).forEach((x: number) => allc.push(x))); const contBy = await contatosPorCodparc(sb, allc); const ghlBy = await ghlPorCodparc(sb, allc);
         const DOC = await docMap(sb, rows.map((c: any) => c.codparc));
-        const clientes = rows.map((c: any) => { const s = repByName[String(c.rep || "").toUpperCase()]; const dc = DOC[String(c.codparc)] || ""; return { codparc: c.codparc, nome: nlojas(c.lojas, c.razao), doc: dc ? (dc + sufRede(c.lojas)) : "", codvend: s ? Number(s.codvend) : null, rep: c.rep || "", saldo: c._v.saldo, pct: null, validade: null, valtxt: c._v.valtxt, vig_dias: (c._v.vig_dias != null && !isNaN(c._v.vig_dias)) ? c._v.vig_dias : null, crosssell: c.crosssell, novidades: c.novidades, mix: c.compra_linhas || c.mix, situacao: c.situacao, lojas: c.lojas, assistente: s?.assistente || null, contatos: contatosMembros(c._codps || [c.codparc], contBy, ghlBy, c.codparc) }; });
+        const clientes = rows.map((c: any) => { const s = repByName[String(c.rep || "").toUpperCase()]; const dc = DOC[String(c.codparc)] || ""; return { codparc: c.codparc, nome: nlojas(c.lojas, c.razao), doc: dc ? (dc + sufRede(c.lojas)) : "", codvend: s ? Number(s.codvend) : null, rep: c.rep || "", saldo: c._v.saldo, pct: null, validade: null, valtxt: c._v.valtxt, vig_dias: (c._v.vig_dias != null && !isNaN(c._v.vig_dias)) ? c._v.vig_dias : null, curva_a: c.curva_a, crosssell: c.crosssell, novidades: c.novidades, mix: c.compra_linhas || c.mix, situacao: c.situacao, lojas: c.lojas, assistente: s?.assistente || null, contatos: contatosMembros(c._codps || [c.codparc], contBy, ghlBy, c.codparc) }; });
         const { data: meta } = await sb.from("cache_meta").select("atualizado").eq("chave", "snapshot").maybeSingle();
         return j({ campanha: camp?.nome, codigo, flat: true, total: clientes.length, clientes, atualizado: meta?.atualizado || null });
       }

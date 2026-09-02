@@ -1033,13 +1033,17 @@
      Agora previa e disparo leem o mesmo valorInfo()/camposCrm(), entao o que aparece e o que sai. */
   /* Exemplo de mentira, mas do TIPO CERTO: o que ele nao pode fazer e falar de dinheiro numa
      campanha de prazo (ou de prazo numa de dinheiro). Devolve o mesmo formato do valorInfo(). */
+  // "(Lançamento)" em cada linha — mesmo marcador do campanhas-disparar/preview
+  function tagLanc(v){return String(v||"").split(",").map(function(x){return x.trim();}).filter(Boolean).map(function(x){return x+" (Lançamento)";}).join(", ");}
   function exGen(){
     var k=campKind();
     if(k==="clube")return {bvalor:"R$ 10.000",merge:{cliente:"Loja Exemplo",valor:"R$ 10.000 de direito de compra no Clube Nitron",saldo:"R$ 10.000",validade:"",dias:""}};
     if(k==="voucher")return {bvalor:"8%",merge:{cliente:"Loja Exemplo",valor:"8% de desconto válido até 31/08/2026",saldo:"8%",validade:"31/08/2026",dias:""}};
     if(k==="motor"){
-      var vt=(CUR==="clube_a_vencer")?"Clube vence em 30d":(CUR==="recompra_novo_produto")?"lançamentos: Teca, Decor Util":(CUR==="rep_roteiro_visitas")?"Giro vencido":"sugerir: Frasqueiras, Lixeiras";
-      var bv=(CUR==="clube_a_vencer")?"30 dias":vt.replace(/^[^:]+:\s*/,"");
+      /* Exemplo por campanha, no formato que a mensagem escreve. Lancamento leva o marcador
+         "(Lançamento)"; a sugestao para a visita mostra linha de curva A, sem lancamento. */
+      var vt=(CUR==="clube_a_vencer")?"Clube vence em 30d":(CUR==="recompra_novo_produto")?"apresentar Teca (Lançamento), Decor Util (Lançamento)":(CUR==="rep_sugestao_produto")?"sugerir Potes, Frasqueiras":(CUR==="rep_roteiro_visitas")?"Giro vencido":"sugerir Frasqueiras, Lixeiras";
+      var bv=(CUR==="clube_a_vencer")?"30 dias":vt.replace(/^(apresentar|sugerir)\s+/,"");
       return {bvalor:bv,merge:{cliente:"Loja Exemplo",valor:vt,saldo:vt,validade:"",dias:""}};}
     return {bvalor:"83 dias",merge:{cliente:"Loja Exemplo",valor:"83 dias sem comprar",saldo:"R$ 35.318",validade:"",dias:"83"}};}
   function exemploCli(){
@@ -1060,8 +1064,9 @@
   function valorBracket(c){
     if(CUR==="clube_saldo")return brl(c.saldo);
     if(CUR==="voucher_empurrar")return (c.pct!=null?(c.pct+"%"):"");
-    if(CUR==="recompra_cross_sell"||CUR==="rep_sugestao_produto")return String(c.crosssell||"novas linhas");
-    if(CUR==="recompra_novo_produto")return String(c.novidades||"nossos lancamentos");
+    if(CUR==="recompra_cross_sell")return String(c.crosssell||"novas linhas");
+    if(CUR==="rep_sugestao_produto")return String(c.curva_a||"novas linhas");
+    if(CUR==="recompra_novo_produto")return c.novidades?tagLanc(c.novidades):"nossos lancamentos";
     if(CUR==="clube_a_vencer"){var m=String(c.valtxt||"").match(/(\d+)\s*d/);return m?(m[1]+" dias"):"em breve";}
     if(CUR==="rep_roteiro_visitas")return String(c.valtxt||c.situacao||"");
     return (c.dias!=null?(c.dias+" dias"):"");}
@@ -1202,12 +1207,22 @@
       +'<b style="color:#b7791f">Sem rota viável esta semana</b>'
       +'<div class="note" style="margin-top:4px">'+esc(d.aviso||"")+'</div>'
       +'<div class="note" style="margin-top:6px">Nada foi enfileirado. Para estes clientes o caminho é contato — se quiser, eu preparo a lista para Zaptos ou e-mail.</div></div>';return;}var fora=(d.fora_da_regiao||0)+(d.sem_cluster||0);
-    var h='<div class="note" style="padding:2px 0 8px 14px"><b>'+d.cobertos+'</b> visitas em <b>'+d.dias.length+'</b> dia(s)'+(d.uf_semana?(' · região <b>'+esc(d.uf_semana)+'</b>'):'')+' · de <b>'+d.total+'</b> pontos aptos'+(fora?(' <span style="color:#b7791f">('+fora+' fora: '+(d.fora_da_regiao||0)+' em outra região, '+(d.sem_cluster||0)+' isolados demais para um dia de 4)</span>'):'')+'</div>';d.dias.forEach(function(dia){h+='<div class="kaCard" style="margin:6px 0 6px 14px"><div class="kaHead"><b>Dia '+dia.dia+'</b><span class="kaTag">base '+esc(dia.cidade_base||"")+'</span><span class="note">'+dia.clientes.length+' visitas'+(dia.raio_km!=null?(' · raio ~'+dia.raio_km+'km'):'')+'</span></div>';h+='<div style="background:#f4f0fb;border-left:3px solid #5b3fa0;border-radius:0 6px 6px 0;padding:7px 10px;margin:4px 0 7px"><b style="color:#5b3fa0">🎯 Âncora da região: '+esc(dia.ancora_nome||"")+'</b><div class="note" style="margin-top:2px">puxa a visita porque: '+esc(dia.ancora_porque||"")+'</div></div>';dia.clientes.forEach(function(c){var isA=c.ancora;h+='<div class="ctopt" style="border-bottom:1px solid #eef2ef'+(isA?";background:#faf7ff":"")+'"><span class="cf" style="min-width:200px"><b>'+(c.ordem?c.ordem+") ":"")+'</b>'+(isA?"⭐ ":"")+esc(c.nome||"")+(c.lojas>1?' <span class="kaTag" style="background:#e7e0f5;color:#5b3fa0">rede '+c.lojas+' lojas</span>':"")+'</span><span class="note">'+(c.doc?('<b>'+esc(c.doc)+'</b> · '):"")+esc(c.cidade||"")+' · CEP '+esc(c.cep||"")+(c.km!=null?' · ~'+c.km+'km':"")+' · '+esc(c.motivo)+'</span></div>';});h+='</div>';});ROTDATA[cod]={contatos:d.contatos||[],instancia:d.instancia||null,rep:d.rep||("Rep "+cod)};if((d.contatos||[]).length){h+='<div class="kaCard" style="margin:8px 14px 4px;background:#f7faf9"><div class="lab" style="padding:0 0 4px">✉️ Enviar o roteiro ao representante'+(d.instancia?(" · 📲 "+esc(d.instancia)):"")+'</div>';(d.contatos||[]).forEach(function(c,jj){h+='<label class="ctopt"><input type="checkbox" class="rotc-'+cod+'" data-j="'+jj+'" checked><span class="cf">'+(c.canal==="whatsapp"?"📱":"✉")+' '+esc(c.funcao||"Rep")+'</span><span>'+esc(c.valor)+'</span></label>';});h+='<textarea id="rotmsg-'+cod+'" rows="7" style="width:100%;margin-top:6px" oninput="edGuardar(\'rot\','+cod+',\'mensagem\',this)">'+esc(d.mensagem||"")+'</textarea>'+edTag("rot",cod)+'<div class="dbtns" style="margin-top:6px"><button class="btn big ok" onclick="rotFila('+cod+')">📥 Colocar na fila</button><span class="note" id="rotfila-'+cod+'"></span></div></div>';}box.innerHTML=h;});}
+    var h='<div class="note" style="padding:2px 0 8px 14px"><b>'+d.cobertos+'</b> visitas em <b>'+d.dias.length+'</b> dia(s)'+(d.uf_semana?(' · região <b>'+esc(d.uf_semana)+'</b>'):'')+' · de <b>'+d.total+'</b> pontos aptos'+(fora?(' <span style="color:#b7791f">('+fora+' fora: '+(d.fora_da_regiao||0)+' em outra região, '+(d.sem_cluster||0)+' isolados demais para um dia de 4)</span>'):'')+'</div>';d.dias.forEach(function(dia){h+='<div class="kaCard" style="margin:6px 0 6px 14px"><div class="kaHead"><b>Dia '+dia.dia+'</b><span class="kaTag">base '+esc(dia.cidade_base||"")+'</span><span class="note">'+dia.clientes.length+' visitas'+(dia.raio_km!=null?(' · raio ~'+dia.raio_km+'km'):'')+'</span></div>';h+='<div style="background:#f4f0fb;border-left:3px solid #5b3fa0;border-radius:0 6px 6px 0;padding:7px 10px;margin:4px 0 7px"><b style="color:#5b3fa0">🎯 Âncora da região: '+esc(dia.ancora_nome||"")+'</b><div class="note" style="margin-top:2px">puxa a visita porque: '+esc(dia.ancora_porque||"")+'</div></div>';dia.clientes.forEach(function(c){var isA=c.ancora;h+='<div class="ctopt" style="border-bottom:1px solid #eef2ef'+(isA?";background:#faf7ff":"")+'"><span class="cf" style="min-width:200px"><b>'+(c.ordem?c.ordem+") ":"")+'</b>'+(isA?"⭐ ":"")+esc(c.nome||"")+(c.lojas>1?' <span class="kaTag" style="background:#e7e0f5;color:#5b3fa0">rede '+c.lojas+' lojas</span>':"")+'</span><span class="note">'+(c.doc?('<b>'+esc(c.doc)+'</b> · '):"")+esc(c.cidade||"")+' · CEP '+esc(c.cep||"")+(c.km!=null?' · ~'+c.km+'km':"")+' · '+esc(c.motivo)+'</span></div>';});h+='</div>';});ROTDATA[cod]={contatos:d.contatos||[],instancia:d.instancia||null,rep:d.rep||("Rep "+cod)};
+    /* MESMO bloco de contatos das outras campanhas (o do voucher, do Clube, do giro): REPDATA +
+       REPSEL + repContatosHTML(), com telefone e e-mail agrupados por canal, rotulo da origem,
+       excluir manual e "+ telefone / + email". Antes o roteiro tinha uma listinha propria e pobre.
+       O container PRECISA se chamar repct-<cod>: e nele que removeRepContato() redesenha o bloco
+       depois de excluir um contato manual. */
+    REPDATA[cod]={nome:d.rep||("Rep "+cod),assistente:d.instancia||null,telefones:d.telefones||[],emails:d.emails||[]};
+    REPSEL[cod]={tel:(d.telefones||[]).filter(function(t){return foneCel(t.valor)!==false&&!rotFuzzy(t.rotulo);}).map(function(t){return t.valor;}),email:(d.emails||[]).filter(function(e){return !rotFuzzy(e.rotulo);}).map(function(e){return e.valor;})};
+    if(((d.telefones||[]).length+(d.emails||[]).length)>0){h+='<div class="kaCard" style="margin:8px 14px 4px;background:#f7faf9"><div class="lab" style="padding:0 0 4px">✉️ Enviar o roteiro ao representante'+(d.instancia?(" · 📲 "+esc(d.instancia)):"")+'</div><div id="repct-'+cod+'">'+repContatosHTML(cod)+'</div><div class="lab">Mensagem ao representante (editável)</div><textarea id="rotmsg-'+cod+'" rows="8" style="width:100%" oninput="edGuardar(\'rot\','+cod+',\'mensagem\',this)">'+esc(d.mensagem||"")+'</textarea>'+edTag("rot",cod)+'<div class="dbtns" style="margin-top:6px"><button class="btn big ok" onclick="rotFila('+cod+')">📥 Colocar na fila</button><span class="note" id="rotfila-'+cod+'"></span></div></div>';}box.innerHTML=h;});}
   var ROTDATA={};
   /* o lote remonta a mensagem no servidor; se a pessoa abriu o rep e editou, vale o texto dela */
   function rotTexto(m){var d=ROTDATA[m.codvend];return (d&&d.editado&&d.mensagem)?d.mensagem:m.mensagem;}
-  function rotFila(cod){var m=ROTDATA[cod];if(!m)return;var st=$("rotfila-"+cod);st.textContent="enfileirando…";var texto=$("rotmsg-"+cod).value;var itens=[];
-    document.querySelectorAll(".rotc-"+cod+":checked").forEach(function(cb){var c=m.contatos[+cb.getAttribute("data-j")];if(!c)return;if(c.canal==="email"){itens.push({campanha:"rep_roteiro_visitas",publico:"rep",canal:"email",email:c.valor,assunto:"Seu roteiro de visitas — Nitron",corpo:texto,nome:m.rep});}else{itens.push({campanha:"rep_roteiro_visitas",publico:"rep",canal:"whatsapp",fone:c.valor,instancia:m.instancia,corpo:texto,nome:m.rep});}});
+  // a selecao agora vem do REPSEL, o mesmo do bloco de contatos das outras campanhas
+  function rotFila(cod){var m=ROTDATA[cod];if(!m)return;var st=$("rotfila-"+cod);st.textContent="enfileirando…";var texto=$("rotmsg-"+cod).value;var itens=[];var s=REPSEL[cod]||{tel:[],email:[]};
+    (s.tel||[]).forEach(function(f){itens.push({campanha:"rep_roteiro_visitas",publico:"rep",canal:"whatsapp",fone:f,instancia:m.instancia,corpo:texto,nome:m.rep});});
+    (s.email||[]).forEach(function(e){itens.push({campanha:"rep_roteiro_visitas",publico:"rep",canal:"email",email:e,assunto:"Seu roteiro de visitas — Nitron",corpo:texto,nome:m.rep});});
     if(!itens.length){st.textContent="marque ao menos 1 contato";return;}
     postJSON(SUPA+"/functions/v1/fila-enfileirar",{itens:itens},function(r){st.innerHTML=r.ok?("<b style='color:#1a7f4b'>✓ "+r.enfileirados+" na fila</b>"):("✗ "+((r&&r.erro)||"falha"));});}
   /* ===== ROTEIRO — selecao em massa dos representantes ===== */

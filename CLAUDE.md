@@ -190,3 +190,33 @@ renomear exigiria migrar linhas e funções sem ganho para quem lê a tela.
 - **Reativação 180 dias** só volta quando o gestor mandar; as 43 linhas restantes estão canceladas.
 - 9 das 13 campanhas ativas são só Zaptos; 4 aceitam e-mail. 77 de 79 representantes têm e-mail,
   e 5.969 clientes também.
+
+## Onde o repositório mora (e por que há dois rótulos na barra lateral)
+
+O repositório é **`Nitron-mkt/CampanhasNitron`** — foi renomeado de `whatsapp` em 03/09. O GitHub
+mantém redirecionamento, então sessões antigas com a URL `.../whatsapp` gravada continuam
+empurrando certo, e é só por isso que a barra lateral mostra os dois nomes: o grupo é montado pelo
+nome da URL que a sessão guardou ao nascer, não pelo repositório de verdade. **Não há repositório
+duplicado.** A branch padrão é `claude/supabase-access-8190et`.
+
+**Uma sessão de cada vez editando `app/gestor.html`.** Duas já sobrescreveram trabalho uma da outra.
+Ao abrir sessão nova, encerre as antigas.
+
+## Pendências esperando decisão do gestor (03/09/2026)
+
+1. **Bonificado e Troca contam como compra no roteiro?** O filtro novo conta **todo** `TIPMOV='P'`,
+   inclusive Pedido Bonificado (198 notas em 60 dias) e Pedido de Troca (179). Se não devem valer
+   como compra, é filtro de `CODTIPOPER` nas subqueries `ped`/`ab` do `roteiro-refresh`.
+2. **Anon key com permissão de escrita.** A chave anônima embutida no painel tem
+   INSERT/UPDATE/DELETE em 188 de 197 objetos, 145 deles sem RLS. Medido: o painel **só lê** — tirar
+   a escrita é invisível para a tela e reversível. É a recomendação de maior retorno da lista.
+3. **21 e-mails de representante que o GHL recusa** — endereço malformado ou domínio morto.
+4. **Atribuição envio → pedido** não existe: não sabemos qual campanha gerou venda.
+5. **`parc_bloqueado` está congelado em 28/08** — nenhum dos 74 crons atualiza a tabela.
+6. **O painel lê `erro`, mas o motivo da trava está em `resultado`** — a tela mostra vazio.
+7. **`recompra_cross_sell` é hoje a união das outras duas campanhas de produto** — decisão de
+   negócio: ou vira só curva A, ou é retirada.
+8. **Audiência da "Sugestão de produtos p/ a visita" é pequena** (149 clientes, 35 reps) — alargar ou
+   deixar.
+9. **DENIZE (codvend 116)**: entregar lista de clientes sem compra em vez de rota. Combinado que
+   fica como está até o gestor pedir.

@@ -1,0 +1,196 @@
+slides: 11
+
+==== slide1.xml ====
+CAMPANHA 2026
+Gestor de Carteira
+A Tabela Gestor na sua mão.
+Setembro a dezembro de 2026
+
+==== slide2.xml ====
+Por que essa campanha existe
+Metade dos nossos clientes compra
+uma única vez por ano.
+Não precisamos de mais clientes.
+Precisamos que os seus comprem mais vezes.
+
+==== slide3.xml ====
+O que você recebe
+A Tabela Gestor para usar na sua carteira
+Tabela
+Tabela Gestor
+Prazo médio
+45 dias
+60 no Norte e Nordeste
+Vale para
+qualquer cliente seu
+Cliente ativo, cliente inativo ou cliente novo. Com crédito aprovado e nas condições de pagamento aprovadas.
+
+==== slide4.xml ====
+O que você entrega
+50%
+da sua carteira positivada
+90%
+da sua meta
+Em cada ciclo de 4 meses. As duas juntas.
+
+==== slide5.xml ====
+O que é positivar
+O cliente comprou.
+Pedido faturado de R$ 3.500 ou mais, dentro dos 4 meses.
+CONTA
+Cliente seu que comprou
+Cliente inativo que voltou
+Cliente novo
+NÃO CONTA
+Pedido abaixo de R$ 3.500
+Pedido cancelado ou devolvido
+Bonificação, troca, garantia
+Cliente que você reativa conta e não aumenta sua carteira.
+
+==== slide6.xml ====
+Sua conta, na prática
+Exemplo: representante com 45 clientes na carteira
+45
+clientes na sua carteira
+→
+23
+é o seu alvo (50%)
+→
+17
+você positivou no último ciclo
+→
+6
+é o que falta
+Seis clientes em quatro meses.
+E esse representante tem 53 inativos na carteira para buscar.
+
+==== slide7.xml ====
+Você vai receber o seu número
+Quantos clientes você tem na carteira
+Quantos precisa positivar
+Quantos positivou no último ciclo
+Quantos faltam
+Quantos inativos você tem para buscar
+E o painel atualizado todo mês. Sem surpresa no fechamento.
+
+==== slide8.xml ====
+E se eu não atingir?
+Seus clientes que compraram continuam com o preço.
+PERDE
+A tabela para cliente que ainda não tem
+MANTÉM
+A tabela de quem já comprou
+VOLTA
+Atingindo as duas no ciclo seguinte
+Cliente do Clube nunca é afetado. Nunca.
+
+==== slide9.xml ====
+Tabela Gestor e Clube Nitron
+TABELA PADRÃO
+TABELA GESTOR
+CLUBE NITRON
+Tabela de preço
+Padrão
+Tabela Gestor
+Tabela Clube
+Pedido mínimo
+R$ 2.500
+R$ 3.500
+R$ 2.500
+Desconto
+política comercial
+já no preço
+já no preço
+Prazo médio
+política comercial
+45 dias · 60 N/NE
+até 12x
+Garantia de giro
+não
+não
+sim
+Prioridade logística
+não
+não
+sim
+Promoções exclusivas
+não
+não
+sim
+Permanência
+política comercial
+4 ciclos
+sempre
+Sua comissão
+política comercial
+política vigente
+9% tabela Varejo
+A Tabela Gestor e a Tabela Clube não recebem desconto: ele já está no preço. Mesmo assim, saem melhor que a tabela padrão com o desconto máximo da política.
+A comissão de 9% vale para os contratos Clube novos que você converter.
+A Tabela Gestor abre a porta. O Clube mantém ela aberta.
+
+==== slide10.xml ====
+As datas
+1º SET
+Começa
+Você recebe sua carteira e seu número
+SET a DEZ
+Você joga
+Painel todo mês
+15 JAN
+Resultado
+Apuração oficial do ciclo
+Este ciclo define 2027.
+Setembro a dezembro é o único ciclo confirmado. Em janeiro, com o resultado na mão, a Nitron define as regras de 2027 e comunica até o dia 31.
+
+==== slide11.xml ====
+Quatro meses.
+A Tabela Gestor na sua mão.
+50% da carteira positivada   ·   90% da meta   ·   pedido mínimo de R$ 3.500
+Perguntas?
+
+
+##### NOTAS (11)
+
+-- notesSlide1.xml
+Boas-vindas. Deixe claro em uma frase o que vem: uma ferramenta nova na mão do representante, com uma contrapartida clara. Cinco minutos de apresentação, depois perguntas.
+1
+
+-- notesSlide2.xml
+Ancorar o problema em um número só. Não é falta de cliente, é falta de recompra. E isso não se resolve com rota nova, se resolve com gestão de carteira.
+2
+
+-- notesSlide3.xml
+O prêmio primeiro. É uma tabela própria da campanha, não um desconto pontual. Vale para toda a carteira, inclusive inativo e cliente novo. Não comparar com a Tabela Clube — o Clube tem contrato, garantia de giro, 12 parcelas e prioridade logística, que a Tabela Gestor não tem.
+3
+
+-- notesSlide4.xml
+Dois números e nada mais. Repetir em voz alta: as duas juntas. Atingir só uma não mantém a tabela.
+4
+
+-- notesSlide5.xml
+A tarja de baixo é o ponto mais importante de toda a apresentação. O inativo entra no numerador e não no denominador. É o caminho mais rápido para os 45%.
+5
+
+-- notesSlide6.xml
+Este slide transforma a campanha em tarefa. Diga: cada um de vocês vai receber a sua própria conta. Não é 45% no abstrato, é um número de clientes que você já conhece pelo nome.
+6
+
+-- notesSlide7.xml
+Compromisso da Nitron: transparência total. Cada um recebe a ficha individual e acompanha o próprio número mensalmente.
+7
+
+-- notesSlide8.xml
+Tirar o medo. Ninguém tem preço retirado do balcão por causa do resultado do representante. E o retorno é automático, sem carência e sem pedir.
+8
+
+-- notesSlide9.xml
+9
+
+-- notesSlide10.xml
+Ponto importante: não estamos prometendo dois anos de campanha. Este ciclo é o que define as regras do ano que vem. O desempenho de vocês agora escreve o regulamento de 2027.
+10
+
+-- notesSlide11.xml
+Repetir os três números uma última vez e abrir para perguntas. As dúvidas mais prováveis: como conta pedido dividido em duas notas, o que acontece com cliente que fechou, e se Key Account entra na conta.
+11

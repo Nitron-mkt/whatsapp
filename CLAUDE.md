@@ -202,6 +202,28 @@ duplicado.** A branch padrão é `claude/supabase-access-8190et`.
 **Uma sessão de cada vez editando `app/gestor.html`.** Duas já sobrescreveram trabalho uma da outra.
 Ao abrir sessão nova, encerre as antigas.
 
+## Campanha Gestor de Carteira (arquivada em 03/09)
+
+Regulamento rev5 + apresentação final em `docs/campanha-gestor-de-carteira/` (originais, texto
+extraído e o relatório de validação no `README.md`). Mecânica: o rep recebe a Tabela Gestor (prazo
+médio 45d, 60 no N/NE, pedido mínimo R$ 3.500) e a mantém positivando **50% da carteira congelada**
+e atingindo **90% da meta**, as duas juntas, por ciclo de 4 meses. Ciclo 1 = 01/09 a 31/12/2026, o
+único confirmado.
+
+O que isso cobra de nós (item 10 do regulamento: apuração automática do Sankhya, painel mensal):
+- **A foto da carteira de 01/09/2026 não existe.** O prazo de 30 dias de contestação já corre.
+- **`rep_carteira` usa as mesmas palavras com outra conta** — `clientes` é a base inteira do rep
+  (869 na DENIZE), não a carteira de 12 meses do regulamento (263). Painel sobre ela mentiria.
+- O regulamento consolida por **CNPJ raiz**; o pipeline agrupa por `parc_matriz`. Discordam sempre
+  que o cadastro não amarrou a filial.
+- **Key Account tem de sair do numerador e do denominador** (`ka_grupo`, 128 grupos / 1.221 CNPJs).
+  Nenhuma função de campanha usa essa exclusão hoje.
+- `67` (AUTO ATEND.) e `116` (DENIZE, agência) não são reps de rua e não deveriam entrar na apuração.
+
+**Backtest da régua no ciclo anterior (mai–ago/2026), pela definição do próprio regulamento:
+positivação mediana de 16,1% e ZERO dos 45 reps com carteira ≥15 bateria os 50%.** 34 dos 45
+precisariam dobrar. Reportado ao gestor; a régua é decisão dele.
+
 ## Pendências esperando decisão do gestor (03/09/2026)
 
 1. **Bonificado e Troca contam como compra no roteiro?** O filtro novo conta **todo** `TIPMOV='P'`,
